@@ -1,19 +1,20 @@
+import Combine
 import Foundation
 
 @MainActor
 final class MonitoringService: ObservableObject {
     @Published private(set) var snapshot = MemorySnapshot.empty
     @Published private(set) var swapDeltaBytes: Int64 = 0
-    @Published private(set) var pageInDeltaBytes: UInt64 = 0
-    @Published private(set) var pageOutDeltaBytes: UInt64 = 0
+    @Published private(set) var swapInDeltaBytes: UInt64 = 0
+    @Published private(set) var swapOutDeltaBytes: UInt64 = 0
     @Published private(set) var isActivelySwapping = false
 
     private let collector = MemoryCollector()
     private var timer: Timer?
 
     private var previousSwapUsedBytes: UInt64?
-    private var previousPageInBytes: UInt64?
-    private var previousPageOutBytes: UInt64?
+    private var previousSwapInBytes: UInt64?
+    private var previousSwapOutBytes: UInt64?
 
     init() {
         refresh()
@@ -33,23 +34,23 @@ final class MonitoringService: ObservableObject {
             swapDeltaBytes = 0
         }
 
-        if let previousPageInBytes {
-            pageInDeltaBytes = monotonicDelta(current: nextSnapshot.pageInBytes, previous: previousPageInBytes)
+        if let previousSwapInBytes {
+            swapInDeltaBytes = monotonicDelta(current: nextSnapshot.swapInBytes, previous: previousSwapInBytes)
         } else {
-            pageInDeltaBytes = 0
+            swapInDeltaBytes = 0
         }
 
-        if let previousPageOutBytes {
-            pageOutDeltaBytes = monotonicDelta(current: nextSnapshot.pageOutBytes, previous: previousPageOutBytes)
+        if let previousSwapOutBytes {
+            swapOutDeltaBytes = monotonicDelta(current: nextSnapshot.swapOutBytes, previous: previousSwapOutBytes)
         } else {
-            pageOutDeltaBytes = 0
+            swapOutDeltaBytes = 0
         }
 
-        isActivelySwapping = pageOutDeltaBytes > 0 || swapDeltaBytes > 0
+        isActivelySwapping = swapInDeltaBytes > 0 || swapOutDeltaBytes > 0 || swapDeltaBytes > 0
 
         previousSwapUsedBytes = nextSnapshot.swapUsedBytes
-        previousPageInBytes = nextSnapshot.pageInBytes
-        previousPageOutBytes = nextSnapshot.pageOutBytes
+        previousSwapInBytes = nextSnapshot.swapInBytes
+        previousSwapOutBytes = nextSnapshot.swapOutBytes
         snapshot = nextSnapshot
     }
 
