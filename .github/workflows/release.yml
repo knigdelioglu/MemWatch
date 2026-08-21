@@ -1,0 +1,41 @@
+name: Release Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build universal Release DMG
+        run: |
+          chmod +x Scripts/package_release.sh
+          Scripts/package_release.sh
+
+      - name: Inspect package
+        run: |
+          ls -lh dist/MemWatch.dmg dist/MemWatch.dmg.sha256
+          cat dist/MemWatch.dmg.sha256
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MemWatch-macOS-ad-hoc
+          path: |
+            dist/MemWatch.dmg
+            dist/MemWatch.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
