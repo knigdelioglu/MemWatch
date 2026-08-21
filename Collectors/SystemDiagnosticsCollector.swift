@@ -29,6 +29,27 @@ final class SystemDiagnosticsCollector {
         return taskInfo.pti_resident_size
     }
 
+    func aggregateResidentMemoryBytes(for rootPID: Int32) -> UInt64 {
+        guard rootPID > 0 else { return 0 }
+
+        var total: UInt64 = 0
+        var visited = Set<Int32>()
+        var pending: [Int32] = [rootPID]
+
+        while let pid = pending.popLast() {
+            guard visited.insert(pid).inserted else { continue }
+
+            if let resident = residentMemoryBytes(for: pid) {
+                let (next, overflow) = total.addingReportingOverflow(resident)
+                total = overflow ? UInt64.max : next
+            }
+
+            pending.append(contentsOf: childPIDs(of: pid))
+        }
+
+        return total
+    }
+
     private func collectCPUUsagePercent() -> Double? {
         var cpuLoad = host_cpu_load_info()
         var count = mach_msg_type_number_t(
@@ -87,11 +108,11 @@ final class SystemDiagnosticsCollector {
 
     private func collectTopProcesses(limit: Int) -> [ProcessMemorySnapshot] {
         NSWorkspace.shared.runningApplications
+            .filter { !$0.isTerminated && $0.activationPolicy != .prohibited }
             .compactMap { application -> ProcessMemorySnapshot? in
                 let pid = application.processIdentifier
-                guard let residentBytes = residentMemoryBytes(for: pid), residentBytes > 0 else {
-                    return nil
-                }
+                let residentBytes = aggregateResidentMemoryBytes(for: pid)
+                guard residentBytes > 0 else { return nil }
 
                 let name = application.localizedName
                     ?? application.bundleURL?.deletingPathExtension().lastPathComponent
@@ -112,5 +133,19 @@ final class SystemDiagnosticsCollector {
             }
             .prefix(limit)
             .map { $0 }
+    }
+
+    private func childPIDs(of parentPID: Int32) -> [Int32] {
+        let count = proc_listchildpids(parentPID, nil, 0)
+        guard count > 0 else { return [] }
+
+        var pids = [pid_t](repeating: 0, count: Int(count))
+        let bufferSize = Int32(pids.count * MemoryLayout<pid_t>.stride)
+        let returned: Int32 = pids.withUnsafeMutableBytes { buffer in
+            proc_listchildpids(parentPID, buffer.baseAddress, bufferSize)
+        }
+
+        guard returned > 0 else { return [] }
+        return pids.prefix(Int(returned)).filter { $0 > 0 }
     }
 }
