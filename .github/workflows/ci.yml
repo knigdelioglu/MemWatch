@@ -27,7 +27,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Run collector smoke test
+      - name: Verify menu-bar-only configuration
+        run: |
+          xcodebuild \
+            -project MemWatch.xcodeproj \
+            -scheme MemWatch \
+            -configuration Debug \
+            -showBuildSettings | grep 'INFOPLIST_KEY_LSUIElement = YES'
+          grep -q 'setActivationPolicy(.accessory)' MemWatchApp.swift
+
+      - name: Run memory collector smoke test
         run: |
           xcrun swiftc \
             Models/MemorySnapshot.swift \
@@ -35,6 +44,15 @@ jobs:
             Tests/MemoryCollectorSmoke.swift \
             -o /tmp/memwatch-collector-smoke
           /tmp/memwatch-collector-smoke
+
+      - name: Run storage collector smoke test
+        run: |
+          xcrun swiftc \
+            Models/StorageSnapshot.swift \
+            Collectors/StorageCollector.swift \
+            Tests/StorageCollectorSmoke.swift \
+            -o /tmp/memwatch-storage-collector-smoke
+          /tmp/memwatch-storage-collector-smoke
 
       - name: Run swap intelligence tests
         run: |
@@ -45,7 +63,7 @@ jobs:
             -o /tmp/memwatch-swap-intelligence-tests
           /tmp/memwatch-swap-intelligence-tests
 
-      - name: Run notification policy tests
+      - name: Run memory notification policy tests
         run: |
           xcrun swiftc \
             Models/MemorySnapshot.swift \
@@ -55,9 +73,20 @@ jobs:
             -o /tmp/memwatch-notification-policy-tests
           /tmp/memwatch-notification-policy-tests
 
+      - name: Run storage notification policy tests
+        run: |
+          xcrun swiftc \
+            Models/StorageSnapshot.swift \
+            Services/StorageNotificationPolicyEngine.swift \
+            Tests/StorageNotificationPolicyTests.swift \
+            -o /tmp/memwatch-storage-policy-tests
+          /tmp/memwatch-storage-policy-tests
+
       - name: Print reference system metrics
         run: |
           echo '--- vm_stat ---'
           vm_stat
           echo '--- swapusage ---'
           sysctl vm.swapusage
+          echo '--- mounted volumes ---'
+          df -h
