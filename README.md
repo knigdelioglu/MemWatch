@@ -82,6 +82,23 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Bildirimleri uygulama içinden açma/kapatma
 - macOS bildirim izin durumunu gösterme
 
+## Release Quality
+
+MemWatch artık release-candidate kalite hattına sahiptir:
+
+- Collector performans bütçeleri
+- Arka plan polling / batarya-etkisi regresyon koruması
+- Universal `arm64 + x86_64` Release build
+- Ad-hoc imza doğrulaması
+- DMG oluşturma, doğrulama ve mount testi
+- SHA-256 checksum
+- Her başarılı CI koşusunda indirilebilir DMG artifact
+- Tag veya manuel çalıştırılabilen Release Package workflow
+
+CI artifact'i Developer ID ile imzalanmış veya Apple tarafından notarize edilmiş bir public distribution paketi değildir. Gatekeeper uyarısı olmayan genel dağıtım için Developer ID signing + Apple notarization gerekir.
+
+Ayrıntılı kalite ve fiziksel MacBook batarya A/B test protokolü `docs/RELEASE_QUALITY.md` içindedir.
+
 ## Teknoloji
 
 - Platform: macOS 13+
@@ -92,7 +109,7 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 
 ## Durum
 
-Sprint 1-6 tamamlandı:
+Sprint 1-7 release-candidate kapsamı tamamlandı:
 
 1. Core Memory Monitoring
 2. Swap Intelligence
@@ -100,10 +117,13 @@ Sprint 1-6 tamamlandı:
 4. Storage Monitoring
 5. Energy Monitoring
 6. Advanced Diagnostics
+7. Release Quality
 
-Tüm mevcut çekirdek özellikler macOS CI build ve davranış testleriyle doğrulanmaktadır.
+Public dağıtım öncesinde kalan gerçek-dünya kapıları:
 
-Sıradaki ana faz: Release Quality.
+- Fiziksel MacBook üzerinde tekrarlı batarya A/B doğrulaması
+- Developer ID Application signing
+- Apple notarization + stapling
 
 ## Lisans
 
