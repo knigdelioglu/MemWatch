@@ -7,6 +7,10 @@ struct MenuBarView: View {
         monitor.snapshot
     }
 
+    private var intelligence: SwapIntelligenceResult {
+        monitor.intelligence
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -16,7 +20,7 @@ struct MenuBarView: View {
             Divider()
             footer
         }
-        .frame(width: 300)
+        .frame(width: 320)
         .padding(16)
     }
 
@@ -29,9 +33,10 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("MemWatch")
                     .font(.headline)
-                Text(statusText)
+                Text(intelligence.summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer()
@@ -60,20 +65,17 @@ struct MenuBarView: View {
     private var swapSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Swap")
+                Text("Swap Intelligence")
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
 
-                if monitor.isActivelySwapping {
-                    Label("Active", systemImage: "arrow.left.arrow.right")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
+                Label(intelligence.state.displayName, systemImage: intelligenceSymbol)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
             }
 
-            metricRow("Used", value: bytes(snapshot.swapUsedBytes))
-            metricRow("Total", value: bytes(snapshot.swapTotalBytes))
+            metricRow("Swap used", value: bytes(snapshot.swapUsedBytes))
 
             if monitor.swapDeltaBytes != 0 {
                 metricRow("Allocated Δ / 5 sec", value: signedBytes(monitor.swapDeltaBytes))
@@ -86,6 +88,19 @@ struct MenuBarView: View {
             if monitor.swapOutDeltaBytes > 0 {
                 metricRow("Swap-out / 5 sec", value: bytes(monitor.swapOutDeltaBytes))
             }
+
+            if intelligence.recentSwapInBytes > 0 {
+                metricRow("Recent swap-in", value: bytes(intelligence.recentSwapInBytes))
+            }
+
+            if intelligence.recentSwapOutBytes > 0 {
+                metricRow("Recent swap-out", value: bytes(intelligence.recentSwapOutBytes))
+            }
+
+            metricRow(
+                "Active samples",
+                value: "\(intelligence.activeSamples)/\(max(intelligence.sampleCount, 1))"
+            )
         }
     }
 
@@ -94,9 +109,9 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Label(monitor.pressure.displayName, systemImage: "gauge.with.dots.needle.50percent")
                     .font(.caption)
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(pressureColor)
 
-                Text(monitor.isUsingNativePressure ? "macOS pressure event" : "MemWatch estimate")
+                Text(monitor.isUsingNativePressure ? "macOS pressure event" : "MemWatch pressure estimate")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -121,39 +136,40 @@ struct MenuBarView: View {
         .font(.caption)
     }
 
-    private var statusText: String {
-        if monitor.swapOutDeltaBytes > 0 {
-            return "RAM is actively writing to swap"
-        }
-
-        if monitor.swapInDeltaBytes > 0 {
-            return "Data is being read back from swap"
-        }
-
-        switch monitor.pressure {
-        case .normal: return "Memory pressure is normal"
-        case .warning: return "Memory pressure is elevated"
-        case .critical: return "Memory pressure is critical"
-        }
-    }
-
     private var statusSymbol: String {
-        if monitor.isActivelySwapping {
-            return "arrow.left.arrow.right.circle.fill"
-        }
-
-        switch monitor.pressure {
-        case .normal: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
+        switch intelligence.state {
+        case .stable: return "checkmark.circle.fill"
+        case .idleSwap: return "pause.circle.fill"
+        case .readback: return "arrow.down.circle.fill"
+        case .activeSwap: return "arrow.left.arrow.right.circle.fill"
+        case .pressure: return "exclamationmark.triangle.fill"
         case .critical: return "exclamationmark.octagon.fill"
         }
     }
 
-    private var statusColor: Color {
-        if monitor.swapOutDeltaBytes > 0 {
-            return .red
+    private var intelligenceSymbol: String {
+        switch intelligence.state {
+        case .stable: return "checkmark.circle"
+        case .idleSwap: return "pause.circle"
+        case .readback: return "arrow.down.circle"
+        case .activeSwap: return "arrow.left.arrow.right.circle"
+        case .pressure: return "gauge.with.dots.needle.67percent"
+        case .critical: return "exclamationmark.octagon"
         }
+    }
 
+    private var statusColor: Color {
+        switch intelligence.state {
+        case .stable: return .green
+        case .idleSwap: return .secondary
+        case .readback: return .blue
+        case .activeSwap: return .orange
+        case .pressure: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private var pressureColor: Color {
         switch monitor.pressure {
         case .normal: return .green
         case .warning: return .orange
