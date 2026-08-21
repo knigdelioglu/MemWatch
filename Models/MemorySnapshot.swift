@@ -29,8 +29,11 @@ struct MemorySnapshot {
     let swapUsedBytes: UInt64
     let swapFreeBytes: UInt64
 
-    let pageInBytes: UInt64
-    let pageOutBytes: UInt64
+    /// Cumulative bytes moved from swap back into RAM since boot.
+    let swapInBytes: UInt64
+
+    /// Cumulative bytes moved from RAM into swap since boot.
+    let swapOutBytes: UInt64
 
     let pressure: MemoryPressure
 
@@ -62,8 +65,8 @@ extension MemorySnapshot {
         swapTotalBytes: 0,
         swapUsedBytes: 0,
         swapFreeBytes: 0,
-        pageInBytes: 0,
-        pageOutBytes: 0,
+        swapInBytes: 0,
+        swapOutBytes: 0,
         pressure: .normal
     )
 }
