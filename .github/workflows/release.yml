@@ -3,11 +3,15 @@ name: Release Package
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+    paths:
+      - '.github/release-trigger-v0.1.0'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
@@ -30,7 +34,7 @@ jobs:
           ls -lh dist/MemWatch.dmg dist/MemWatch.dmg.sha256
           cat dist/MemWatch.dmg.sha256
 
-      - name: Upload release candidate
+      - name: Upload release candidate artifact
         uses: actions/upload-artifact@v4
         with:
           name: MemWatch-macOS-ad-hoc
@@ -39,3 +43,39 @@ jobs:
             dist/MemWatch.dmg.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v0.1.0"
+          fi
+
+          cat > /tmp/release-notes.md <<'EOF'
+          MemWatch macOS Release Candidate.
+
+          Highlights:
+          - Smart RAM, memory pressure and swap monitoring
+          - Internal/external storage monitoring
+          - Battery-side power and energy-flow visualization
+          - CPU, thermal state and top memory-consuming apps
+          - Menu-bar-only operation with no Dock icon
+          - Universal macOS binary: arm64 + x86_64
+
+          This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/MemWatch.dmg dist/MemWatch.dmg.sha256 --clobber
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "MemWatch $TAG — Release Candidate" \
+              --notes-file /tmp/release-notes.md \
+              --prerelease \
+              dist/MemWatch.dmg \
+              dist/MemWatch.dmg.sha256
+          fi
