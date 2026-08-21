@@ -78,7 +78,9 @@ final class MemoryCollector {
         }
 
         var stats = vm_statistics64()
-        var count = mach_msg_type_number_t(HOST_VM_INFO64_COUNT)
+        var count = mach_msg_type_number_t(
+            MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size
+        )
 
         let result = withUnsafeMutablePointer(to: &stats) { pointer in
             pointer.withMemoryRebound(
