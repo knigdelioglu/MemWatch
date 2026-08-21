@@ -133,6 +133,7 @@ jobs:
       - name: Run background cadence battery-impact guard
         run: |
           xcrun swiftc \
+            -parse-as-library \
             Tests/BackgroundCadenceTests.swift \
             -o /tmp/memwatch-cadence-tests
           /tmp/memwatch-cadence-tests
