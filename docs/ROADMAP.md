@@ -63,14 +63,19 @@
 - [x] Add storage collector smoke validation on a macOS runner
 - [x] Add deterministic storage notification-policy tests to macOS CI
 
-## Phase 5 - Energy Monitoring
+## Phase 5 - Energy Monitoring — Sprint 5 Complete
 
-- [ ] Read battery and power information
-- [ ] Calculate current watt consumption
-- [ ] Detect adapter power input
-- [ ] Detect battery charge/discharge flow
-- [ ] Create animated power flow visualization
-- [ ] Create live energy graph
+- [x] Read battery and power-source information through IOKit
+- [x] Calculate live battery-side watts from electrical current × voltage
+- [x] Show live Mac draw while running on battery
+- [x] Detect AC adapter presence and show adapter rated wattage
+- [x] Detect battery charging, discharging, and idle flow states
+- [x] Avoid treating adapter rated wattage as instantaneous wall draw
+- [x] Keep a 10-minute in-memory power history
+- [x] Create animated Adapter → Mac / Adapter → Battery / Battery → Mac flow visualization
+- [x] Create live power graph with average wattage
+- [x] Add deterministic watt/flow tests to macOS CI
+- [x] Add power collector smoke validation on a macOS runner
 
 ## Phase 6 - Advanced Diagnostics
 
