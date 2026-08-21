@@ -1,6 +1,6 @@
 # MemWatch
 
-MemWatch, macOS menü çubuğunda RAM, memory pressure, swap davranışı, depolama durumu ve enerji akışını akıllı şekilde izleyen hafif bir sistem sağlık uygulamasıdır.
+MemWatch, macOS menü çubuğunda RAM, memory pressure, swap davranışı, depolama durumu, enerji akışı ve sistem sağlığını akıllı şekilde izleyen hafif bir uygulamadır.
 
 ## Amaç
 
@@ -59,6 +59,21 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 
 > Adaptörün 70 W / 96 W gibi nominal değeri anlık tüketim değildir. macOS public API'leri AC'de Mac'in toplam priz tüketimini her modelde güvenilir şekilde sunmadığı için MemWatch bu değeri tahmin ederek göstermez. AC'de şarj varsa bataryaya giden gerçek şarj gücü gösterilir; bataryadayken ise Mac'in bataryadan çektiği güç gösterilir.
 
+### Advanced Diagnostics
+
+- Anlık sistem CPU kullanımı
+- Son 10 dakikalık CPU + RAM geçmişi
+- macOS sistem termal durumu: Nominal / Warm / Hot / Critical
+- Low Power Mode durumu
+- Çalışan uygulamaların resident-memory snapshot'ı
+- En çok RAM kullanan uygulamaların sıralanması
+- Ağır süreç taramasını 30 saniyede bir yenileyerek düşük overhead
+- Login-at-startup kontrolü
+- macOS Login Items onay durumunu gösterme
+- Termal durum ciddi veya kritik olduğunda ana durum özetine yansıtma
+
+> Exact fan RPM için Apple'ın tüm Mac modellerinde desteklenen stabil bir public API'si yoktur. MemWatch bu nedenle sahte veya private-API'ye bağımlı bir RPM değeri üretmez; gerçek public thermal state bilgisini gösterir.
+
 ### Notifications
 
 - Active Swap, Memory Pressure ve Critical memory durumlarında uyarı
@@ -72,22 +87,23 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Platform: macOS 13+
 - Dil: Swift
 - UI: SwiftUI + MenuBarExtra
-- Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit, IOKit / IOPowerSources
+- Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit, IOKit / IOPowerSources, ServiceManagement, libproc
 - Dock davranışı: `LSUIElement=YES` + `.accessory` activation policy
 
 ## Durum
 
-Sprint 1-5 tamamlandı:
+Sprint 1-6 tamamlandı:
 
 1. Core Memory Monitoring
 2. Swap Intelligence
 3. Menu Bar Experience & Smart Notifications
 4. Storage Monitoring
 5. Energy Monitoring
+6. Advanced Diagnostics
 
 Tüm mevcut çekirdek özellikler macOS CI build ve davranış testleriyle doğrulanmaktadır.
 
-Sıradaki ana faz: Advanced Diagnostics.
+Sıradaki ana faz: Release Quality.
 
 ## Lisans
 
