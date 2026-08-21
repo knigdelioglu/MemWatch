@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.1'
+      - '.github/release-trigger-v0.1.2'
 
 permissions:
   contents: write
@@ -51,17 +51,17 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.1"
+            TAG="v0.1.2"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch macOS Release Candidate hotfix.
+          MemWatch macOS Release Candidate UX update.
 
-          Fixes in v0.1.1:
-          - Replaced SwiftUI MenuBarExtra with native NSStatusItem + NSPopover
-          - Fixed the tray panel collapsing into a thin strip
-          - Single click now opens/closes the full MemWatch details panel
-          - Double click (or right click) now shows a Quit MemWatch menu
+          Changes in v0.1.2:
+          - Replaced the long single-page panel with four compact tabs: Genel, Depolama, Enerji, Sistem
+          - Reduced unnecessary vertical scrolling
+          - Clicking anywhere outside the MemWatch popover now closes it automatically
+          - Single-click tray behavior and double-click/right-click Quit behavior are preserved
           - App remains menu-bar-only and does not appear in the Dock
 
           Existing features include smart RAM/swap monitoring, storage monitoring, energy flow, CPU/thermal diagnostics, top memory-consuming apps, notifications, and launch-at-login.
