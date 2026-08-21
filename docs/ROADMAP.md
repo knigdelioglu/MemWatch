@@ -77,15 +77,19 @@
 - [x] Add deterministic watt/flow tests to macOS CI
 - [x] Add power collector smoke validation on a macOS runner
 
-## Phase 6 - Advanced Diagnostics
+## Phase 6 - Advanced Diagnostics — Sprint 6 Complete
 
-- [ ] Process memory snapshot
-- [ ] Identify memory-heavy applications
-- [ ] Timeline view
-- [ ] Thermal monitoring
-- [ ] CPU monitoring
-- [ ] Fan status
-- [ ] Launch-at-login option
+- [x] Capture process resident-memory snapshots
+- [x] Identify and rank memory-heavy running applications
+- [x] Refresh expensive process snapshots every 30 seconds
+- [x] Add 10-minute CPU + RAM timeline
+- [x] Monitor system thermal state through public ProcessInfo API
+- [x] Monitor live system CPU usage from Mach host CPU counters
+- [x] Show Low Power Mode state
+- [x] Treat fan RPM as unavailable rather than fabricating telemetry when no stable public macOS API exists
+- [x] Add launch-at-login control with SMAppService
+- [x] Show login-item approval state
+- [x] Add system diagnostics collector smoke validation to macOS CI
 
 ## Phase 7 - Release Quality
 

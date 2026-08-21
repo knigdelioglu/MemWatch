@@ -27,6 +27,16 @@ struct MenuBarView: View {
                     averageWatts: monitor.averageObservablePowerWatts
                 )
                 Divider()
+                SystemDiagnosticsView(
+                    diagnostics: monitor.diagnostics,
+                    history: monitor.systemHistory,
+                    fanTelemetry: monitor.fanTelemetry,
+                    launchAtLoginState: monitor.launchAtLoginState,
+                    launchAtLoginError: monitor.launchAtLoginError,
+                    onLaunchAtLoginChange: { monitor.setLaunchAtLogin($0) },
+                    onRefreshProcesses: { monitor.refresh(forceDiagnostics: true) }
+                )
+                Divider()
                 notificationSection
                 Divider()
                 footer
@@ -34,7 +44,7 @@ struct MenuBarView: View {
             .padding(16)
         }
         .frame(width: 340)
-        .frame(maxHeight: 720)
+        .frame(maxHeight: 820)
     }
 
     private var header: some View {
@@ -225,7 +235,7 @@ struct MenuBarView: View {
             Spacer()
 
             Button("Refresh") {
-                monitor.refresh(forceStorage: true)
+                monitor.refresh(forceStorage: true, forceDiagnostics: true)
             }
             .buttonStyle(.plain)
         }
@@ -243,6 +253,12 @@ struct MenuBarView: View {
     }
 
     private var headerSummary: String {
+        if monitor.diagnostics.thermalState == .critical {
+            return "System thermal state is critical"
+        }
+        if monitor.diagnostics.thermalState == .serious {
+            return "System is running hot"
+        }
         if let criticalVolume = monitor.storageVolumes.first(where: { $0.health == .critical }) {
             return "\(criticalVolume.name) is critically low on space"
         }
@@ -253,6 +269,9 @@ struct MenuBarView: View {
     }
 
     private var statusSymbol: String {
+        if monitor.diagnostics.thermalState == .critical {
+            return "thermometer.high"
+        }
         if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
             return "externaldrive.badge.exclamationmark"
         }
@@ -279,6 +298,12 @@ struct MenuBarView: View {
     }
 
     private var statusColor: Color {
+        if monitor.diagnostics.thermalState == .critical {
+            return .red
+        }
+        if monitor.diagnostics.thermalState == .serious {
+            return .orange
+        }
         if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
             return .red
         }
