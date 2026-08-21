@@ -5,29 +5,30 @@
 - [x] Repository created
 - [x] Documentation structure created
 - [ ] Swift project initialization
-- [ ] macOS menu bar skeleton
+- [x] macOS menu bar skeleton
 
 ## Phase 1 - Core Memory Monitoring
 
-- [ ] Read physical RAM information
-- [ ] Read used/free memory
-- [ ] Read compressed memory
-- [ ] Read wired memory
-- [ ] Read cached memory
-- [ ] Read memory pressure state
+- [x] Read physical RAM information
+- [x] Read used/free memory
+- [x] Read compressed memory
+- [x] Read wired memory
+- [x] Read cached memory
+- [x] Add MemWatch memory pressure classification
+- [ ] Validate metrics against Activity Monitor on macOS
 
 ## Phase 2 - Swap Intelligence
 
-- [ ] Detect active swap usage
-- [ ] Track swap-in / swap-out changes
-- [ ] Separate idle swap from active memory pressure
+- [x] Detect active swap usage
+- [x] Track page-in / page-out changes
+- [ ] Separate idle swap from active memory pressure with sustained sampling
 - [ ] Create smart warning algorithm
 
 ## Phase 3 - Menu Bar Experience
 
-- [ ] Minimal menu bar icon
-- [ ] Status colors
-- [ ] Detail popup
+- [x] Minimal menu bar icon
+- [x] Status colors
+- [x] Detail popup
 - [ ] Notification system
 
 ## Phase 4 - Storage Monitoring
