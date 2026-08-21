@@ -29,6 +29,9 @@ struct MemorySnapshot {
     let swapUsedBytes: UInt64
     let swapFreeBytes: UInt64
 
+    let pageInBytes: UInt64
+    let pageOutBytes: UInt64
+
     let pressure: MemoryPressure
 
     var usageRatio: Double {
@@ -59,6 +62,8 @@ extension MemorySnapshot {
         swapTotalBytes: 0,
         swapUsedBytes: 0,
         swapFreeBytes: 0,
+        pageInBytes: 0,
+        pageOutBytes: 0,
         pressure: .normal
     )
 }
