@@ -25,12 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     private let monitor: MonitoringService
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cancellables = Set<AnyCancellable>()
     private var pendingSingleClick: DispatchWorkItem?
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
 
     init(monitor: MonitoringService) {
         self.monitor = monitor
@@ -41,6 +43,15 @@ final class StatusBarController: NSObject {
         configurePopover()
         observeMonitor()
         updateStatusButton()
+    }
+
+    deinit {
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+        }
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+        }
     }
 
     private func configureStatusItem() {
@@ -60,10 +71,11 @@ final class StatusBarController: NSObject {
     private func configurePopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 380, height: 720)
+        popover.delegate = self
+        popover.contentSize = NSSize(width: 380, height: 640)
         popover.contentViewController = NSHostingController(
             rootView: MenuBarView(monitor: monitor)
-                .frame(width: 380, height: 720)
+                .frame(width: 380, height: 640)
         )
     }
 
@@ -107,7 +119,7 @@ final class StatusBarController: NSObject {
         if event.type == .rightMouseUp || event.clickCount >= 2 {
             pendingSingleClick?.cancel()
             pendingSingleClick = nil
-            popover.performClose(nil)
+            closePopover()
             showQuitMenu(relativeTo: sender)
             return
         }
@@ -126,7 +138,7 @@ final class StatusBarController: NSObject {
 
     private func togglePopover(relativeTo button: NSStatusBarButton) {
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             monitor.refresh(forceStorage: true, forceDiagnostics: true)
             popover.show(
@@ -134,7 +146,56 @@ final class StatusBarController: NSObject {
                 of: button,
                 preferredEdge: .minY
             )
+            startOutsideClickMonitoring()
         }
+    }
+
+    private func closePopover() {
+        stopOutsideClickMonitoring()
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+    }
+
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+
+            let popoverWindow = self.popover.contentViewController?.view.window
+            let statusWindow = self.statusItem.button?.window
+
+            if event.window !== popoverWindow && event.window !== statusWindow {
+                self.closePopover()
+            }
+            return event
+        }
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.closePopover()
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
+        }
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+            self.globalClickMonitor = nil
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        stopOutsideClickMonitoring()
     }
 
     private func showQuitMenu(relativeTo button: NSStatusBarButton) {

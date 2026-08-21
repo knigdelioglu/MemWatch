@@ -2,6 +2,25 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var monitor: MonitoringService
+    @State private var selectedTab: PanelTab = .overview
+
+    private enum PanelTab: String, CaseIterable, Identifiable {
+        case overview
+        case storage
+        case energy
+        case system
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .overview: return "Genel"
+            case .storage: return "Depolama"
+            case .energy: return "Enerji"
+            case .system: return "Sistem"
+            }
+        }
+    }
 
     private var snapshot: MemorySnapshot {
         monitor.snapshot
@@ -12,21 +31,61 @@ struct MenuBarView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                memorySection
-                Divider()
-                swapSection
-                Divider()
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+            Picker("Bölüm", selection: $selectedTab) {
+                ForEach(PanelTab.allCases) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
+
+            Divider()
+
+            tabContent
+        }
+        .frame(width: 380, height: 640)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .overview:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    memorySection
+                    Divider()
+                    swapSection
+                    Divider()
+                    notificationSection
+                    Divider()
+                    footer
+                }
+                .padding(16)
+            }
+        case .storage:
+            ScrollView {
                 storageSection
-                Divider()
+                    .padding(16)
+            }
+        case .energy:
+            ScrollView {
                 PowerMonitorView(
                     snapshot: monitor.powerSnapshot,
                     history: monitor.powerHistory,
                     averageWatts: monitor.averageObservablePowerWatts
                 )
-                Divider()
+                .padding(16)
+            }
+        case .system:
+            ScrollView {
                 SystemDiagnosticsView(
                     diagnostics: monitor.diagnostics,
                     history: monitor.systemHistory,
@@ -36,15 +95,9 @@ struct MenuBarView: View {
                     onLaunchAtLoginChange: { monitor.setLaunchAtLogin($0) },
                     onRefreshProcesses: { monitor.refresh(forceDiagnostics: true) }
                 )
-                Divider()
-                notificationSection
-                Divider()
-                footer
+                .padding(16)
             }
-            .padding(16)
         }
-        .frame(width: 340)
-        .frame(maxHeight: 820)
     }
 
     private var header: some View {
@@ -128,7 +181,7 @@ struct MenuBarView: View {
     }
 
     private var storageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Storage")
                     .font(.subheadline.weight(.semibold))
@@ -145,6 +198,9 @@ struct MenuBarView: View {
             } else {
                 ForEach(monitor.storageVolumes) { volume in
                     storageVolumeRow(volume)
+                    if volume.id != monitor.storageVolumes.last?.id {
+                        Divider()
+                    }
                 }
             }
         }
