@@ -36,6 +36,15 @@ jobs:
             -o /tmp/memwatch-collector-smoke
           /tmp/memwatch-collector-smoke
 
+      - name: Run swap intelligence tests
+        run: |
+          xcrun swiftc \
+            Models/MemorySnapshot.swift \
+            Services/SwapIntelligenceEngine.swift \
+            Tests/SwapIntelligenceTests.swift \
+            -o /tmp/memwatch-swap-intelligence-tests
+          /tmp/memwatch-swap-intelligence-tests
+
       - name: Print reference system metrics
         run: |
           echo '--- vm_stat ---'

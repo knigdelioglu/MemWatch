@@ -24,14 +24,16 @@
 - [x] Print `vm_stat` and `sysctl vm.swapusage` reference data in CI
 - [x] Document Activity Monitor comparison protocol
 
-## Phase 2 - Swap Intelligence
+## Phase 2 - Swap Intelligence — Sprint 2 Complete
 
 - [x] Detect active swap usage
 - [x] Track swap-in / swap-out changes
-- [ ] Separate idle swap from active memory pressure with sustained sampling
-- [ ] Create smart warning algorithm
-- [ ] Add hysteresis so transient spikes do not cause warning flicker
-- [ ] Store a short in-memory history window
+- [x] Separate idle swap from active memory pressure with sustained sampling
+- [x] Create smart warning algorithm
+- [x] Add hysteresis so transient spikes do not cause warning flicker
+- [x] Store a 60-second in-memory history window
+- [x] Distinguish idle swap, readback, active swap, pressure, and critical states
+- [x] Add deterministic swap-intelligence scenario tests to macOS CI
 
 ## Phase 3 - Menu Bar Experience
 

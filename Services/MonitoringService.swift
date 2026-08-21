@@ -10,6 +10,14 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
     @Published private(set) var isActivelySwapping = false
     @Published private(set) var systemPressure: MemoryPressure?
+    @Published private(set) var intelligence = SwapIntelligenceResult(
+        state: .stable,
+        summary: "Memory activity is stable",
+        recentSwapInBytes: 0,
+        recentSwapOutBytes: 0,
+        activeSamples: 0,
+        sampleCount: 0
+    )
 
     var pressure: MemoryPressure {
         systemPressure ?? snapshot.pressure
@@ -21,6 +29,7 @@ final class MonitoringService: ObservableObject {
 
     private let collector = MemoryCollector()
     private let pressureMonitor = NativeMemoryPressureMonitor()
+    private let swapIntelligence = SwapIntelligenceEngine()
     private var timer: Timer?
 
     private var previousSwapUsedBytes: UInt64?
@@ -70,6 +79,19 @@ final class MonitoringService: ObservableObject {
         previousSwapInBytes = nextSnapshot.swapInBytes
         previousSwapOutBytes = nextSnapshot.swapOutBytes
         snapshot = nextSnapshot
+
+        intelligence = swapIntelligence.ingest(
+            SwapIntelligenceSample(
+                timestamp: nextSnapshot.timestamp,
+                pressure: pressure,
+                totalBytes: nextSnapshot.totalBytes,
+                availableBytes: nextSnapshot.availableBytes,
+                compressedBytes: nextSnapshot.compressedBytes,
+                swapUsedBytes: nextSnapshot.swapUsedBytes,
+                swapInDeltaBytes: swapInDeltaBytes,
+                swapOutDeltaBytes: swapOutDeltaBytes
+            )
+        )
     }
 
     private func startMonitoring() {
