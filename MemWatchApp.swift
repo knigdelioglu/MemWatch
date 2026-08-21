@@ -92,7 +92,9 @@ final class StatusBarController: NSObject {
 
         button.image = image
         button.title = " \(monitor.snapshot.usagePercent)%"
-        button.accessibilityLabel = "MemWatch, memory usage \(monitor.snapshot.usagePercent) percent"
+        button.setAccessibilityLabel(
+            "MemWatch, memory usage \(monitor.snapshot.usagePercent) percent"
+        )
     }
 
     @objc
