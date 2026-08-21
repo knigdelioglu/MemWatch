@@ -17,6 +17,11 @@ let package = Package(
         .executableTarget(
             name: "MemWatch",
             path: ".",
+            exclude: [
+                "README.md",
+                "docs",
+                ".github"
+            ],
             sources: [
                 "MemWatchApp.swift",
                 "Models",
