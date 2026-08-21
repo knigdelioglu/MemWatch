@@ -1,4 +1,5 @@
 import Combine
+import Dispatch
 import Foundation
 
 @MainActor
@@ -8,8 +9,18 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var swapInDeltaBytes: UInt64 = 0
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
     @Published private(set) var isActivelySwapping = false
+    @Published private(set) var systemPressure: MemoryPressure?
+
+    var pressure: MemoryPressure {
+        systemPressure ?? snapshot.pressure
+    }
+
+    var isUsingNativePressure: Bool {
+        systemPressure != nil
+    }
 
     private let collector = MemoryCollector()
+    private let pressureMonitor = NativeMemoryPressureMonitor()
     private var timer: Timer?
 
     private var previousSwapUsedBytes: UInt64?
@@ -17,6 +28,13 @@ final class MonitoringService: ObservableObject {
     private var previousSwapOutBytes: UInt64?
 
     init() {
+        pressureMonitor.onChange = { [weak self] pressure in
+            Task { @MainActor [weak self] in
+                self?.systemPressure = pressure
+            }
+        }
+        pressureMonitor.start()
+
         refresh()
         startMonitoring()
     }
@@ -79,5 +97,47 @@ final class MonitoringService: ObservableObject {
 
         let delta = previous - current
         return delta > UInt64(Int64.max) ? Int64.min + 1 : -Int64(delta)
+    }
+}
+
+private final class NativeMemoryPressureMonitor {
+    var onChange: ((MemoryPressure) -> Void)?
+
+    private let source: any DispatchSourceMemoryPressure
+    private var started = false
+
+    init() {
+        source = DispatchSource.makeMemoryPressureSource(
+            eventMask: .all,
+            queue: DispatchQueue.main
+        )
+    }
+
+    func start() {
+        guard !started else { return }
+        started = true
+
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+
+            let event = self.source.data
+            let pressure: MemoryPressure
+
+            if event.contains(.critical) {
+                pressure = .critical
+            } else if event.contains(.warning) {
+                pressure = .warning
+            } else {
+                pressure = .normal
+            }
+
+            self.onChange?(pressure)
+        }
+
+        source.activate()
+    }
+
+    deinit {
+        source.cancel()
     }
 }

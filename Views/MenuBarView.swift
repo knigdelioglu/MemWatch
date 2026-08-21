@@ -91,9 +91,15 @@ struct MenuBarView: View {
 
     private var footer: some View {
         HStack {
-            Label(snapshot.pressure.displayName, systemImage: "gauge.with.dots.needle.50percent")
-                .font(.caption)
-                .foregroundStyle(statusColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Label(monitor.pressure.displayName, systemImage: "gauge.with.dots.needle.50percent")
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+
+                Text(monitor.isUsingNativePressure ? "macOS pressure event" : "MemWatch estimate")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -124,7 +130,7 @@ struct MenuBarView: View {
             return "Data is being read back from swap"
         }
 
-        switch snapshot.pressure {
+        switch monitor.pressure {
         case .normal: return "Memory pressure is normal"
         case .warning: return "Memory pressure is elevated"
         case .critical: return "Memory pressure is critical"
@@ -136,7 +142,7 @@ struct MenuBarView: View {
             return "arrow.left.arrow.right.circle.fill"
         }
 
-        switch snapshot.pressure {
+        switch monitor.pressure {
         case .normal: return "checkmark.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
         case .critical: return "exclamationmark.octagon.fill"
@@ -148,7 +154,7 @@ struct MenuBarView: View {
             return .red
         }
 
-        switch snapshot.pressure {
+        switch monitor.pressure {
         case .normal: return .green
         case .warning: return .orange
         case .critical: return .red
