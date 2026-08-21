@@ -12,18 +12,23 @@ struct MenuBarView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            memorySection
-            Divider()
-            swapSection
-            Divider()
-            notificationSection
-            Divider()
-            footer
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                memorySection
+                Divider()
+                swapSection
+                Divider()
+                storageSection
+                Divider()
+                notificationSection
+                Divider()
+                footer
+            }
+            .padding(16)
         }
-        .frame(width: 320)
-        .padding(16)
+        .frame(width: 340)
+        .frame(maxHeight: 620)
     }
 
     private var header: some View {
@@ -35,7 +40,7 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("MemWatch")
                     .font(.headline)
-                Text(intelligence.summary)
+                Text(headerSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -106,10 +111,75 @@ struct MenuBarView: View {
         }
     }
 
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Storage")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(monitor.storageVolumes.count) volume\(monitor.storageVolumes.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if monitor.storageVolumes.isEmpty {
+                Text("No local storage volumes detected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(monitor.storageVolumes) { volume in
+                    storageVolumeRow(volume)
+                }
+            }
+        }
+    }
+
+    private func storageVolumeRow(_ volume: StorageVolumeSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: volume.isInternal ? "internaldrive" : "externaldrive")
+                    .foregroundStyle(storageColor(volume.health))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(volume.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(volume.isInternal ? "Internal" : "External")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(volume.usagePercent)%")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                    if volume.health != .normal {
+                        Text(volume.health.displayName)
+                            .font(.caption2)
+                            .foregroundStyle(storageColor(volume.health))
+                    }
+                }
+            }
+
+            ProgressView(value: volume.usageRatio)
+                .tint(storageColor(volume.health))
+
+            HStack {
+                Text("\(fileBytes(volume.usedBytes)) used")
+                Spacer()
+                Text("\(fileBytes(volume.availableBytes)) free of \(fileBytes(volume.totalBytes))")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
     private var notificationSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle(
-                "Memory alerts",
+                "Smart alerts",
                 isOn: Binding(
                     get: { monitor.notificationsEnabled },
                     set: { monitor.setNotificationsEnabled($0) }
@@ -127,7 +197,7 @@ struct MenuBarView: View {
             }
             .font(.caption)
 
-            Text("Alerts are sent only for sustained active swap, elevated pressure, critical pressure, and recovery.")
+            Text("Alerts cover sustained memory pressure and low storage. Persistent storage warnings repeat at most every 6 hours.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -149,7 +219,7 @@ struct MenuBarView: View {
             Spacer()
 
             Button("Refresh") {
-                monitor.refresh()
+                monitor.refresh(forceStorage: true)
             }
             .buttonStyle(.plain)
         }
@@ -166,7 +236,21 @@ struct MenuBarView: View {
         .font(.caption)
     }
 
+    private var headerSummary: String {
+        if let criticalVolume = monitor.storageVolumes.first(where: { $0.health == .critical }) {
+            return "\(criticalVolume.name) is critically low on space"
+        }
+        if let warningVolume = monitor.storageVolumes.first(where: { $0.health == .warning }) {
+            return "\(warningVolume.name) is running low on space"
+        }
+        return intelligence.summary
+    }
+
     private var statusSymbol: String {
+        if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
+            return "externaldrive.badge.exclamationmark"
+        }
+
         switch intelligence.state {
         case .stable: return "checkmark.circle.fill"
         case .idleSwap: return "pause.circle.fill"
@@ -189,6 +273,13 @@ struct MenuBarView: View {
     }
 
     private var statusColor: Color {
+        if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
+            return .red
+        }
+        if monitor.storageVolumes.contains(where: { $0.health == .warning }) && intelligence.state == .stable {
+            return .orange
+        }
+
         switch intelligence.state {
         case .stable: return .green
         case .idleSwap: return .secondary
@@ -201,6 +292,14 @@ struct MenuBarView: View {
 
     private var pressureColor: Color {
         switch monitor.pressure {
+        case .normal: return .green
+        case .warning: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private func storageColor(_ health: StorageHealthState) -> Color {
+        switch health {
         case .normal: return .green
         case .warning: return .orange
         case .critical: return .red
@@ -220,6 +319,10 @@ struct MenuBarView: View {
 
     private func bytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
+    }
+
+    private func fileBytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 
     private func signedBytes(_ value: Int64) -> String {

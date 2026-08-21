@@ -1,8 +1,13 @@
+import AppKit
 import SwiftUI
 
 @main
 struct MemWatchApp: App {
     @StateObject private var monitor = MonitoringService()
+
+    init() {
+        NSApplication.shared.setActivationPolicy(.accessory)
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -18,6 +23,10 @@ struct MemWatchApp: App {
     }
 
     private var menuBarSymbol: String {
+        if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
+            return "externaldrive.badge.exclamationmark"
+        }
+
         switch monitor.intelligence.state {
         case .stable, .idleSwap:
             return "memorychip"

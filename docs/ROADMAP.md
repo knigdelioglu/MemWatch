@@ -48,14 +48,20 @@
 - [x] Persist notification enable/disable preference
 - [x] Show macOS notification authorization state in the menu bar
 - [x] Add deterministic notification-policy tests to macOS CI
+- [x] Run as a menu-bar-only accessory app without a Dock icon
 
-## Phase 4 - Storage Monitoring
+## Phase 4 - Storage Monitoring — Sprint 4 Complete
 
-- [ ] Detect internal storage devices
-- [ ] Show disk capacity and free space
-- [ ] Detect external drives
-- [ ] Show external drive usage
-- [ ] Add low storage warnings
+- [x] Detect internal storage devices
+- [x] Show disk capacity, used space, free space, and usage percentage
+- [x] Detect external local drives automatically
+- [x] Show external drive usage alongside internal storage
+- [x] Refresh mounted storage every 30 seconds
+- [x] Classify normal, low-space, and critical-space states
+- [x] Add low storage warnings with severity escalation
+- [x] Add 6-hour cooldown for persistent storage warnings
+- [x] Add storage collector smoke validation on a macOS runner
+- [x] Add deterministic storage notification-policy tests to macOS CI
 
 ## Phase 5 - Energy Monitoring
 

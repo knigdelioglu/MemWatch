@@ -48,16 +48,36 @@ final class NotificationService {
     }
 
     func deliver(_ payload: MemoryAlertPayload) {
+        deliver(
+            title: payload.title,
+            body: payload.body,
+            identifierPrefix: "memory-\(payload.kind.rawValue)"
+        )
+    }
+
+    func deliver(_ payload: StorageAlertPayload) {
+        deliver(
+            title: payload.title,
+            body: payload.body,
+            identifierPrefix: "storage-\(payload.kind.rawValue)-\(payload.volumeID)"
+        )
+    }
+
+    private func deliver(
+        title: String,
+        body: String,
+        identifierPrefix: String
+    ) {
         center.getNotificationSettings { [weak self] settings in
             guard self?.map(settings.authorizationStatus).canDeliver == true else { return }
 
             let content = UNMutableNotificationContent()
-            content.title = payload.title
-            content.body = payload.body
+            content.title = title
+            content.body = body
             content.sound = .default
 
             let request = UNNotificationRequest(
-                identifier: "memwatch-\(payload.kind.rawValue)-\(UUID().uuidString)",
+                identifier: "memwatch-\(identifierPrefix)-\(UUID().uuidString)",
                 content: content,
                 trigger: nil
             )

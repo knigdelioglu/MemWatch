@@ -1,79 +1,85 @@
 # MemWatch
 
-macOS menü çubuğu uygulaması ile RAM kullanımı, memory pressure, swap davranışı, depolama durumu ve enerji tüketimini akıllı şekilde izleme projesi.
+MemWatch, macOS menü çubuğunda RAM, memory pressure, swap davranışı ve depolama durumunu akıllı şekilde izleyen hafif bir sistem sağlık uygulamasıdır.
 
 ## Amaç
 
-MemWatch, özellikle 16 GB RAM'li Apple Silicon Mac'lerde sistemin ne zaman bellek baskısı yaşadığını, SSD swap kullanımına geçtiğini, depolama durumunu ve enerji davranışını anlaşılır şekilde göstermek için tasarlanır.
+Ham sayaçları göstermek yerine macOS kaynak kullanımını yorumlamak hedeflenir. Özellikle swap için yalnızca `Swap Used > 0` durumuna bakılmaz; aktif swap trafiği, memory pressure ve süreklilik birlikte değerlendirilir.
 
-## Temel Özellikler
+MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu göstermez.
+
+## Mevcut Özellikler
 
 ### Memory Monitoring
 
-- Menü çubuğunda anlık RAM durumu
-- Memory Pressure takibi
-- Swap kullanım algılama
-- Swap-in / Swap-out hareketlerini izleme
-- Akıllı durum renkleri
-- Kritik durumda macOS bildirimi
-- Bellek tüketen uygulamaların snapshot analizi
+- Menü çubuğunda anlık RAM yüzdesi
+- Kullanılan ve kullanılabilir RAM
+- Wired Memory
+- Compressed Memory
+- Cached Memory
+- Native macOS memory-pressure event takibi
+- Swap total / used / free
+- Mach swap-in / swap-out sayaçları
+
+### Swap Intelligence
+
+- Idle Swap ile aktif swap ayrımı
+- Swap readback algılama
+- 60 saniyelik rolling history
+- Transient spike filtreleme ve hysteresis
+- Stable / Idle Swap / Readback / Active Swap / Pressure / Critical durumları
+- Akıllı macOS bildirimleri
 
 ### Storage Monitoring
 
-- Dahili disk kapasitesi
-- Dahili disk doluluk oranı
-- Boş alan takibi
-- Harici disk algılama
-- Harici disk kapasitesi ve doluluk oranı
-- Düşük disk alanı uyarıları
+- Dahili diskleri otomatik algılama
+- Bağlı harici yerel diskleri otomatik algılama
+- Toplam kapasite
+- Kullanılan alan
+- Boş alan
+- Doluluk yüzdesi
+- Normal / Low Space / Critical durumları
+- Disk listesini 30 saniyede bir yenileme
+- Düşük alan bildirimleri
+- Kritik seviyeye geçişte anında yeni uyarı
+- Süregelen depolama uyarıları için 6 saat cooldown
 
-### Energy Monitoring
+### Notifications
+
+- Active Swap, Memory Pressure ve Critical memory durumlarında uyarı
+- Düşük ve kritik depolama uyarıları
+- Bellek uyarılarında escalation ve recovery davranışı
+- Bildirimleri uygulama içinden açma/kapatma
+- macOS bildirim izin durumunu gösterme
+
+## Planlanan Energy Monitoring
 
 - Anlık güç tüketimi (Watt)
-- Hareketli enerji grafiği
-- Adaptör ve batarya güç akışını gösterme
-- Bataryadan çekilen güç
+- Adaptörden gelen güç
+- Sistemin kullandığı güç
 - Bataryaya giden şarj gücü
-- Enerji kullanım geçmişi
+- Bataryadan çekilen güç
+- Animasyonlu enerji akışı
+- Canlı enerji grafiği
 
-## Tasarım İlkesi
+## Teknoloji
 
-Sadece ham değerleri göstermek yerine macOS kaynak kullanım davranışını yorumlamak hedeflenir.
-
-Ölçümler:
-
-- Physical RAM kullanımı
-- Compressed Memory
-- Wired Memory
-- Cached Memory
-- Memory Pressure
-- Swap Used
-- Swap değişim hızı
-- Disk doluluk oranı
-- Anlık güç tüketimi
-- Enerji akış yönü
-
-## Teknoloji Hedefi
-
-- Platform: macOS
+- Platform: macOS 13+
 - Dil: Swift
 - UI: SwiftUI + MenuBarExtra
-- Veri kaynağı: macOS native APIs
-
-## Vizyon
-
-MemWatch yalnızca bir RAM göstergesi değil, Mac'in kaynak sağlık paneli olmayı hedefler.
-
-Gelecek modüller:
-
-- Termal durum
-- CPU kullanımı
-- Fan durumu
-- Pil sağlığı
+- Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit
+- Dock davranışı: `LSUIElement=YES` + `.accessory` activation policy
 
 ## Durum
 
-Proje başlangıç aşamasındadır.
+Sprint 1-4 tamamlandı:
+
+1. Core Memory Monitoring
+2. Swap Intelligence
+3. Menu Bar Experience & Smart Notifications
+4. Storage Monitoring
+
+Sıradaki ana faz: Energy Monitoring.
 
 ## Lisans
 
