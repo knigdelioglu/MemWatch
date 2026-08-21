@@ -10,6 +10,8 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
     @Published private(set) var isActivelySwapping = false
     @Published private(set) var systemPressure: MemoryPressure?
+    @Published private(set) var notificationsEnabled = true
+    @Published private(set) var notificationAuthorization: NotificationAuthorizationState = .unknown
     @Published private(set) var intelligence = SwapIntelligenceResult(
         state: .stable,
         summary: "Memory activity is stable",
@@ -27,9 +29,13 @@ final class MonitoringService: ObservableObject {
         systemPressure != nil
     }
 
+    private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
+
     private let collector = MemoryCollector()
     private let pressureMonitor = NativeMemoryPressureMonitor()
     private let swapIntelligence = SwapIntelligenceEngine()
+    private let notificationPolicy = NotificationPolicyEngine()
+    private let notificationService = NotificationService()
     private var timer: Timer?
 
     private var previousSwapUsedBytes: UInt64?
@@ -37,6 +43,10 @@ final class MonitoringService: ObservableObject {
     private var previousSwapOutBytes: UInt64?
 
     init() {
+        if UserDefaults.standard.object(forKey: Self.notificationsEnabledKey) != nil {
+            notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledKey)
+        }
+
         pressureMonitor.onChange = { [weak self] pressure in
             Task { @MainActor [weak self] in
                 self?.systemPressure = pressure
@@ -44,12 +54,42 @@ final class MonitoringService: ObservableObject {
         }
         pressureMonitor.start()
 
+        notificationService.onAuthorizationChange = { [weak self] state in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let becameDeliverable = !self.notificationAuthorization.canDeliver && state.canDeliver
+                self.notificationAuthorization = state
+
+                if becameDeliverable && self.notificationsEnabled {
+                    self.notificationPolicy.reset()
+                    self.refresh()
+                }
+            }
+        }
+        notificationService.refreshAuthorizationStatus()
+        if notificationsEnabled {
+            notificationService.requestAuthorization()
+        }
+
         refresh()
         startMonitoring()
     }
 
     deinit {
         timer?.invalidate()
+    }
+
+    func setNotificationsEnabled(_ enabled: Bool) {
+        guard notificationsEnabled != enabled else { return }
+
+        notificationsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.notificationsEnabledKey)
+        notificationPolicy.reset()
+
+        if enabled {
+            notificationService.requestAuthorization()
+            refresh()
+        }
     }
 
     func refresh() {
@@ -92,6 +132,24 @@ final class MonitoringService: ObservableObject {
                 swapOutDeltaBytes: swapOutDeltaBytes
             )
         )
+
+        evaluateNotification()
+    }
+
+    private func evaluateNotification() {
+        guard notificationsEnabled else {
+            notificationPolicy.reset()
+            return
+        }
+
+        guard let payload = notificationPolicy.evaluate(
+            state: intelligence.state,
+            summary: intelligence.summary
+        ) else {
+            return
+        }
+
+        notificationService.deliver(payload)
     }
 
     private func startMonitoring() {

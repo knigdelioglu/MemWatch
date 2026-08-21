@@ -45,6 +45,16 @@ jobs:
             -o /tmp/memwatch-swap-intelligence-tests
           /tmp/memwatch-swap-intelligence-tests
 
+      - name: Run notification policy tests
+        run: |
+          xcrun swiftc \
+            Models/MemorySnapshot.swift \
+            Services/SwapIntelligenceEngine.swift \
+            Services/NotificationPolicyEngine.swift \
+            Tests/NotificationPolicyTests.swift \
+            -o /tmp/memwatch-notification-policy-tests
+          /tmp/memwatch-notification-policy-tests
+
       - name: Print reference system metrics
         run: |
           echo '--- vm_stat ---'

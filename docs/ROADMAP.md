@@ -35,12 +35,19 @@
 - [x] Distinguish idle swap, readback, active swap, pressure, and critical states
 - [x] Add deterministic swap-intelligence scenario tests to macOS CI
 
-## Phase 3 - Menu Bar Experience
+## Phase 3 - Menu Bar Experience — Sprint 3 Complete
 
 - [x] Minimal menu bar icon
 - [x] Status colors
 - [x] Detail popup
-- [ ] Notification system
+- [x] Smart macOS notification system
+- [x] Alert only for sustained active swap, memory pressure, and critical states
+- [x] Notify immediately when severity escalates
+- [x] Add 15-minute repeat cooldown for persistent states
+- [x] Send one recovery notification after sustained pressure clears
+- [x] Persist notification enable/disable preference
+- [x] Show macOS notification authorization state in the menu bar
+- [x] Add deterministic notification-policy tests to macOS CI
 
 ## Phase 4 - Storage Monitoring
 
