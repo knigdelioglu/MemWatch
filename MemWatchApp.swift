@@ -18,14 +18,14 @@ struct MemWatchApp: App {
     }
 
     private var menuBarSymbol: String {
-        if monitor.isActivelySwapping {
-            return "arrow.left.arrow.right.circle.fill"
-        }
-
-        switch monitor.pressure {
-        case .normal:
+        switch monitor.intelligence.state {
+        case .stable, .idleSwap:
             return "memorychip"
-        case .warning:
+        case .readback:
+            return "arrow.down.circle"
+        case .activeSwap:
+            return "arrow.left.arrow.right.circle.fill"
+        case .pressure:
             return "exclamationmark.triangle.fill"
         case .critical:
             return "exclamationmark.octagon.fill"
