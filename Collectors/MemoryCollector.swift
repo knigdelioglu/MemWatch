@@ -14,6 +14,8 @@ final class MemoryCollector {
         let purgeableBytes = UInt64(vm.purgeable_count) * pageSize
         let wiredBytes = UInt64(vm.wire_count) * pageSize
         let compressedBytes = UInt64(vm.compressor_page_count) * pageSize
+        let pageInBytes = UInt64(vm.pageins) * pageSize
+        let pageOutBytes = UInt64(vm.pageouts) * pageSize
 
         let cachedBytes = inactiveBytes + speculativeBytes + purgeableBytes
         let availableBytes = min(totalBytes, freeBytes + cachedBytes)
@@ -38,6 +40,8 @@ final class MemoryCollector {
             swapTotalBytes: swap.total,
             swapUsedBytes: swap.used,
             swapFreeBytes: swap.free,
+            pageInBytes: pageInBytes,
+            pageOutBytes: pageOutBytes,
             pressure: pressure
         )
     }
@@ -82,8 +86,8 @@ final class MemoryCollector {
         )
     }
 
-    /// This is a MemWatch health classification, not Apple's private
-    /// Activity Monitor memory-pressure calculation.
+    /// MemWatch health classification. This intentionally does not claim
+    /// to reproduce Apple's private Activity Monitor pressure algorithm.
     private func classifyPressure(
         totalBytes: UInt64,
         availableBytes: UInt64,
