@@ -18,6 +18,8 @@ struct MenuBarView: View {
             Divider()
             swapSection
             Divider()
+            notificationSection
+            Divider()
             footer
         }
         .frame(width: 320)
@@ -104,6 +106,34 @@ struct MenuBarView: View {
         }
     }
 
+    private var notificationSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(
+                "Memory alerts",
+                isOn: Binding(
+                    get: { monitor.notificationsEnabled },
+                    set: { monitor.setNotificationsEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .font(.subheadline.weight(.semibold))
+
+            HStack {
+                Text("System permission")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(monitor.notificationAuthorization.displayName)
+                    .foregroundStyle(notificationPermissionColor)
+            }
+            .font(.caption)
+
+            Text("Alerts are sent only for sustained active swap, elevated pressure, critical pressure, and recovery.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var footer: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -174,6 +204,17 @@ struct MenuBarView: View {
         case .normal: return .green
         case .warning: return .orange
         case .critical: return .red
+        }
+    }
+
+    private var notificationPermissionColor: Color {
+        switch monitor.notificationAuthorization {
+        case .authorized, .provisional, .ephemeral:
+            return .green
+        case .denied:
+            return .red
+        case .notDetermined, .unknown:
+            return .secondary
         }
     }
 
