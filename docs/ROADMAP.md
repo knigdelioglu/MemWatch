@@ -4,25 +4,34 @@
 
 - [x] Repository created
 - [x] Documentation structure created
-- [ ] Swift project initialization
+- [x] Native Xcode project initialization
 - [x] macOS menu bar skeleton
+- [x] Shared Xcode scheme
+- [x] macOS CI build gate
 
-## Phase 1 - Core Memory Monitoring
+## Phase 1 - Core Memory Monitoring — Sprint 1 Complete
 
 - [x] Read physical RAM information
 - [x] Read used/free memory
 - [x] Read compressed memory
 - [x] Read wired memory
 - [x] Read cached memory
-- [x] Add MemWatch memory pressure classification
-- [ ] Validate metrics against Activity Monitor on macOS
+- [x] Read swap total/used/free
+- [x] Read Mach swap-in / swap-out counters
+- [x] Add MemWatch memory pressure fallback classification
+- [x] Observe native macOS memory-pressure events through public DispatchSource API
+- [x] Add collector smoke validation on a macOS runner
+- [x] Print `vm_stat` and `sysctl vm.swapusage` reference data in CI
+- [x] Document Activity Monitor comparison protocol
 
 ## Phase 2 - Swap Intelligence
 
 - [x] Detect active swap usage
-- [x] Track page-in / page-out changes
+- [x] Track swap-in / swap-out changes
 - [ ] Separate idle swap from active memory pressure with sustained sampling
 - [ ] Create smart warning algorithm
+- [ ] Add hysteresis so transient spikes do not cause warning flicker
+- [ ] Store a short in-memory history window
 
 ## Phase 3 - Menu Bar Experience
 
