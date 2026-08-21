@@ -11,7 +11,7 @@ struct LaunchAtLoginService {
         case .notRegistered:
             return .disabled
         case .notFound:
-            return .unavailable
+            return .needsSetup
         @unknown default:
             return .unavailable
         }
@@ -24,10 +24,16 @@ struct LaunchAtLoginService {
             if service.status != .enabled {
                 try service.register()
             }
-        } else {
-            if service.status != .notRegistered {
-                try service.unregister()
-            }
+            return
+        }
+
+        switch service.status {
+        case .enabled, .requiresApproval:
+            try service.unregister()
+        case .notRegistered, .notFound:
+            break
+        @unknown default:
+            break
         }
     }
 }
