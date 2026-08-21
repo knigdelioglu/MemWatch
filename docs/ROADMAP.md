@@ -91,9 +91,25 @@
 - [x] Show login-item approval state
 - [x] Add system diagnostics collector smoke validation to macOS CI
 
-## Phase 7 - Release Quality
+## Phase 7 - Release Quality — Sprint 7 Release Candidate Complete
 
-- [ ] Performance tests
-- [ ] Battery impact tests
-- [ ] macOS packaging
-- [ ] Release build
+- [x] Add collector performance regression budgets
+- [x] Add background polling / battery-impact cadence guard
+- [x] Keep power and system history buffers bounded
+- [x] Document repeatable physical MacBook battery A/B test protocol
+- [x] Build universal Release binary for `arm64` + `x86_64`
+- [x] Verify ad-hoc code signature in CI
+- [x] Create compressed macOS DMG
+- [x] Verify and mount-test the DMG in CI
+- [x] Generate SHA-256 checksum
+- [x] Upload verified DMG as a CI artifact
+- [x] Add manual/tag Release Package workflow
+
+### Public Distribution Gates
+
+These require a real target MacBook and/or Apple distribution credentials and are intentionally not faked by CI:
+
+- [ ] Run physical MacBook battery A/B validation and record results
+- [ ] Developer ID Application signing
+- [ ] Apple notarization with `notarytool`
+- [ ] Staple notarization ticket and publish first public release
