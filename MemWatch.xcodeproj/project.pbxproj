@@ -21,6 +21,10 @@
 		A10000000000000000000012 /* PowerSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* PowerSnapshot.swift */; };
 		A10000000000000000000013 /* PowerCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* PowerCollector.swift */; };
 		A10000000000000000000014 /* PowerMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* PowerMonitorView.swift */; };
+		A10000000000000000000015 /* SystemDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* SystemDiagnosticsSnapshot.swift */; };
+		A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SystemDiagnosticsCollector.swift */; };
+		A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* LaunchAtLoginService.swift */; };
+		A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SystemDiagnosticsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +43,10 @@
 		A20000000000000000000013 /* PowerSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSnapshot.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* PowerCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerCollector.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* PowerMonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerMonitorView.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* SystemDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* SystemDiagnosticsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsCollector.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* SystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +86,7 @@
 				A20000000000000000000002 /* MemorySnapshot.swift */,
 				A20000000000000000000010 /* StorageSnapshot.swift */,
 				A20000000000000000000013 /* PowerSnapshot.swift */,
+				A20000000000000000000016 /* SystemDiagnosticsSnapshot.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -88,6 +97,7 @@
 				A20000000000000000000003 /* MemoryCollector.swift */,
 				A20000000000000000000011 /* StorageCollector.swift */,
 				A20000000000000000000014 /* PowerCollector.swift */,
+				A20000000000000000000017 /* SystemDiagnosticsCollector.swift */,
 			);
 			path = Collectors;
 			sourceTree = "<group>";
@@ -100,6 +110,7 @@
 				A20000000000000000000008 /* NotificationPolicyEngine.swift */,
 				A20000000000000000000009 /* NotificationService.swift */,
 				A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */,
+				A20000000000000000000018 /* LaunchAtLoginService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -109,6 +120,7 @@
 			children = (
 				A20000000000000000000005 /* MenuBarView.swift */,
 				A20000000000000000000015 /* PowerMonitorView.swift */,
+				A20000000000000000000019 /* SystemDiagnosticsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -195,6 +207,10 @@
 				A10000000000000000000012 /* PowerSnapshot.swift in Sources */,
 				A10000000000000000000013 /* PowerCollector.swift in Sources */,
 				A10000000000000000000014 /* PowerMonitorView.swift in Sources */,
+				A10000000000000000000015 /* SystemDiagnosticsSnapshot.swift in Sources */,
+				A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */,
+				A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */,
+				A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
