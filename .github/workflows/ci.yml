@@ -1,0 +1,44 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build MemWatch
+        run: |
+          xcodebuild \
+            -project MemWatch.xcodeproj \
+            -scheme MemWatch \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run collector smoke test
+        run: |
+          xcrun swiftc \
+            Models/MemorySnapshot.swift \
+            Collectors/MemoryCollector.swift \
+            Tests/MemoryCollectorSmoke.swift \
+            -o /tmp/memwatch-collector-smoke
+          /tmp/memwatch-collector-smoke
+
+      - name: Print reference system metrics
+        run: |
+          echo '--- vm_stat ---'
+          vm_stat
+          echo '--- swapusage ---'
+          sysctl vm.swapusage
