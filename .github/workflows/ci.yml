@@ -54,6 +54,15 @@ jobs:
             -o /tmp/memwatch-storage-collector-smoke
           /tmp/memwatch-storage-collector-smoke
 
+      - name: Run storage disk-image filtering tests
+        run: |
+          xcrun swiftc \
+            Models/StorageSnapshot.swift \
+            Collectors/StorageCollector.swift \
+            Tests/StorageVolumeFilteringTests.swift \
+            -o /tmp/memwatch-storage-filter-tests
+          /tmp/memwatch-storage-filter-tests
+
       - name: Run power model tests
         run: |
           xcrun swiftc \
@@ -82,10 +91,14 @@ jobs:
             -o /tmp/memwatch-system-diagnostics-smoke
           /tmp/memwatch-system-diagnostics-smoke
 
-      - name: Verify launch-at-login integration
+      - name: Verify settings integrations
         run: |
           grep -q 'SMAppService.mainApp' Services/LaunchAtLoginService.swift
-          grep -q 'Launch MemWatch at login' Views/SystemDiagnosticsView.swift
+          grep -q 'case .notFound:' Services/LaunchAtLoginService.swift
+          grep -q 'return .needsSetup' Services/LaunchAtLoginService.swift
+          grep -q 'Open Login Items Settings' Views/SystemDiagnosticsView.swift
+          grep -q 'Open Notification Settings' Views/MenuBarView.swift
+          ! grep -q 'Fan telemetry' Views/SystemDiagnosticsView.swift
 
       - name: Run swap intelligence tests
         run: |
@@ -163,6 +176,8 @@ jobs:
           sysctl vm.swapusage
           echo '--- mounted volumes ---'
           df -h
+          echo '--- disk images ---'
+          hdiutil info || true
           echo '--- power source ---'
           pmset -g batt || true
           echo '--- power adapter / battery registry ---'
