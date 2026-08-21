@@ -26,12 +26,21 @@ final class StorageCollector {
             return []
         }
 
+        let diskImageMountPaths = Self.mountedDiskImagePaths()
         var seen = Set<String>()
         var volumes: [StorageVolumeSnapshot] = []
 
         for url in urls {
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
             guard values.volumeIsLocal != false else { continue }
+
+            let mountPath = url.standardizedFileURL.path
+            guard Self.shouldIncludeVolume(
+                mountPath: mountPath,
+                diskImageMountPaths: diskImageMountPaths
+            ) else {
+                continue
+            }
 
             let totalBytes = positiveUInt64(values.volumeTotalCapacity)
             guard totalBytes > 0 else { continue }
@@ -43,7 +52,6 @@ final class StorageCollector {
                 totalBytes
             )
 
-            let mountPath = url.path
             let identifier = values.volumeUUIDString ?? mountPath
             guard seen.insert(identifier).inserted else { continue }
 
@@ -70,6 +78,53 @@ final class StorageCollector {
             }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    static func shouldIncludeVolume(
+        mountPath: String,
+        diskImageMountPaths: Set<String>
+    ) -> Bool {
+        let standardized = URL(fileURLWithPath: mountPath).standardizedFileURL.path
+        return !diskImageMountPaths.contains(standardized)
+    }
+
+    private static func mountedDiskImagePaths() -> Set<String> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        process.arguments = ["info", "-plist"]
+
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return []
+        }
+
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0,
+              let plist = try? PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+              ) as? [String: Any],
+              let images = plist["images"] as? [[String: Any]] else {
+            return []
+        }
+
+        var paths = Set<String>()
+        for image in images {
+            guard let entities = image["system-entities"] as? [[String: Any]] else { continue }
+            for entity in entities {
+                guard let mountPoint = entity["mount-point"] as? String else { continue }
+                paths.insert(URL(fileURLWithPath: mountPoint).standardizedFileURL.path)
+            }
+        }
+        return paths
     }
 
     private func positiveUInt64(_ value: Int?) -> UInt64 {

@@ -3,10 +3,10 @@ import SwiftUI
 struct SystemDiagnosticsView: View {
     let diagnostics: SystemDiagnosticsSnapshot
     let history: [SystemHistoryPoint]
-    let fanTelemetry: FanTelemetryState
     let launchAtLoginState: LaunchAtLoginState
     let launchAtLoginError: String?
     let onLaunchAtLoginChange: (Bool) -> Void
+    let onOpenLoginItemsSettings: () -> Void
     let onRefreshProcesses: () -> Void
 
     var body: some View {
@@ -68,8 +68,12 @@ struct SystemDiagnosticsView: View {
                     .font(.caption2)
                 }
 
+                Text("Includes helper and child processes for each app.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
                 if diagnostics.topProcesses.isEmpty {
-                    Text("No process memory snapshot available yet")
+                    Text("No application memory snapshot available yet")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
@@ -93,25 +97,6 @@ struct SystemDiagnosticsView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label("Fan telemetry", systemImage: "fan")
-                        .font(.caption.weight(.semibold))
-                    Spacer()
-                    Text("Public API unavailable")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("MemWatch does not invent fan RPM. Apple does not provide a stable public API for exact fan speed across Macs.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel(fanTelemetry.displayName)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 5) {
                 Toggle(
                     "Launch MemWatch at login",
                     isOn: Binding(
@@ -127,13 +112,36 @@ struct SystemDiagnosticsView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text(launchAtLoginState.displayName)
+                        .foregroundStyle(loginItemColor)
                 }
                 .font(.caption2)
 
-                if launchAtLoginState == .requiresApproval {
-                    Text("macOS requires approval in System Settings → General → Login Items.")
+                switch launchAtLoginState {
+                case .requiresApproval:
+                    Text("macOS requires approval before MemWatch can launch automatically.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                case .needsSetup:
+                    Text("The login item is not registered yet. Turn the switch on to register it.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                case .unavailable:
+                    Text("macOS could not report the login item state. You can still open Login Items and verify it manually.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                case .enabled, .disabled:
+                    EmptyView()
+                }
+
+                if launchAtLoginState == .requiresApproval ||
+                    launchAtLoginState == .needsSetup ||
+                    launchAtLoginState == .unavailable ||
+                    launchAtLoginError != nil {
+                    Button("Open Login Items Settings") {
+                        onOpenLoginItemsSettings()
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption2)
                 }
 
                 if let launchAtLoginError {
@@ -172,6 +180,15 @@ struct SystemDiagnosticsView: View {
         case .fair: return .yellow
         case .serious: return .orange
         case .critical: return .red
+        }
+    }
+
+    private var loginItemColor: Color {
+        switch launchAtLoginState {
+        case .enabled: return .green
+        case .requiresApproval, .needsSetup: return .orange
+        case .disabled: return .secondary
+        case .unavailable: return .red
         }
     }
 

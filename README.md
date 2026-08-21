@@ -33,7 +33,8 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 ### Storage Monitoring
 
 - Dahili diskleri otomatik algılama
-- Bağlı harici yerel diskleri otomatik algılama
+- Bağlı fiziksel harici yerel diskleri otomatik algılama
+- Mounted DMG / disk image volume'lerini depolama listesinden çıkarma
 - Toplam kapasite
 - Kullanılan alan
 - Boş alan
@@ -66,13 +67,13 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - macOS sistem termal durumu: Nominal / Warm / Hot / Critical
 - Low Power Mode durumu
 - Çalışan uygulamaların resident-memory snapshot'ı
+- Uygulama RAM toplamına helper/child process'leri dahil etme
 - En çok RAM kullanan uygulamaların sıralanması
 - Ağır süreç taramasını 30 saniyede bir yenileyerek düşük overhead
 - Login-at-startup kontrolü
-- macOS Login Items onay durumunu gösterme
+- macOS Login Items durumunu ve onay ihtiyacını gösterme
+- Login Items ayarlarına doğrudan geçiş
 - Termal durum ciddi veya kritik olduğunda ana durum özetine yansıtma
-
-> Exact fan RPM için Apple'ın tüm Mac modellerinde desteklenen stabil bir public API'si yoktur. MemWatch bu nedenle sahte veya private-API'ye bağımlı bir RPM değeri üretmez; gerçek public thermal state bilgisini gösterir.
 
 ### Notifications
 
@@ -81,6 +82,7 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Bellek uyarılarında escalation ve recovery davranışı
 - Bildirimleri uygulama içinden açma/kapatma
 - macOS bildirim izin durumunu gösterme
+- Bildirim engelliyse System Settings bildirim sayfasına doğrudan geçiş
 
 ## Release Quality
 
@@ -103,7 +105,7 @@ Ayrıntılı kalite ve fiziksel MacBook batarya A/B test protokolü `docs/RELEAS
 
 - Platform: macOS 13+
 - Dil: Swift
-- UI: SwiftUI + MenuBarExtra
+- UI: SwiftUI + native AppKit status-item/popover shell
 - Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit, IOKit / IOPowerSources, ServiceManagement, libproc
 - Dock davranışı: `LSUIElement=YES` + `.accessory` activation policy
 
