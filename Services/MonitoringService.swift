@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Dispatch
 import Foundation
@@ -44,10 +45,6 @@ final class MonitoringService: ObservableObject {
         guard !powerHistory.isEmpty else { return nil }
         let sum = powerHistory.reduce(0) { $0 + $1.watts }
         return sum / Double(powerHistory.count)
-    }
-
-    var fanTelemetry: FanTelemetryState {
-        .unavailableViaPublicAPI
     }
 
     private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
@@ -138,6 +135,18 @@ final class MonitoringService: ObservableObject {
             launchAtLoginState = launchAtLoginService.currentState()
             launchAtLoginError = error.localizedDescription
         }
+    }
+
+    func openNotificationSettings() {
+        openSystemSettings(
+            deepLink: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        )
+    }
+
+    func openLoginItemsSettings() {
+        openSystemSettings(
+            deepLink: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
+        )
     }
 
     func refresh(forceStorage: Bool = false, forceDiagnostics: Bool = false) {
@@ -310,6 +319,16 @@ final class MonitoringService: ObservableObject {
         if let timer {
             RunLoop.main.add(timer, forMode: .common)
         }
+    }
+
+    private func openSystemSettings(deepLink: String) {
+        if let url = URL(string: deepLink), NSWorkspace.shared.open(url) {
+            return
+        }
+
+        NSWorkspace.shared.open(
+            URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        )
     }
 
     private func monotonicDelta(current: UInt64, previous: UInt64) -> UInt64 {
