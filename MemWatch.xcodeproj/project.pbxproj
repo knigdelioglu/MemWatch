@@ -13,6 +13,8 @@
 		A10000000000000000000004 /* MonitoringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* MonitoringService.swift */; };
 		A10000000000000000000005 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* MenuBarView.swift */; };
 		A10000000000000000000006 /* SwapIntelligenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SwapIntelligenceEngine.swift */; };
+		A10000000000000000000007 /* NotificationPolicyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* NotificationPolicyEngine.swift */; };
+		A10000000000000000000008 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* NotificationService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +25,8 @@
 		A20000000000000000000005 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* MemWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MemWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000007 /* SwapIntelligenceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwapIntelligenceEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000008 /* NotificationPolicyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPolicyEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +81,8 @@
 			children = (
 				A20000000000000000000004 /* MonitoringService.swift */,
 				A20000000000000000000007 /* SwapIntelligenceEngine.swift */,
+				A20000000000000000000008 /* NotificationPolicyEngine.swift */,
+				A20000000000000000000009 /* NotificationService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -163,6 +169,8 @@
 				A10000000000000000000004 /* MonitoringService.swift in Sources */,
 				A10000000000000000000005 /* MenuBarView.swift in Sources */,
 				A10000000000000000000006 /* SwapIntelligenceEngine.swift in Sources */,
+				A10000000000000000000007 /* NotificationPolicyEngine.swift in Sources */,
+				A10000000000000000000008 /* NotificationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
