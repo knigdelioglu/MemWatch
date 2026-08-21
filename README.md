@@ -1,12 +1,14 @@
 # MemWatch
 
-macOS menü çubuğu uygulaması ile RAM kullanımı, memory pressure ve swap davranışını akıllı şekilde izleme projesi.
+macOS menü çubuğu uygulaması ile RAM kullanımı, memory pressure, swap davranışı, depolama durumu ve enerji tüketimini akıllı şekilde izleme projesi.
 
 ## Amaç
 
-MemWatch, özellikle 16 GB RAM'li Apple Silicon Mac'lerde sistemin ne zaman bellek baskısı yaşadığını ve SSD swap kullanımına geçtiğini anlaşılır şekilde göstermek için tasarlanır.
+MemWatch, özellikle 16 GB RAM'li Apple Silicon Mac'lerde sistemin ne zaman bellek baskısı yaşadığını, SSD swap kullanımına geçtiğini, depolama durumunu ve enerji davranışını anlaşılır şekilde göstermek için tasarlanır.
 
 ## Temel Özellikler
+
+### Memory Monitoring
 
 - Menü çubuğunda anlık RAM durumu
 - Memory Pressure takibi
@@ -16,9 +18,27 @@ MemWatch, özellikle 16 GB RAM'li Apple Silicon Mac'lerde sistemin ne zaman bell
 - Kritik durumda macOS bildirimi
 - Bellek tüketen uygulamaların snapshot analizi
 
+### Storage Monitoring
+
+- Dahili disk kapasitesi
+- Dahili disk doluluk oranı
+- Boş alan takibi
+- Harici disk algılama
+- Harici disk kapasitesi ve doluluk oranı
+- Düşük disk alanı uyarıları
+
+### Energy Monitoring
+
+- Anlık güç tüketimi (Watt)
+- Hareketli enerji grafiği
+- Adaptör ve batarya güç akışını gösterme
+- Bataryadan çekilen güç
+- Bataryaya giden şarj gücü
+- Enerji kullanım geçmişi
+
 ## Tasarım İlkesi
 
-Sadece "kaç GB swap var" bilgisini göstermek yerine macOS bellek davranışını yorumlamak hedeflenir.
+Sadece ham değerleri göstermek yerine macOS kaynak kullanım davranışını yorumlamak hedeflenir.
 
 Ölçümler:
 
@@ -29,13 +49,27 @@ Sadece "kaç GB swap var" bilgisini göstermek yerine macOS bellek davranışın
 - Memory Pressure
 - Swap Used
 - Swap değişim hızı
+- Disk doluluk oranı
+- Anlık güç tüketimi
+- Enerji akış yönü
 
 ## Teknoloji Hedefi
 
 - Platform: macOS
 - Dil: Swift
 - UI: SwiftUI + MenuBarExtra
-- Veri kaynağı: macOS native memory APIs
+- Veri kaynağı: macOS native APIs
+
+## Vizyon
+
+MemWatch yalnızca bir RAM göstergesi değil, Mac'in kaynak sağlık paneli olmayı hedefler.
+
+Gelecek modüller:
+
+- Termal durum
+- CPU kullanımı
+- Fan durumu
+- Pil sağlığı
 
 ## Durum
 
