@@ -22,7 +22,7 @@ struct MemWatchApp: App {
             return "arrow.left.arrow.right.circle.fill"
         }
 
-        switch monitor.snapshot.pressure {
+        switch monitor.pressure {
         case .normal:
             return "memorychip"
         case .warning:
