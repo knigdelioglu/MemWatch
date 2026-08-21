@@ -60,7 +60,7 @@ struct MenuBarView: View {
     private var swapSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Swap")
+                Text("Swap & Paging")
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
@@ -72,11 +72,19 @@ struct MenuBarView: View {
                 }
             }
 
-            metricRow("Used", value: bytes(snapshot.swapUsedBytes))
-            metricRow("Total", value: bytes(snapshot.swapTotalBytes))
+            metricRow("Swap used", value: bytes(snapshot.swapUsedBytes))
+            metricRow("Swap total", value: bytes(snapshot.swapTotalBytes))
 
             if monitor.swapDeltaBytes != 0 {
-                metricRow("Last 5 sec", value: signedBytes(monitor.swapDeltaBytes))
+                metricRow("Swap Δ / 5 sec", value: signedBytes(monitor.swapDeltaBytes))
+            }
+
+            if monitor.pageInDeltaBytes > 0 {
+                metricRow("Page-in / 5 sec", value: bytes(monitor.pageInDeltaBytes))
+            }
+
+            if monitor.pageOutDeltaBytes > 0 {
+                metricRow("Page-out / 5 sec", value: bytes(monitor.pageOutDeltaBytes))
             }
         }
     }
@@ -109,7 +117,7 @@ struct MenuBarView: View {
 
     private var statusText: String {
         if monitor.isActivelySwapping {
-            return "Swap usage is increasing"
+            return "Active memory paging detected"
         }
 
         switch snapshot.pressure {
