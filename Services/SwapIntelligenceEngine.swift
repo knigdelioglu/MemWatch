@@ -109,19 +109,17 @@ final class SwapIntelligenceEngine {
 
     private func classifyCurrentWindow() -> SwapHealthState {
         guard let latest = history.last else { return .stable }
-        let metrics = windowMetrics()
+
         let availableRatio = ratio(latest.availableBytes, latest.totalBytes)
         let compressedRatio = ratio(latest.compressedBytes, latest.totalBytes)
+        let recentWindow = Array(history.suffix(6))
+        let recentSwapOut = recentWindow.reduce(UInt64(0)) {
+            saturatingAdd($0, $1.swapOutDeltaBytes)
+        }
 
         if latest.pressure == .critical {
             return .critical
         }
-
-        let recentWindow = Array(history.suffix(6))
-        let recentSwapOut = recentWindow.reduce(UInt64(0)) { saturatingAdd($0, $1.swapOutDeltaBytes) }
-        let recentActiveSamples = recentWindow.filter {
-            $0.swapOutDeltaBytes >= configuration.activityThresholdBytes
-        }.count
 
         if recentSwapOut >= configuration.criticalSwapOutBytes && availableRatio < 0.10 {
             return .critical
@@ -131,18 +129,20 @@ final class SwapIntelligenceEngine {
             return .pressure
         }
 
-        if recentActiveSamples >= 2 ||
-            (recentSwapOut >= configuration.heavySwapOutBytes && availableRatio < 0.18) ||
-            (recentSwapOut > 0 && compressedRatio > 0.30) {
+        let isWritingSwap = latest.swapOutDeltaBytes >= configuration.activityThresholdBytes
+        let heavyRecentSwap = recentSwapOut >= configuration.heavySwapOutBytes && availableRatio < 0.18
+        let compressionBackedSwap = recentSwapOut > 0 && compressedRatio > 0.30
+
+        if isWritingSwap || heavyRecentSwap || compressionBackedSwap {
             return .activeSwap
         }
 
-        if latest.swapInDeltaBytes >= configuration.activityThresholdBytes &&
-            latest.swapOutDeltaBytes < configuration.activityThresholdBytes {
+        let isReadingSwap = latest.swapInDeltaBytes >= configuration.activityThresholdBytes
+        if isReadingSwap {
             return .readback
         }
 
-        if latest.swapUsedBytes > 0 && metrics.activeSamples == 0 {
+        if latest.swapUsedBytes > 0 {
             return .idleSwap
         }
 
@@ -164,6 +164,7 @@ final class SwapIntelligenceEngine {
             guard recoveryCount >= configuration.recoverySamples else {
                 return current
             }
+
             recoveryCount = 0
             pendingState = nil
             pendingCount = 0
@@ -173,35 +174,40 @@ final class SwapIntelligenceEngine {
         recoveryCount = 0
 
         if candidate == .critical && current != .critical {
-            if pendingState == candidate {
-                pendingCount += 1
-            } else {
-                pendingState = candidate
-                pendingCount = 1
-            }
-
-            if pendingCount >= configuration.criticalEnterSamples {
-                pendingState = nil
-                pendingCount = 0
-                return candidate
-            }
-            return current
+            return enterAfterConsecutiveSamples(
+                candidate,
+                required: configuration.criticalEnterSamples,
+                fallback: current
+            )
         }
 
         if severity(candidate) >= severity(.activeSwap) {
-            if pendingState == candidate {
-                pendingCount += 1
-            } else {
-                pendingState = candidate
-                pendingCount = 1
-            }
+            return enterAfterConsecutiveSamples(
+                candidate,
+                required: configuration.warningEnterSamples,
+                fallback: current
+            )
+        }
 
-            if pendingCount >= configuration.warningEnterSamples {
-                pendingState = nil
-                pendingCount = 0
-                return candidate
-            }
-            return current
+        pendingState = nil
+        pendingCount = 0
+        return candidate
+    }
+
+    private func enterAfterConsecutiveSamples(
+        _ candidate: SwapHealthState,
+        required: Int,
+        fallback: SwapHealthState
+    ) -> SwapHealthState {
+        if pendingState == candidate {
+            pendingCount += 1
+        } else {
+            pendingState = candidate
+            pendingCount = 1
+        }
+
+        guard pendingCount >= max(required, 1) else {
+            return fallback
         }
 
         pendingState = nil
@@ -231,7 +237,7 @@ final class SwapIntelligenceEngine {
         case .stable:
             return "Memory activity is stable"
         case .idleSwap:
-            return "Swap contains data, but there is no sustained disk activity"
+            return "Swap contains data, but there is no current disk pressure"
         case .readback:
             return "Previously swapped data is being read back into memory"
         case .activeSwap:
