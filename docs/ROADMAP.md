@@ -30,14 +30,34 @@
 - [ ] Detail popup
 - [ ] Notification system
 
-## Phase 4 - Advanced Diagnostics
+## Phase 4 - Storage Monitoring
+
+- [ ] Detect internal storage devices
+- [ ] Show disk capacity and free space
+- [ ] Detect external drives
+- [ ] Show external drive usage
+- [ ] Add low storage warnings
+
+## Phase 5 - Energy Monitoring
+
+- [ ] Read battery and power information
+- [ ] Calculate current watt consumption
+- [ ] Detect adapter power input
+- [ ] Detect battery charge/discharge flow
+- [ ] Create animated power flow visualization
+- [ ] Create live energy graph
+
+## Phase 6 - Advanced Diagnostics
 
 - [ ] Process memory snapshot
 - [ ] Identify memory-heavy applications
 - [ ] Timeline view
+- [ ] Thermal monitoring
+- [ ] CPU monitoring
+- [ ] Fan status
 - [ ] Launch-at-login option
 
-## Phase 5 - Release Quality
+## Phase 7 - Release Quality
 
 - [ ] Performance tests
 - [ ] Battery impact tests
