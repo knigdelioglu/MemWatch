@@ -59,18 +59,11 @@ struct SystemHistoryPoint: Identifiable, Equatable, Sendable {
     var id: Date { timestamp }
 }
 
-enum FanTelemetryState: Equatable, Sendable {
-    case unavailableViaPublicAPI
-
-    var displayName: String {
-        "RPM not exposed by public macOS API"
-    }
-}
-
 enum LaunchAtLoginState: String, Equatable, Sendable {
     case enabled
     case disabled
     case requiresApproval
+    case needsSetup
     case unavailable
 
     var displayName: String {
@@ -78,6 +71,7 @@ enum LaunchAtLoginState: String, Equatable, Sendable {
         case .enabled: return "Enabled"
         case .disabled: return "Disabled"
         case .requiresApproval: return "Needs approval"
+        case .needsSetup: return "Needs setup"
         case .unavailable: return "Unavailable"
         }
     }
