@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.0'
+      - '.github/release-trigger-v0.1.1'
 
 permissions:
   contents: write
@@ -51,19 +51,20 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.0"
+            TAG="v0.1.1"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch macOS Release Candidate.
+          MemWatch macOS Release Candidate hotfix.
 
-          Highlights:
-          - Smart RAM, memory pressure and swap monitoring
-          - Internal/external storage monitoring
-          - Battery-side power and energy-flow visualization
-          - CPU, thermal state and top memory-consuming apps
-          - Menu-bar-only operation with no Dock icon
-          - Universal macOS binary: arm64 + x86_64
+          Fixes in v0.1.1:
+          - Replaced SwiftUI MenuBarExtra with native NSStatusItem + NSPopover
+          - Fixed the tray panel collapsing into a thin strip
+          - Single click now opens/closes the full MemWatch details panel
+          - Double click (or right click) now shows a Quit MemWatch menu
+          - App remains menu-bar-only and does not appear in the Dock
+
+          Existing features include smart RAM/swap monitoring, storage monitoring, energy flow, CPU/thermal diagnostics, top memory-consuming apps, notifications, and launch-at-login.
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
