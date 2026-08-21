@@ -72,6 +72,21 @@ jobs:
             -o /tmp/memwatch-power-collector-smoke
           /tmp/memwatch-power-collector-smoke
 
+      - name: Run system diagnostics collector smoke test
+        run: |
+          xcrun swiftc \
+            Models/SystemDiagnosticsSnapshot.swift \
+            Collectors/SystemDiagnosticsCollector.swift \
+            Tests/SystemDiagnosticsCollectorSmoke.swift \
+            -framework AppKit \
+            -o /tmp/memwatch-system-diagnostics-smoke
+          /tmp/memwatch-system-diagnostics-smoke
+
+      - name: Verify launch-at-login integration
+        run: |
+          grep -q 'SMAppService.mainApp' Services/LaunchAtLoginService.swift
+          grep -q 'Launch MemWatch at login' Views/SystemDiagnosticsView.swift
+
       - name: Run swap intelligence tests
         run: |
           xcrun swiftc \
@@ -112,3 +127,5 @@ jobs:
           pmset -g batt || true
           echo '--- power adapter / battery registry ---'
           ioreg -rn AppleSmartBattery -r -l | head -n 120 || true
+          echo '--- thermal / power mode ---'
+          pmset -g custom || true
