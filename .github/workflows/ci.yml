@@ -115,6 +115,35 @@ jobs:
             -o /tmp/memwatch-storage-policy-tests
           /tmp/memwatch-storage-policy-tests
 
+      - name: Run collector performance budgets
+        run: |
+          xcrun swiftc \
+            Models/MemorySnapshot.swift \
+            Collectors/MemoryCollector.swift \
+            Models/PowerSnapshot.swift \
+            Collectors/PowerCollector.swift \
+            Models/SystemDiagnosticsSnapshot.swift \
+            Collectors/SystemDiagnosticsCollector.swift \
+            Tests/CollectorPerformanceTests.swift \
+            -framework IOKit \
+            -framework AppKit \
+            -o /tmp/memwatch-performance-tests
+          /tmp/memwatch-performance-tests
+
+      - name: Run background cadence battery-impact guard
+        run: |
+          xcrun swiftc \
+            Tests/BackgroundCadenceTests.swift \
+            -o /tmp/memwatch-cadence-tests
+          /tmp/memwatch-cadence-tests
+
+      - name: Build and verify universal Release DMG
+        run: |
+          chmod +x Scripts/package_release.sh
+          Scripts/package_release.sh
+          test -s dist/MemWatch.dmg
+          test -s dist/MemWatch.dmg.sha256
+
       - name: Print reference system metrics
         run: |
           echo '--- vm_stat ---'
