@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 final class MonitoringService: ObservableObject {
     @Published private(set) var snapshot = MemorySnapshot.empty
+    @Published private(set) var storageVolumes: [StorageVolumeSnapshot] = []
     @Published private(set) var swapDeltaBytes: Int64 = 0
     @Published private(set) var swapInDeltaBytes: UInt64 = 0
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
@@ -29,14 +30,22 @@ final class MonitoringService: ObservableObject {
         systemPressure != nil
     }
 
+    var hasStorageWarning: Bool {
+        storageVolumes.contains { $0.health != .normal }
+    }
+
     private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
+    private static let storageRefreshInterval: TimeInterval = 30
 
     private let collector = MemoryCollector()
+    private let storageCollector = StorageCollector()
     private let pressureMonitor = NativeMemoryPressureMonitor()
     private let swapIntelligence = SwapIntelligenceEngine()
     private let notificationPolicy = NotificationPolicyEngine()
+    private let storageNotificationPolicy = StorageNotificationPolicyEngine()
     private let notificationService = NotificationService()
     private var timer: Timer?
+    private var lastStorageRefreshDate: Date?
 
     private var previousSwapUsedBytes: UInt64?
     private var previousSwapInBytes: UInt64?
@@ -62,7 +71,8 @@ final class MonitoringService: ObservableObject {
 
                 if becameDeliverable && self.notificationsEnabled {
                     self.notificationPolicy.reset()
-                    self.refresh()
+                    self.storageNotificationPolicy.reset()
+                    self.refresh(forceStorage: true)
                 }
             }
         }
@@ -71,7 +81,7 @@ final class MonitoringService: ObservableObject {
             notificationService.requestAuthorization()
         }
 
-        refresh()
+        refresh(forceStorage: true)
         startMonitoring()
     }
 
@@ -85,14 +95,20 @@ final class MonitoringService: ObservableObject {
         notificationsEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.notificationsEnabledKey)
         notificationPolicy.reset()
+        storageNotificationPolicy.reset()
 
         if enabled {
             notificationService.requestAuthorization()
-            refresh()
+            refresh(forceStorage: true)
         }
     }
 
-    func refresh() {
+    func refresh(forceStorage: Bool = false) {
+        refreshMemory()
+        refreshStorageIfNeeded(force: forceStorage)
+    }
+
+    private func refreshMemory() {
         let nextSnapshot = collector.collect()
 
         if let previousSwapUsedBytes {
@@ -133,10 +149,23 @@ final class MonitoringService: ObservableObject {
             )
         )
 
-        evaluateNotification()
+        evaluateMemoryNotification()
     }
 
-    private func evaluateNotification() {
+    private func refreshStorageIfNeeded(force: Bool) {
+        let now = Date()
+        if !force,
+           let lastStorageRefreshDate,
+           now.timeIntervalSince(lastStorageRefreshDate) < Self.storageRefreshInterval {
+            return
+        }
+
+        storageVolumes = storageCollector.collect()
+        lastStorageRefreshDate = now
+        evaluateStorageNotifications(now: now)
+    }
+
+    private func evaluateMemoryNotification() {
         guard notificationsEnabled else {
             notificationPolicy.reset()
             return
@@ -150,6 +179,22 @@ final class MonitoringService: ObservableObject {
         }
 
         notificationService.deliver(payload)
+    }
+
+    private func evaluateStorageNotifications(now: Date) {
+        guard notificationsEnabled else {
+            storageNotificationPolicy.reset()
+            return
+        }
+
+        let payloads = storageNotificationPolicy.evaluate(
+            volumes: storageVolumes,
+            now: now
+        )
+
+        for payload in payloads {
+            notificationService.deliver(payload)
+        }
     }
 
     private func startMonitoring() {
