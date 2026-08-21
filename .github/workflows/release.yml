@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.2'
+      - '.github/release-trigger-v0.1.3'
 
 permissions:
   contents: write
@@ -51,20 +51,20 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.2"
+            TAG="v0.1.3"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch macOS Release Candidate UX update.
+          MemWatch macOS Release Candidate live-test fixes.
 
-          Changes in v0.1.2:
-          - Replaced the long single-page panel with four compact tabs: Genel, Depolama, Enerji, Sistem
-          - Reduced unnecessary vertical scrolling
-          - Clicking anywhere outside the MemWatch popover now closes it automatically
-          - Single-click tray behavior and double-click/right-click Quit behavior are preserved
-          - App remains menu-bar-only and does not appear in the Dock
-
-          Existing features include smart RAM/swap monitoring, storage monitoring, energy flow, CPU/thermal diagnostics, top memory-consuming apps, notifications, and launch-at-login.
+          Changes in v0.1.3:
+          - Mounted DMG / disk-image volumes are excluded from Storage
+          - Top memory apps now include helper and child-process RAM in each app total
+          - Fan telemetry UI removed
+          - Launch at Login now exposes a recoverable Needs setup state instead of a dead-end Unavailable state for SMAppService notFound
+          - Direct shortcut to macOS Login Items settings
+          - Direct shortcut to macOS Notification settings when alerts are blocked
+          - Regression tests added for disk-image filtering and child-process RAM aggregation
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
