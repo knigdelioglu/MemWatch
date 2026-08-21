@@ -145,6 +145,16 @@ jobs:
           test -s dist/MemWatch.dmg
           test -s dist/MemWatch.dmg.sha256
 
+      - name: Upload verified DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: MemWatch-macOS-ad-hoc
+          path: |
+            dist/MemWatch.dmg
+            dist/MemWatch.dmg.sha256
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Print reference system metrics
         run: |
           echo '--- vm_stat ---'
