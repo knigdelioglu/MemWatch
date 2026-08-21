@@ -8,6 +8,10 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var storageVolumes: [StorageVolumeSnapshot] = []
     @Published private(set) var powerSnapshot = PowerSnapshot.empty
     @Published private(set) var powerHistory: [PowerHistoryPoint] = []
+    @Published private(set) var diagnostics = SystemDiagnosticsSnapshot.empty
+    @Published private(set) var systemHistory: [SystemHistoryPoint] = []
+    @Published private(set) var launchAtLoginState: LaunchAtLoginState = .disabled
+    @Published private(set) var launchAtLoginError: String?
     @Published private(set) var swapDeltaBytes: Int64 = 0
     @Published private(set) var swapInDeltaBytes: UInt64 = 0
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
@@ -42,13 +46,21 @@ final class MonitoringService: ObservableObject {
         return sum / Double(powerHistory.count)
     }
 
+    var fanTelemetry: FanTelemetryState {
+        .unavailableViaPublicAPI
+    }
+
     private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
     private static let storageRefreshInterval: TimeInterval = 30
+    private static let processRefreshInterval: TimeInterval = 30
     private static let powerHistoryLimit = 120
+    private static let systemHistoryLimit = 120
 
     private let collector = MemoryCollector()
     private let storageCollector = StorageCollector()
     private let powerCollector = PowerCollector()
+    private let diagnosticsCollector = SystemDiagnosticsCollector()
+    private let launchAtLoginService = LaunchAtLoginService()
     private let pressureMonitor = NativeMemoryPressureMonitor()
     private let swapIntelligence = SwapIntelligenceEngine()
     private let notificationPolicy = NotificationPolicyEngine()
@@ -56,6 +68,7 @@ final class MonitoringService: ObservableObject {
     private let notificationService = NotificationService()
     private var timer: Timer?
     private var lastStorageRefreshDate: Date?
+    private var lastProcessRefreshDate: Date?
 
     private var previousSwapUsedBytes: UInt64?
     private var previousSwapInBytes: UInt64?
@@ -65,6 +78,8 @@ final class MonitoringService: ObservableObject {
         if UserDefaults.standard.object(forKey: Self.notificationsEnabledKey) != nil {
             notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledKey)
         }
+
+        launchAtLoginState = launchAtLoginService.currentState()
 
         pressureMonitor.onChange = { [weak self] pressure in
             Task { @MainActor [weak self] in
@@ -82,7 +97,7 @@ final class MonitoringService: ObservableObject {
                 if becameDeliverable && self.notificationsEnabled {
                     self.notificationPolicy.reset()
                     self.storageNotificationPolicy.reset()
-                    self.refresh(forceStorage: true)
+                    self.refresh(forceStorage: true, forceDiagnostics: true)
                 }
             }
         }
@@ -91,7 +106,7 @@ final class MonitoringService: ObservableObject {
             notificationService.requestAuthorization()
         }
 
-        refresh(forceStorage: true)
+        refresh(forceStorage: true, forceDiagnostics: true)
         startMonitoring()
     }
 
@@ -109,14 +124,28 @@ final class MonitoringService: ObservableObject {
 
         if enabled {
             notificationService.requestAuthorization()
-            refresh(forceStorage: true)
+            refresh(forceStorage: true, forceDiagnostics: true)
         }
     }
 
-    func refresh(forceStorage: Bool = false) {
+    func setLaunchAtLogin(_ enabled: Bool) {
+        launchAtLoginError = nil
+
+        do {
+            try launchAtLoginService.setEnabled(enabled)
+            launchAtLoginState = launchAtLoginService.currentState()
+        } catch {
+            launchAtLoginState = launchAtLoginService.currentState()
+            launchAtLoginError = error.localizedDescription
+        }
+    }
+
+    func refresh(forceStorage: Bool = false, forceDiagnostics: Bool = false) {
         refreshMemory()
         refreshPower()
+        refreshDiagnostics(forceProcesses: forceDiagnostics)
         refreshStorageIfNeeded(force: forceStorage)
+        launchAtLoginState = launchAtLoginService.currentState()
     }
 
     private func refreshMemory() {
@@ -181,6 +210,47 @@ final class MonitoringService: ObservableObject {
 
         if powerHistory.count > Self.powerHistoryLimit {
             powerHistory.removeFirst(powerHistory.count - Self.powerHistoryLimit)
+        }
+    }
+
+    private func refreshDiagnostics(forceProcesses: Bool) {
+        let now = Date()
+        let shouldRefreshProcesses: Bool
+
+        if forceProcesses {
+            shouldRefreshProcesses = true
+        } else if let lastProcessRefreshDate {
+            shouldRefreshProcesses = now.timeIntervalSince(lastProcessRefreshDate) >= Self.processRefreshInterval
+        } else {
+            shouldRefreshProcesses = true
+        }
+
+        let collected = diagnosticsCollector.collect(includeProcesses: shouldRefreshProcesses)
+        diagnostics = SystemDiagnosticsSnapshot(
+            timestamp: collected.timestamp,
+            cpuUsagePercent: collected.cpuUsagePercent,
+            thermalState: collected.thermalState,
+            lowPowerModeEnabled: collected.lowPowerModeEnabled,
+            topProcesses: shouldRefreshProcesses ? collected.topProcesses : diagnostics.topProcesses
+        )
+
+        if shouldRefreshProcesses {
+            lastProcessRefreshDate = now
+        }
+
+        if let cpuUsagePercent = collected.cpuUsagePercent {
+            systemHistory.append(
+                SystemHistoryPoint(
+                    timestamp: collected.timestamp,
+                    cpuUsagePercent: cpuUsagePercent,
+                    memoryUsagePercent: snapshot.usageRatio * 100,
+                    thermalSeverity: collected.thermalState.severity
+                )
+            )
+
+            if systemHistory.count > Self.systemHistoryLimit {
+                systemHistory.removeFirst(systemHistory.count - Self.systemHistoryLimit)
+            }
         }
     }
 
