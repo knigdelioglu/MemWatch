@@ -89,10 +89,10 @@ struct MenuBarView: View {
                 SystemDiagnosticsView(
                     diagnostics: monitor.diagnostics,
                     history: monitor.systemHistory,
-                    fanTelemetry: monitor.fanTelemetry,
                     launchAtLoginState: monitor.launchAtLoginState,
                     launchAtLoginError: monitor.launchAtLoginError,
                     onLaunchAtLoginChange: { monitor.setLaunchAtLogin($0) },
+                    onOpenLoginItemsSettings: { monitor.openLoginItemsSettings() },
                     onRefreshProcesses: { monitor.refresh(forceDiagnostics: true) }
                 )
                 .padding(16)
@@ -249,7 +249,7 @@ struct MenuBarView: View {
     }
 
     private var notificationSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             Toggle(
                 "Smart alerts",
                 isOn: Binding(
@@ -268,6 +268,14 @@ struct MenuBarView: View {
                     .foregroundStyle(notificationPermissionColor)
             }
             .font(.caption)
+
+            if monitor.notificationAuthorization == .denied {
+                Button("Open Notification Settings") {
+                    monitor.openNotificationSettings()
+                }
+                .buttonStyle(.link)
+                .font(.caption2)
+            }
 
             Text("Alerts cover sustained memory pressure and low storage. Persistent storage warnings repeat at most every 6 hours.")
                 .font(.caption2)
