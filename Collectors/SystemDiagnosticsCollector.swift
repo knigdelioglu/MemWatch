@@ -16,6 +16,19 @@ final class SystemDiagnosticsCollector {
         )
     }
 
+    func residentMemoryBytes(for pid: Int32) -> UInt64? {
+        guard pid > 0 else { return nil }
+
+        var taskInfo = proc_taskinfo()
+        let expectedSize = Int32(MemoryLayout<proc_taskinfo>.size)
+        let result = withUnsafeMutablePointer(to: &taskInfo) { pointer in
+            proc_pidinfo(pid, PROC_PIDTASKINFO, 0, pointer, expectedSize)
+        }
+
+        guard result == expectedSize else { return nil }
+        return taskInfo.pti_resident_size
+    }
+
     private func collectCPUUsagePercent() -> Double? {
         var cpuLoad = host_cpu_load_info()
         var count = mach_msg_type_number_t(
@@ -76,15 +89,9 @@ final class SystemDiagnosticsCollector {
         NSWorkspace.shared.runningApplications
             .compactMap { application -> ProcessMemorySnapshot? in
                 let pid = application.processIdentifier
-                guard pid > 0 else { return nil }
-
-                var taskInfo = proc_taskinfo()
-                let expectedSize = Int32(MemoryLayout<proc_taskinfo>.size)
-                let result = withUnsafeMutablePointer(to: &taskInfo) { pointer in
-                    proc_pidinfo(pid, PROC_PIDTASKINFO, 0, pointer, expectedSize)
+                guard let residentBytes = residentMemoryBytes(for: pid), residentBytes > 0 else {
+                    return nil
                 }
-
-                guard result == expectedSize else { return nil }
 
                 let name = application.localizedName
                     ?? application.bundleURL?.deletingPathExtension().lastPathComponent
@@ -94,10 +101,9 @@ final class SystemDiagnosticsCollector {
                     pid: pid,
                     name: name,
                     bundleIdentifier: application.bundleIdentifier,
-                    residentBytes: taskInfo.pti_resident_size
+                    residentBytes: residentBytes
                 )
             }
-            .filter { $0.residentBytes > 0 }
             .sorted {
                 if $0.residentBytes == $1.residentBytes {
                     return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
