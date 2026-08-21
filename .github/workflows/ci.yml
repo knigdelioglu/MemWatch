@@ -54,6 +54,24 @@ jobs:
             -o /tmp/memwatch-storage-collector-smoke
           /tmp/memwatch-storage-collector-smoke
 
+      - name: Run power model tests
+        run: |
+          xcrun swiftc \
+            Models/PowerSnapshot.swift \
+            Tests/PowerSnapshotTests.swift \
+            -o /tmp/memwatch-power-model-tests
+          /tmp/memwatch-power-model-tests
+
+      - name: Run power collector smoke test
+        run: |
+          xcrun swiftc \
+            Models/PowerSnapshot.swift \
+            Collectors/PowerCollector.swift \
+            Tests/PowerCollectorSmoke.swift \
+            -framework IOKit \
+            -o /tmp/memwatch-power-collector-smoke
+          /tmp/memwatch-power-collector-smoke
+
       - name: Run swap intelligence tests
         run: |
           xcrun swiftc \
@@ -90,3 +108,7 @@ jobs:
           sysctl vm.swapusage
           echo '--- mounted volumes ---'
           df -h
+          echo '--- power source ---'
+          pmset -g batt || true
+          echo '--- power adapter / battery registry ---'
+          ioreg -rn AppleSmartBattery -r -l | head -n 120 || true

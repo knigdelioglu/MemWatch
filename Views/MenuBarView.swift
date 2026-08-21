@@ -21,6 +21,12 @@ struct MenuBarView: View {
                 Divider()
                 storageSection
                 Divider()
+                PowerMonitorView(
+                    snapshot: monitor.powerSnapshot,
+                    history: monitor.powerHistory,
+                    averageWatts: monitor.averageObservablePowerWatts
+                )
+                Divider()
                 notificationSection
                 Divider()
                 footer
@@ -28,7 +34,7 @@ struct MenuBarView: View {
             .padding(16)
         }
         .frame(width: 340)
-        .frame(maxHeight: 620)
+        .frame(maxHeight: 720)
     }
 
     private var header: some View {

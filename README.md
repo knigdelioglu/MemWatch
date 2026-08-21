@@ -1,6 +1,6 @@
 # MemWatch
 
-MemWatch, macOS menü çubuğunda RAM, memory pressure, swap davranışı ve depolama durumunu akıllı şekilde izleyen hafif bir sistem sağlık uygulamasıdır.
+MemWatch, macOS menü çubuğunda RAM, memory pressure, swap davranışı, depolama durumu ve enerji akışını akıllı şekilde izleyen hafif bir sistem sağlık uygulamasıdır.
 
 ## Amaç
 
@@ -44,6 +44,21 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Kritik seviyeye geçişte anında yeni uyarı
 - Süregelen depolama uyarıları için 6 saat cooldown
 
+### Energy Monitoring
+
+- Güç kaynağını AC / Battery olarak algılama
+- Batarya yüzdesi ve şarj durumunu gösterme
+- Bataryadayken canlı Mac güç çekişini akım × voltaj üzerinden Watt olarak hesaplama
+- Şarj olurken bataryaya giden canlı şarj gücünü Watt olarak gösterme
+- Adaptörün nominal Watt kapasitesini ayrı gösterme
+- Adapter → Mac, Adapter → Battery ve Battery → Mac yönlerini hareketli akışla gösterme
+- 5 saniyelik enerji örnekleme
+- Son 10 dakikalık canlı güç grafiği
+- Son 10 dakikanın ortalama Watt değeri
+- Tahmini kalan süre / doluma kalan süre bilgisi mevcutsa gösterme
+
+> Adaptörün 70 W / 96 W gibi nominal değeri anlık tüketim değildir. macOS public API'leri AC'de Mac'in toplam priz tüketimini her modelde güvenilir şekilde sunmadığı için MemWatch bu değeri tahmin ederek göstermez. AC'de şarj varsa bataryaya giden gerçek şarj gücü gösterilir; bataryadayken ise Mac'in bataryadan çektiği güç gösterilir.
+
 ### Notifications
 
 - Active Swap, Memory Pressure ve Critical memory durumlarında uyarı
@@ -52,34 +67,27 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Bildirimleri uygulama içinden açma/kapatma
 - macOS bildirim izin durumunu gösterme
 
-## Planlanan Energy Monitoring
-
-- Anlık güç tüketimi (Watt)
-- Adaptörden gelen güç
-- Sistemin kullandığı güç
-- Bataryaya giden şarj gücü
-- Bataryadan çekilen güç
-- Animasyonlu enerji akışı
-- Canlı enerji grafiği
-
 ## Teknoloji
 
 - Platform: macOS 13+
 - Dil: Swift
 - UI: SwiftUI + MenuBarExtra
-- Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit
+- Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit, IOKit / IOPowerSources
 - Dock davranışı: `LSUIElement=YES` + `.accessory` activation policy
 
 ## Durum
 
-Sprint 1-4 tamamlandı:
+Sprint 1-5 tamamlandı:
 
 1. Core Memory Monitoring
 2. Swap Intelligence
 3. Menu Bar Experience & Smart Notifications
 4. Storage Monitoring
+5. Energy Monitoring
 
-Sıradaki ana faz: Energy Monitoring.
+Tüm mevcut çekirdek özellikler macOS CI build ve davranış testleriyle doğrulanmaktadır.
+
+Sıradaki ana faz: Advanced Diagnostics.
 
 ## Lisans
 

@@ -18,6 +18,9 @@
 		A10000000000000000000009 /* StorageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* StorageSnapshot.swift */; };
 		A10000000000000000000010 /* StorageCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* StorageCollector.swift */; };
 		A10000000000000000000011 /* StorageNotificationPolicyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */; };
+		A10000000000000000000012 /* PowerSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* PowerSnapshot.swift */; };
+		A10000000000000000000013 /* PowerCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* PowerCollector.swift */; };
+		A10000000000000000000014 /* PowerMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* PowerMonitorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +36,9 @@
 		A20000000000000000000010 /* StorageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSnapshot.swift; sourceTree = "<group>"; };
 		A20000000000000000000011 /* StorageCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageCollector.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageNotificationPolicyEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* PowerSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSnapshot.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* PowerCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerCollector.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* PowerMonitorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerMonitorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +77,7 @@
 			children = (
 				A20000000000000000000002 /* MemorySnapshot.swift */,
 				A20000000000000000000010 /* StorageSnapshot.swift */,
+				A20000000000000000000013 /* PowerSnapshot.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -80,6 +87,7 @@
 			children = (
 				A20000000000000000000003 /* MemoryCollector.swift */,
 				A20000000000000000000011 /* StorageCollector.swift */,
+				A20000000000000000000014 /* PowerCollector.swift */,
 			);
 			path = Collectors;
 			sourceTree = "<group>";
@@ -100,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000005 /* MenuBarView.swift */,
+				A20000000000000000000015 /* PowerMonitorView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -183,6 +192,9 @@
 				A10000000000000000000009 /* StorageSnapshot.swift in Sources */,
 				A10000000000000000000010 /* StorageCollector.swift in Sources */,
 				A10000000000000000000011 /* StorageNotificationPolicyEngine.swift in Sources */,
+				A10000000000000000000012 /* PowerSnapshot.swift in Sources */,
+				A10000000000000000000013 /* PowerCollector.swift in Sources */,
+				A10000000000000000000014 /* PowerMonitorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

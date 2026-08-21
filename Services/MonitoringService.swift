@@ -6,6 +6,8 @@ import Foundation
 final class MonitoringService: ObservableObject {
     @Published private(set) var snapshot = MemorySnapshot.empty
     @Published private(set) var storageVolumes: [StorageVolumeSnapshot] = []
+    @Published private(set) var powerSnapshot = PowerSnapshot.empty
+    @Published private(set) var powerHistory: [PowerHistoryPoint] = []
     @Published private(set) var swapDeltaBytes: Int64 = 0
     @Published private(set) var swapInDeltaBytes: UInt64 = 0
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
@@ -34,11 +36,19 @@ final class MonitoringService: ObservableObject {
         storageVolumes.contains { $0.health != .normal }
     }
 
+    var averageObservablePowerWatts: Double? {
+        guard !powerHistory.isEmpty else { return nil }
+        let sum = powerHistory.reduce(0) { $0 + $1.watts }
+        return sum / Double(powerHistory.count)
+    }
+
     private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
     private static let storageRefreshInterval: TimeInterval = 30
+    private static let powerHistoryLimit = 120
 
     private let collector = MemoryCollector()
     private let storageCollector = StorageCollector()
+    private let powerCollector = PowerCollector()
     private let pressureMonitor = NativeMemoryPressureMonitor()
     private let swapIntelligence = SwapIntelligenceEngine()
     private let notificationPolicy = NotificationPolicyEngine()
@@ -105,6 +115,7 @@ final class MonitoringService: ObservableObject {
 
     func refresh(forceStorage: Bool = false) {
         refreshMemory()
+        refreshPower()
         refreshStorageIfNeeded(force: forceStorage)
     }
 
@@ -150,6 +161,27 @@ final class MonitoringService: ObservableObject {
         )
 
         evaluateMemoryNotification()
+    }
+
+    private func refreshPower() {
+        let nextSnapshot = powerCollector.collect()
+        powerSnapshot = nextSnapshot
+
+        guard let watts = nextSnapshot.observableWatts, watts.isFinite, watts >= 0 else {
+            return
+        }
+
+        powerHistory.append(
+            PowerHistoryPoint(
+                timestamp: nextSnapshot.timestamp,
+                watts: watts,
+                flow: nextSnapshot.flow
+            )
+        )
+
+        if powerHistory.count > Self.powerHistoryLimit {
+            powerHistory.removeFirst(powerHistory.count - Self.powerHistoryLimit)
+        }
     }
 
     private func refreshStorageIfNeeded(force: Bool) {
