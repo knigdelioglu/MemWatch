@@ -60,31 +60,31 @@ struct MenuBarView: View {
     private var swapSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Swap & Paging")
+                Text("Swap")
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
 
                 if monitor.isActivelySwapping {
-                    Label("Active", systemImage: "arrow.up.right")
+                    Label("Active", systemImage: "arrow.left.arrow.right")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
             }
 
-            metricRow("Swap used", value: bytes(snapshot.swapUsedBytes))
-            metricRow("Swap total", value: bytes(snapshot.swapTotalBytes))
+            metricRow("Used", value: bytes(snapshot.swapUsedBytes))
+            metricRow("Total", value: bytes(snapshot.swapTotalBytes))
 
             if monitor.swapDeltaBytes != 0 {
-                metricRow("Swap Δ / 5 sec", value: signedBytes(monitor.swapDeltaBytes))
+                metricRow("Allocated Δ / 5 sec", value: signedBytes(monitor.swapDeltaBytes))
             }
 
-            if monitor.pageInDeltaBytes > 0 {
-                metricRow("Page-in / 5 sec", value: bytes(monitor.pageInDeltaBytes))
+            if monitor.swapInDeltaBytes > 0 {
+                metricRow("Swap-in / 5 sec", value: bytes(monitor.swapInDeltaBytes))
             }
 
-            if monitor.pageOutDeltaBytes > 0 {
-                metricRow("Page-out / 5 sec", value: bytes(monitor.pageOutDeltaBytes))
+            if monitor.swapOutDeltaBytes > 0 {
+                metricRow("Swap-out / 5 sec", value: bytes(monitor.swapOutDeltaBytes))
             }
         }
     }
@@ -116,8 +116,12 @@ struct MenuBarView: View {
     }
 
     private var statusText: String {
-        if monitor.isActivelySwapping {
-            return "Active memory paging detected"
+        if monitor.swapOutDeltaBytes > 0 {
+            return "RAM is actively writing to swap"
+        }
+
+        if monitor.swapInDeltaBytes > 0 {
+            return "Data is being read back from swap"
         }
 
         switch snapshot.pressure {
@@ -128,6 +132,10 @@ struct MenuBarView: View {
     }
 
     private var statusSymbol: String {
+        if monitor.isActivelySwapping {
+            return "arrow.left.arrow.right.circle.fill"
+        }
+
         switch snapshot.pressure {
         case .normal: return "checkmark.circle.fill"
         case .warning: return "exclamationmark.triangle.fill"
@@ -136,6 +144,10 @@ struct MenuBarView: View {
     }
 
     private var statusColor: Color {
+        if monitor.swapOutDeltaBytes > 0 {
+            return .red
+        }
+
         switch snapshot.pressure {
         case .normal: return .green
         case .warning: return .orange
@@ -144,10 +156,11 @@ struct MenuBarView: View {
     }
 
     private func bytes(_ value: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .memory)
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
     }
 
     private func signedBytes(_ value: Int64) -> String {
+        guard value != 0 else { return bytes(0) }
         let prefix = value > 0 ? "+" : "−"
         let magnitude = value == Int64.min ? UInt64(Int64.max) + 1 : UInt64(abs(value))
         return prefix + bytes(magnitude)
