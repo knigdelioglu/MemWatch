@@ -36,8 +36,7 @@ final class MonitoringService: ObservableObject {
     var memoryPressureEstimate: MemoryPressureEstimate {
         MemoryPressureEstimate.calculate(
             snapshot: snapshot,
-            swapOutDeltaBytes: swapOutDeltaBytes,
-            effectivePressure: pressure
+            swapOutDeltaBytes: swapOutDeltaBytes
         )
     }
 
