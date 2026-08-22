@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.7'
+      - '.github/release-trigger-v0.1.8'
 
 permissions:
   contents: write
@@ -51,20 +51,18 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.7"
+            TAG="v0.1.8"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch macOS Release Candidate pressure-score calibration update.
+          MemWatch macOS Release Candidate back-button usability update.
 
-          Changes in v0.1.7:
-          - Removed the artificial 60% floor for Warning and 90% floor for Critical
-          - Memory-pressure percentage now depends only on available RAM, compression and active swap-out traffic
-          - Native macOS Normal / Warning / Critical pressure remains a separate categorical signal
-          - Historical idle swap still does not increase the percentage
-          - Added regression coverage to ensure categorical pressure states cannot force the numeric estimate
-
-          Note: macOS does not expose Activity Monitor's private memory-pressure percentage. The displayed percentage is MemWatch's transparent estimate.
+          Changes in v0.1.8:
+          - Replaced the small icon-only detail Back control with an icon + Back label
+          - Increased the Back control to a minimum 72×36 pt clickable target
+          - Added an explicit full rectangular hit area so the chevron no longer needs precise clicking
+          - Added a subtle rounded background for clearer affordance
+          - Applies to Memory, Storage, Energy and System detail pages
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
