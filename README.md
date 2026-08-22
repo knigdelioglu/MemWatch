@@ -18,8 +18,11 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Compressed Memory
 - Cached Memory
 - Native macOS memory-pressure event takibi
+- 0–100 arası MemWatch memory-pressure yüzdesi
 - Swap total / used / free
 - Mach swap-in / swap-out sayaçları
+
+> macOS, Activity Monitor'deki memory-pressure grafiğinin private algoritmasını yüzde olarak public API üzerinden sunmaz. MemWatch yüzdesi; kullanılabilir RAM, compression ve aktif swap-out trafiğinden hesaplanan şeffaf bir tahmindir. Geçmişten kalan idle swap miktarı bu yüzdeyi tek başına yükseltmez.
 
 ### Swap Intelligence
 
