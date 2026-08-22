@@ -10,7 +10,7 @@ struct MemoryPressureEstimateTests {
         compressedMemoryRaisesEstimate()
         activeSwapOutRaisesEstimate()
         idleSwapAllocationDoesNotRaiseEstimate()
-        warningAndCriticalStatesSetFloors()
+        categoricalPressureDoesNotForcePercentage()
         estimateAlwaysStaysInRange()
 
         print("PASS Memory pressure estimate tests")
@@ -26,8 +26,7 @@ struct MemoryPressureEstimateTests {
 
         let estimate = MemoryPressureEstimate.calculate(
             snapshot: snapshot,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
 
         require(estimate.percent < 20, "Healthy memory should have a low pressure estimate")
@@ -49,13 +48,11 @@ struct MemoryPressureEstimateTests {
 
         let low = MemoryPressureEstimate.calculate(
             snapshot: lowCompression,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
         let high = MemoryPressureEstimate.calculate(
             snapshot: highCompression,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
 
         require(high.percent > low.percent, "Compression should raise the pressure estimate")
@@ -71,13 +68,11 @@ struct MemoryPressureEstimateTests {
 
         let idle = MemoryPressureEstimate.calculate(
             snapshot: snapshot,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
         let active = MemoryPressureEstimate.calculate(
             snapshot: snapshot,
-            swapOutDeltaBytes: 256 * mib,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 256 * mib
         )
 
         require(active.percent > idle.percent, "Recent swap-out traffic should raise the pressure estimate")
@@ -99,39 +94,30 @@ struct MemoryPressureEstimateTests {
 
         let first = MemoryPressureEstimate.calculate(
             snapshot: noSwap,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
         let second = MemoryPressureEstimate.calculate(
             snapshot: idleSwap,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .normal
+            swapOutDeltaBytes: 0
         )
 
         require(first.percent == second.percent, "Idle swap allocation must not inflate memory pressure")
     }
 
-    private static func warningAndCriticalStatesSetFloors() {
-        let snapshot = makeSnapshot(
+    private static func categoricalPressureDoesNotForcePercentage() {
+        let healthyMetrics = makeSnapshot(
             available: 10 * gib,
             compressed: 512 * mib,
             swapUsed: 0,
-            pressure: .normal
+            pressure: .critical
         )
 
-        let warning = MemoryPressureEstimate.calculate(
-            snapshot: snapshot,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .warning
-        )
-        let critical = MemoryPressureEstimate.calculate(
-            snapshot: snapshot,
-            swapOutDeltaBytes: 0,
-            effectivePressure: .critical
+        let estimate = MemoryPressureEstimate.calculate(
+            snapshot: healthyMetrics,
+            swapOutDeltaBytes: 0
         )
 
-        require(warning.percent >= 60, "Warning pressure should floor the estimate at 60%")
-        require(critical.percent >= 90, "Critical pressure should floor the estimate at 90%")
+        require(estimate.percent < 60, "Categorical warning/critical state must not impose an artificial percentage floor")
     }
 
     private static func estimateAlwaysStaysInRange() {
@@ -144,8 +130,7 @@ struct MemoryPressureEstimateTests {
 
         let estimate = MemoryPressureEstimate.calculate(
             snapshot: snapshot,
-            swapOutDeltaBytes: UInt64.max,
-            effectivePressure: .critical
+            swapOutDeltaBytes: UInt64.max
         )
 
         require((0...100).contains(estimate.percent), "Pressure estimate must stay within 0...100")
