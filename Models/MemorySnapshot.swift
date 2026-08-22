@@ -59,6 +59,10 @@ struct MemorySnapshot {
 /// so this score intentionally does not claim to reproduce it. The estimate
 /// combines currently available RAM, compression pressure and *active* swap-out
 /// traffic. Historical idle swap allocation is deliberately excluded.
+///
+/// Native macOS warning/critical pressure events are intentionally kept separate
+/// from this numeric estimate. They remain authoritative categorical signals in
+/// the UI, but they do not impose artificial percentage floors.
 struct MemoryPressureEstimate {
     let ratio: Double
 
@@ -68,8 +72,7 @@ struct MemoryPressureEstimate {
 
     static func calculate(
         snapshot: MemorySnapshot,
-        swapOutDeltaBytes: UInt64,
-        effectivePressure: MemoryPressure
+        swapOutDeltaBytes: UInt64
     ) -> MemoryPressureEstimate {
         guard snapshot.totalBytes > 0 else {
             return MemoryPressureEstimate(ratio: 0)
@@ -93,22 +96,11 @@ struct MemoryPressureEstimate {
         let swapOutReferenceBytes = Double(256 * 1024 * 1024)
         let swapOutStress = clamp(Double(swapOutDeltaBytes) / swapOutReferenceBytes)
 
-        var score = (
+        let score = (
             availabilityStress * 0.60
             + compressionStress * 0.25
             + swapOutStress * 0.15
         )
-
-        // Keep the numeric estimate consistent with the effective health state,
-        // including native DispatchSource memory-pressure events when available.
-        switch effectivePressure {
-        case .normal:
-            break
-        case .warning:
-            score = max(score, 0.60)
-        case .critical:
-            score = max(score, 0.90)
-        }
 
         return MemoryPressureEstimate(ratio: clamp(score))
     }
