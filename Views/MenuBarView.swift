@@ -237,10 +237,15 @@ struct MenuBarView: View {
                 Button {
                     route = .dashboard
                 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.body.weight(.semibold))
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .frame(minWidth: 72, minHeight: 36)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(Rectangle())
                 .help("Back to dashboard")
 
                 Label(title, systemImage: symbol)
