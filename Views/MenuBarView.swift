@@ -30,6 +30,10 @@ struct MenuBarView: View {
         monitor.intelligence
     }
 
+    private var pressureEstimate: MemoryPressureEstimate {
+        monitor.memoryPressureEstimate
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -135,6 +139,21 @@ struct MenuBarView: View {
             metricRow("Wired", value: bytes(snapshot.wiredBytes))
             metricRow("Compressed", value: bytes(snapshot.compressedBytes))
             metricRow("Cached", value: bytes(snapshot.cachedBytes))
+
+            HStack {
+                Text("Memory pressure")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(pressureEstimate.percent)% · \(monitor.pressure.displayName)")
+                    .monospacedDigit()
+                    .foregroundStyle(pressureColor)
+            }
+            .font(.caption)
+
+            ProgressView(value: pressureEstimate.ratio)
+                .tint(pressureColor)
+                .accessibilityLabel("MemWatch memory pressure estimate")
+                .accessibilityValue("\(pressureEstimate.percent) percent")
         }
     }
 
