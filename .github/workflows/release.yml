@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.4'
+      - '.github/release-trigger-v0.1.5'
 
 permissions:
   contents: write
@@ -51,20 +51,23 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.4"
+            TAG="v0.1.5"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch macOS Release Candidate memory-pressure update.
+          MemWatch macOS Release Candidate dashboard UI update.
 
-          Changes in v0.1.4:
-          - General tab now shows a live 0–100 MemWatch memory-pressure percentage and gauge
-          - Pressure estimate combines available RAM, compressed memory and active swap-out traffic
-          - Historical idle swap allocation deliberately does not increase the percentage
-          - Warning and Critical pressure states keep the numeric score consistent with the health label
-          - Deterministic memory-pressure estimator regression tests added
+          Changes in v0.1.5:
+          - Replaced the segmented Genel / Depolama / Enerji / Sistem tabs with a clickable Mac Health dashboard
+          - Memory, Storage, Energy and System now open as dedicated detail pages with a Back button
+          - Memory detail now uses a visual donut breakdown inspired by macOS health utilities
+          - Donut uses real Mach active-memory telemetry plus Wired, Compressed and Other memory
+          - Pressure and Swap are presented as visual cards
+          - Top memory consumers remain available in the Memory detail page
+          - Existing outside-click dismissal, menu-bar-only behavior and Quit controls are preserved
+          - Memory collector smoke coverage now validates active-memory telemetry
 
-          Note: macOS does not expose Activity Monitor's private memory-pressure percentage. The displayed percentage is MemWatch's transparent estimate and is labeled accordingly.
+          The memory-pressure percentage remains MemWatch's transparent estimate; macOS does not expose Activity Monitor's private percentage algorithm.
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
