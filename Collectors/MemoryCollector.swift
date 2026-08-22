@@ -9,6 +9,7 @@ final class MemoryCollector {
         let pageSize = UInt64(vm_kernel_page_size)
 
         let freeBytes = UInt64(vm.free_count) * pageSize
+        let activeBytes = UInt64(vm.active_count) * pageSize
         let inactiveBytes = UInt64(vm.inactive_count) * pageSize
         let speculativeBytes = UInt64(vm.speculative_count) * pageSize
         let purgeableBytes = UInt64(vm.purgeable_count) * pageSize
@@ -34,6 +35,7 @@ final class MemoryCollector {
             usedBytes: usedBytes,
             availableBytes: availableBytes,
             freeBytes: freeBytes,
+            activeBytes: activeBytes,
             cachedBytes: cachedBytes,
             wiredBytes: wiredBytes,
             compressedBytes: compressedBytes,

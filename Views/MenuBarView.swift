@@ -2,200 +2,420 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var monitor: MonitoringService
-    @State private var selectedTab: PanelTab = .overview
+    @State private var route: PanelRoute = .dashboard
 
-    private enum PanelTab: String, CaseIterable, Identifiable {
-        case overview
+    private enum PanelRoute: Equatable {
+        case dashboard
+        case memory
         case storage
         case energy
         case system
-
-        var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .overview: return "Genel"
-            case .storage: return "Depolama"
-            case .energy: return "Enerji"
-            case .system: return "Sistem"
-            }
-        }
     }
 
-    private var snapshot: MemorySnapshot {
-        monitor.snapshot
-    }
-
-    private var intelligence: SwapIntelligenceResult {
-        monitor.intelligence
-    }
-
-    private var pressureEstimate: MemoryPressureEstimate {
-        monitor.memoryPressureEstimate
-    }
+    private var snapshot: MemorySnapshot { monitor.snapshot }
+    private var intelligence: SwapIntelligenceResult { monitor.intelligence }
+    private var pressureEstimate: MemoryPressureEstimate { monitor.memoryPressureEstimate }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
-
-            Picker("Bölüm", selection: $selectedTab) {
-                ForEach(PanelTab.allCases) { tab in
-                    Text(tab.title).tag(tab)
+        ZStack {
+            switch route {
+            case .dashboard:
+                dashboardView
+                    .transition(.opacity)
+            case .memory:
+                detailContainer(title: "Memory", symbol: "memorychip") {
+                    memoryDetailView
                 }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .storage:
+                detailContainer(title: "Storage", symbol: "internaldrive") {
+                    storageDetailView
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .energy:
+                detailContainer(title: "Energy", symbol: "bolt.fill") {
+                    energyDetailView
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .system:
+                detailContainer(title: "System", symbol: "gauge.with.dots.needle.50percent") {
+                    systemDetailView
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 14)
-            .padding(.bottom, 10)
-
-            Divider()
-
-            tabContent
         }
-        .frame(width: 380, height: 640)
-    }
-
-    @ViewBuilder
-    private var tabContent: some View {
-        switch selectedTab {
-        case .overview:
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    memorySection
-                    Divider()
-                    swapSection
-                    Divider()
-                    notificationSection
-                    Divider()
-                    footer
-                }
-                .padding(16)
-            }
-        case .storage:
-            ScrollView {
-                storageSection
-                    .padding(16)
-            }
-        case .energy:
-            ScrollView {
-                PowerMonitorView(
-                    snapshot: monitor.powerSnapshot,
-                    history: monitor.powerHistory,
-                    averageWatts: monitor.averageObservablePowerWatts
-                )
-                .padding(16)
-            }
-        case .system:
-            ScrollView {
-                SystemDiagnosticsView(
-                    diagnostics: monitor.diagnostics,
-                    history: monitor.systemHistory,
-                    launchAtLoginState: monitor.launchAtLoginState,
-                    launchAtLoginError: monitor.launchAtLoginError,
-                    onLaunchAtLoginChange: { monitor.setLaunchAtLogin($0) },
-                    onOpenLoginItemsSettings: { monitor.openLoginItemsSettings() },
-                    onRefreshProcesses: { monitor.refresh(forceDiagnostics: true) }
-                )
-                .padding(16)
-            }
+        .frame(width: 430, height: 640)
+        .animation(.easeInOut(duration: 0.16), value: route)
+        .onAppear {
+            route = .dashboard
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: statusSymbol)
-                .foregroundStyle(statusColor)
-                .font(.title2)
+    private var dashboardView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                dashboardHeader
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("MemWatch")
-                    .font(.headline)
-                Text(headerSummary)
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                    spacing: 12
+                ) {
+                    moduleCard(
+                        route: .memory,
+                        title: "Memory",
+                        symbol: "memorychip",
+                        value: "Pressure \(pressureEstimate.percent)%",
+                        detail: "RAM \(snapshot.usagePercent)% · Swap \(shortBytes(snapshot.swapUsedBytes))",
+                        accent: pressureColor
+                    )
+
+                    moduleCard(
+                        route: .storage,
+                        title: "Storage",
+                        symbol: "internaldrive",
+                        value: storageHeadline,
+                        detail: storageDetail,
+                        accent: storageDashboardColor
+                    )
+
+                    moduleCard(
+                        route: .energy,
+                        title: "Energy",
+                        symbol: powerSymbol,
+                        value: energyHeadline,
+                        detail: monitor.powerSnapshot.flow.displayName,
+                        accent: energyColor
+                    )
+
+                    moduleCard(
+                        route: .system,
+                        title: "System",
+                        symbol: "cpu",
+                        value: systemHeadline,
+                        detail: monitor.diagnostics.thermalState.displayName,
+                        accent: thermalColor
+                    )
+                }
+
+                notificationDashboardCard
+
+                HStack {
+                    Label(headerSummary, systemImage: statusSymbol)
+                        .font(.caption)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(2)
+
+                    Spacer()
+
+                    Button("Refresh") {
+                        monitor.refresh(forceStorage: true, forceDiagnostics: true)
+                    }
+                    .buttonStyle(.plain)
                     .font(.caption)
+                }
+                .padding(.top, 2)
+            }
+            .padding(16)
+        }
+    }
+
+    private var dashboardHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("Mac Health:")
+                    .font(.title3.weight(.semibold))
+                Text(healthName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(healthColor)
+                Spacer()
+                Text("\(snapshot.usagePercent)% RAM")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("MemWatch")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func moduleCard(
+        route destination: PanelRoute,
+        title: String,
+        symbol: String,
+        value: String,
+        detail: String,
+        accent: Color
+    ) -> some View {
+        Button {
+            route = destination
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: symbol)
+                        .font(.title3)
+                        .foregroundStyle(accent)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(value)
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Text(detail)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer()
-
-            Text("\(snapshot.usagePercent)%")
-                .font(.title3.monospacedDigit())
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(accent.opacity(0.32), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+        .buttonStyle(.plain)
     }
 
-    private var memorySection: some View {
+    private var notificationDashboardCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Memory")
-                .font(.subheadline.weight(.semibold))
-
-            ProgressView(value: snapshot.usageRatio)
-                .tint(statusColor)
-
-            metricRow("Used", value: bytes(snapshot.usedBytes))
-            metricRow("Available", value: bytes(snapshot.availableBytes))
-            metricRow("Wired", value: bytes(snapshot.wiredBytes))
-            metricRow("Compressed", value: bytes(snapshot.compressedBytes))
-            metricRow("Cached", value: bytes(snapshot.cachedBytes))
+            HStack {
+                Label("Smart alerts", systemImage: "bell.badge")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { monitor.notificationsEnabled },
+                        set: { monitor.setNotificationsEnabled($0) }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
 
             HStack {
-                Text("Memory pressure")
+                Text("System permission")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("\(pressureEstimate.percent)% · \(monitor.pressure.displayName)")
-                    .monospacedDigit()
-                    .foregroundStyle(pressureColor)
+                Text(monitor.notificationAuthorization.displayName)
+                    .foregroundStyle(notificationPermissionColor)
             }
             .font(.caption)
 
-            ProgressView(value: pressureEstimate.ratio)
-                .tint(pressureColor)
-                .accessibilityLabel("MemWatch memory pressure estimate")
-                .accessibilityValue("\(pressureEstimate.percent) percent")
+            if monitor.notificationAuthorization == .denied {
+                Button("Open Notification Settings") {
+                    monitor.openNotificationSettings()
+                }
+                .buttonStyle(.link)
+                .font(.caption2)
+            }
         }
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var swapSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Swap Intelligence")
-                    .font(.subheadline.weight(.semibold))
+    private func detailContainer<Content: View>(
+        title: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button {
+                    route = .dashboard
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Back to dashboard")
+
+                Label(title, systemImage: symbol)
+                    .font(.headline)
 
                 Spacer()
 
-                Label(intelligence.state.displayName, systemImage: intelligenceSymbol)
+                Button {
+                    monitor.refresh(forceStorage: true, forceDiagnostics: true)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .help("Refresh")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+
+            Divider()
+
+            content()
+        }
+    }
+
+    private var memoryDetailView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 16) {
+                    MemoryDonutChart(snapshot: snapshot)
+                        .frame(width: 190, height: 190)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        memoryLegend("Active", bytes: snapshot.activeBytes, color: .cyan)
+                        memoryLegend("Wired", bytes: snapshot.wiredBytes, color: .blue)
+                        memoryLegend("Compressed", bytes: snapshot.compressedBytes, color: .indigo)
+                        memoryLegend("Other", bytes: memoryOtherBytes, color: .purple)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                HStack(alignment: .top, spacing: 10) {
+                    memoryInfoCard(
+                        title: "Pressure",
+                        value: "\(pressureEstimate.percent)%",
+                        subtitle: monitor.pressure.displayName,
+                        explanation: pressureExplanation,
+                        color: pressureColor
+                    )
+
+                    memoryInfoCard(
+                        title: "Swap File",
+                        value: shortBytes(snapshot.swapUsedBytes),
+                        subtitle: intelligence.state.displayName,
+                        explanation: swapExplanation,
+                        color: statusColor
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Top Consumers")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Button("Refresh") {
+                            monitor.refresh(forceDiagnostics: true)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                    }
+
+                    if monitor.diagnostics.topProcesses.isEmpty {
+                        Text("No application memory snapshot available yet")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(monitor.diagnostics.topProcesses.prefix(7)) { process in
+                            HStack(spacing: 9) {
+                                Image(systemName: "app.fill")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 18)
+                                Text(process.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(bytes(process.residentBytes))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(16)
+        }
+    }
+
+    private func memoryLegend(_ title: String, bytes value: UInt64, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 9, height: 9)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
                     .font(.caption)
-                    .foregroundStyle(statusColor)
+                    .foregroundStyle(.secondary)
+                Text(bytes(value))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+            }
+        }
+    }
+
+    private func memoryInfoCard(
+        title: String,
+        value: String,
+        subtitle: String,
+        explanation: String,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(value)
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(color)
             }
 
-            metricRow("Swap used", value: bytes(snapshot.swapUsedBytes))
+            Text(subtitle)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
 
-            if monitor.swapDeltaBytes != 0 {
-                metricRow("Allocated Δ / 5 sec", value: signedBytes(monitor.swapDeltaBytes))
-            }
+            Text(explanation)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
 
-            if monitor.swapInDeltaBytes > 0 {
-                metricRow("Swap-in / 5 sec", value: bytes(monitor.swapInDeltaBytes))
-            }
+    private var storageDetailView: some View {
+        ScrollView {
+            storageSection
+                .padding(16)
+        }
+    }
 
-            if monitor.swapOutDeltaBytes > 0 {
-                metricRow("Swap-out / 5 sec", value: bytes(monitor.swapOutDeltaBytes))
-            }
-
-            if intelligence.recentSwapInBytes > 0 {
-                metricRow("Recent swap-in", value: bytes(intelligence.recentSwapInBytes))
-            }
-
-            if intelligence.recentSwapOutBytes > 0 {
-                metricRow("Recent swap-out", value: bytes(intelligence.recentSwapOutBytes))
-            }
-
-            metricRow(
-                "Active samples",
-                value: "\(intelligence.activeSamples)/\(max(intelligence.sampleCount, 1))"
+    private var energyDetailView: some View {
+        ScrollView {
+            PowerMonitorView(
+                snapshot: monitor.powerSnapshot,
+                history: monitor.powerHistory,
+                averageWatts: monitor.averageObservablePowerWatts
             )
+            .padding(16)
+        }
+    }
+
+    private var systemDetailView: some View {
+        ScrollView {
+            SystemDiagnosticsView(
+                diagnostics: monitor.diagnostics,
+                history: monitor.systemHistory,
+                launchAtLoginState: monitor.launchAtLoginState,
+                launchAtLoginError: monitor.launchAtLoginError,
+                onLaunchAtLoginChange: { monitor.setLaunchAtLogin($0) },
+                onOpenLoginItemsSettings: { monitor.openLoginItemsSettings() },
+                onRefreshProcesses: { monitor.refresh(forceDiagnostics: true) }
+            )
+            .padding(16)
         }
     }
 
@@ -226,7 +446,7 @@ struct MenuBarView: View {
     }
 
     private func storageVolumeRow(_ volume: StorageVolumeSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: volume.isInternal ? "internaldrive" : "externaldrive")
                     .foregroundStyle(storageColor(volume.health))
@@ -242,15 +462,8 @@ struct MenuBarView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("\(volume.usagePercent)%")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                    if volume.health != .normal {
-                        Text(volume.health.displayName)
-                            .font(.caption2)
-                            .foregroundStyle(storageColor(volume.health))
-                    }
-                }
+                Text("\(volume.usagePercent)%")
+                    .font(.caption.monospacedDigit().weight(.semibold))
             }
 
             ProgressView(value: volume.usageRatio)
@@ -264,84 +477,122 @@ struct MenuBarView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var notificationSection: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Toggle(
-                "Smart alerts",
-                isOn: Binding(
-                    get: { monitor.notificationsEnabled },
-                    set: { monitor.setNotificationsEnabled($0) }
-                )
-            )
-            .toggleStyle(.switch)
-            .font(.subheadline.weight(.semibold))
+    private var internalVolume: StorageVolumeSnapshot? {
+        monitor.storageVolumes.first(where: { $0.isInternal })
+    }
 
-            HStack {
-                Text("System permission")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(monitor.notificationAuthorization.displayName)
-                    .foregroundStyle(notificationPermissionColor)
-            }
-            .font(.caption)
+    private var storageHeadline: String {
+        guard let internalVolume else { return "Unavailable" }
+        return "\(fileBytes(internalVolume.availableBytes)) free"
+    }
 
-            if monitor.notificationAuthorization == .denied {
-                Button("Open Notification Settings") {
-                    monitor.openNotificationSettings()
-                }
-                .buttonStyle(.link)
-                .font(.caption2)
-            }
+    private var storageDetail: String {
+        guard let internalVolume else { return "No internal volume detected" }
+        return "\(internalVolume.usagePercent)% used · \(internalVolume.health.displayName)"
+    }
 
-            Text("Alerts cover sustained memory pressure and low storage. Persistent storage warnings repeat at most every 6 hours.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private var storageDashboardColor: Color {
+        guard let internalVolume else { return .secondary }
+        return storageColor(internalVolume.health)
+    }
+
+    private var energyHeadline: String {
+        if let percent = monitor.powerSnapshot.batteryPercentClamped {
+            return "Battery \(percent)%"
+        }
+        return monitor.powerSnapshot.source.displayName
+    }
+
+    private var energyColor: Color {
+        switch monitor.powerSnapshot.flow {
+        case .charging: return .green
+        case .discharging: return .orange
+        case .idle: return .blue
+        case .unavailable: return .secondary
         }
     }
 
-    private var footer: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Label(monitor.pressure.displayName, systemImage: "gauge.with.dots.needle.50percent")
-                    .font(.caption)
-                    .foregroundStyle(pressureColor)
-
-                Text(monitor.isUsingNativePressure ? "macOS pressure event" : "MemWatch pressure estimate")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button("Refresh") {
-                monitor.refresh(forceStorage: true, forceDiagnostics: true)
-            }
-            .buttonStyle(.plain)
+    private var powerSymbol: String {
+        switch monitor.powerSnapshot.source {
+        case .ac: return "powerplug.fill"
+        case .battery: return "battery.75percent"
+        case .ups: return "bolt.horizontal.fill"
+        case .unknown: return "bolt"
         }
     }
 
-    private func metricRow(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .monospacedDigit()
+    private var systemHeadline: String {
+        if let cpu = monitor.diagnostics.cpuUsagePercent {
+            return "CPU \(Int(cpu.rounded()))%"
         }
-        .font(.caption)
+        return "CPU —"
+    }
+
+    private var thermalColor: Color {
+        switch monitor.diagnostics.thermalState {
+        case .nominal: return .green
+        case .fair: return .yellow
+        case .serious: return .orange
+        case .critical: return .red
+        }
+    }
+
+    private var healthName: String {
+        if monitor.diagnostics.thermalState == .critical
+            || intelligence.state == .critical
+            || monitor.storageVolumes.contains(where: { $0.health == .critical }) {
+            return "Critical"
+        }
+
+        if monitor.diagnostics.thermalState == .serious
+            || intelligence.state == .pressure
+            || intelligence.state == .activeSwap
+            || monitor.storageVolumes.contains(where: { $0.health == .warning }) {
+            return "Attention"
+        }
+
+        return "Good"
+    }
+
+    private var healthColor: Color {
+        switch healthName {
+        case "Critical": return .red
+        case "Attention": return .orange
+        default: return .green
+        }
+    }
+
+    private var memoryOtherBytes: UInt64 {
+        let accounted = saturatingAdd(snapshot.activeBytes, snapshot.wiredBytes, snapshot.compressedBytes)
+        return snapshot.usedBytes > accounted ? snapshot.usedBytes - accounted : 0
+    }
+
+    private var pressureExplanation: String {
+        switch monitor.pressure {
+        case .normal: return "Your Mac still has comfortable memory headroom."
+        case .warning: return "Memory pressure is elevated. Watch compression and swap activity."
+        case .critical: return "Memory pressure is critical and may affect responsiveness."
+        }
+    }
+
+    private var swapExplanation: String {
+        switch intelligence.state {
+        case .stable: return "No meaningful swap pressure is active."
+        case .idleSwap: return "Swap contains old data, but there is no current disk pressure."
+        case .readback: return "macOS is reading previously swapped memory back into RAM."
+        case .activeSwap: return "Memory pages are actively moving to or from disk."
+        case .pressure: return "Sustained pressure and swap activity are present."
+        case .critical: return "Swap activity is sustained under critical memory pressure."
+        }
     }
 
     private var headerSummary: String {
-        if monitor.diagnostics.thermalState == .critical {
-            return "System thermal state is critical"
-        }
-        if monitor.diagnostics.thermalState == .serious {
-            return "System is running hot"
-        }
+        if monitor.diagnostics.thermalState == .critical { return "System thermal state is critical" }
+        if monitor.diagnostics.thermalState == .serious { return "System is running hot" }
         if let criticalVolume = monitor.storageVolumes.first(where: { $0.health == .critical }) {
             return "\(criticalVolume.name) is critically low on space"
         }
@@ -352,9 +603,7 @@ struct MenuBarView: View {
     }
 
     private var statusSymbol: String {
-        if monitor.diagnostics.thermalState == .critical {
-            return "thermometer.high"
-        }
+        if monitor.diagnostics.thermalState == .critical { return "thermometer.high" }
         if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
             return "externaldrive.badge.exclamationmark"
         }
@@ -369,27 +618,10 @@ struct MenuBarView: View {
         }
     }
 
-    private var intelligenceSymbol: String {
-        switch intelligence.state {
-        case .stable: return "checkmark.circle"
-        case .idleSwap: return "pause.circle"
-        case .readback: return "arrow.down.circle"
-        case .activeSwap: return "arrow.left.arrow.right.circle"
-        case .pressure: return "gauge.with.dots.needle.67percent"
-        case .critical: return "exclamationmark.octagon"
-        }
-    }
-
     private var statusColor: Color {
-        if monitor.diagnostics.thermalState == .critical {
-            return .red
-        }
-        if monitor.diagnostics.thermalState == .serious {
-            return .orange
-        }
-        if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
-            return .red
-        }
+        if monitor.diagnostics.thermalState == .critical { return .red }
+        if monitor.diagnostics.thermalState == .serious { return .orange }
+        if monitor.storageVolumes.contains(where: { $0.health == .critical }) { return .red }
         if monitor.storageVolumes.contains(where: { $0.health == .warning }) && intelligence.state == .stable {
             return .orange
         }
@@ -398,8 +630,7 @@ struct MenuBarView: View {
         case .stable: return .green
         case .idleSwap: return .secondary
         case .readback: return .blue
-        case .activeSwap: return .orange
-        case .pressure: return .orange
+        case .activeSwap, .pressure: return .orange
         case .critical: return .red
         }
     }
@@ -422,12 +653,9 @@ struct MenuBarView: View {
 
     private var notificationPermissionColor: Color {
         switch monitor.notificationAuthorization {
-        case .authorized, .provisional, .ephemeral:
-            return .green
-        case .denied:
-            return .red
-        case .notDetermined, .unknown:
-            return .secondary
+        case .authorized, .provisional, .ephemeral: return .green
+        case .denied: return .red
+        case .notDetermined, .unknown: return .secondary
         }
     }
 
@@ -435,14 +663,101 @@ struct MenuBarView: View {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
     }
 
+    private func shortBytes(_ value: UInt64) -> String {
+        if value == 0 { return "Zero KB" }
+        return bytes(value)
+    }
+
     private func fileBytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 
-    private func signedBytes(_ value: Int64) -> String {
-        guard value != 0 else { return bytes(0) }
-        let prefix = value > 0 ? "+" : "−"
-        let magnitude = value == Int64.min ? UInt64(Int64.max) + 1 : UInt64(abs(value))
-        return prefix + bytes(magnitude)
+    private func saturatingAdd(_ values: UInt64...) -> UInt64 {
+        values.reduce(0) { partial, value in
+            let (result, overflow) = partial.addingReportingOverflow(value)
+            return overflow ? UInt64.max : result
+        }
+    }
+}
+
+private struct MemoryDonutChart: View {
+    let snapshot: MemorySnapshot
+
+    private struct Segment {
+        let name: String
+        let bytes: UInt64
+        let color: Color
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.quaternary, lineWidth: 24)
+
+            ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                let start = startFraction(at: index)
+                let end = start + fraction(for: segment)
+
+                if end > start {
+                    Circle()
+                        .trim(from: start, to: max(start, end - 0.008))
+                        .stroke(segment.color, style: StrokeStyle(lineWidth: 24, lineCap: .butt))
+                        .rotationEffect(.degrees(-90))
+                }
+            }
+
+            VStack(spacing: 2) {
+                Text(bytes(snapshot.availableBytes))
+                    .font(.title2.monospacedDigit().weight(.bold))
+                Text("of \(bytes(snapshot.totalBytes))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("available")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Available memory")
+        .accessibilityValue("\(bytes(snapshot.availableBytes)) of \(bytes(snapshot.totalBytes))")
+    }
+
+    private var segments: [Segment] {
+        let accounted = saturatingAdd(snapshot.activeBytes, snapshot.wiredBytes, snapshot.compressedBytes)
+        let other = snapshot.usedBytes > accounted ? snapshot.usedBytes - accounted : 0
+        return [
+            Segment(name: "Active", bytes: snapshot.activeBytes, color: .cyan),
+            Segment(name: "Wired", bytes: snapshot.wiredBytes, color: .blue),
+            Segment(name: "Compressed", bytes: snapshot.compressedBytes, color: .indigo),
+            Segment(name: "Other", bytes: other, color: .purple)
+        ]
+    }
+
+    private var segmentTotal: Double {
+        max(Double(segments.reduce(UInt64(0)) { partial, segment in
+            let (sum, overflow) = partial.addingReportingOverflow(segment.bytes)
+            return overflow ? UInt64.max : sum
+        }), 1)
+    }
+
+    private func fraction(for segment: Segment) -> Double {
+        min(max(Double(segment.bytes) / segmentTotal, 0), 1)
+    }
+
+    private func startFraction(at index: Int) -> Double {
+        guard index > 0 else { return 0 }
+        return segments.prefix(index).reduce(0) { $0 + fraction(for: $1) }
+    }
+
+    private func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
+    }
+
+    private func saturatingAdd(_ values: UInt64...) -> UInt64 {
+        values.reduce(0) { partial, value in
+            let (result, overflow) = partial.addingReportingOverflow(value)
+            return overflow ? UInt64.max : result
+        }
     }
 }

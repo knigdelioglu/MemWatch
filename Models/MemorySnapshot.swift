@@ -21,6 +21,7 @@ struct MemorySnapshot {
     let usedBytes: UInt64
     let availableBytes: UInt64
     let freeBytes: UInt64
+    let activeBytes: UInt64
     let cachedBytes: UInt64
     let wiredBytes: UInt64
     let compressedBytes: UInt64
@@ -124,6 +125,7 @@ extension MemorySnapshot {
         usedBytes: 0,
         availableBytes: 0,
         freeBytes: 0,
+        activeBytes: 0,
         cachedBytes: 0,
         wiredBytes: 0,
         compressedBytes: 0,

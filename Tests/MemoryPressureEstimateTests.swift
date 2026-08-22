@@ -158,12 +158,14 @@ struct MemoryPressureEstimateTests {
         pressure: MemoryPressure
     ) -> MemorySnapshot {
         let total = 16 * gib
+        let used = total > available ? total - available : 0
         return MemorySnapshot(
             timestamp: .now,
             totalBytes: total,
-            usedBytes: total > available ? total - available : 0,
+            usedBytes: used,
             availableBytes: min(available, total),
             freeBytes: 0,
+            activeBytes: min(used / 2, total),
             cachedBytes: available,
             wiredBytes: 2 * gib,
             compressedBytes: min(compressed, total),
