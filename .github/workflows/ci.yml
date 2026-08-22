@@ -45,6 +45,14 @@ jobs:
             -o /tmp/memwatch-collector-smoke
           /tmp/memwatch-collector-smoke
 
+      - name: Run memory pressure estimate tests
+        run: |
+          xcrun swiftc \
+            Models/MemorySnapshot.swift \
+            Tests/MemoryPressureEstimateTests.swift \
+            -o /tmp/memwatch-pressure-estimate-tests
+          /tmp/memwatch-pressure-estimate-tests
+
       - name: Run storage collector smoke test
         run: |
           xcrun swiftc \

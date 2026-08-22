@@ -33,6 +33,14 @@ final class MonitoringService: ObservableObject {
         systemPressure ?? snapshot.pressure
     }
 
+    var memoryPressureEstimate: MemoryPressureEstimate {
+        MemoryPressureEstimate.calculate(
+            snapshot: snapshot,
+            swapOutDeltaBytes: swapOutDeltaBytes,
+            effectivePressure: pressure
+        )
+    }
+
     var isUsingNativePressure: Bool {
         systemPressure != nil
     }
