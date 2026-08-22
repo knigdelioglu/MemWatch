@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
+    private static let panelSize = NSSize(width: 430, height: 640)
+
     private let monitor: MonitoringService
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
@@ -72,10 +74,18 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentSize = NSSize(width: 380, height: 640)
+        installDashboardRootView()
+    }
+
+    /// Rebuild the SwiftUI root before every presentation. MenuBarView starts at
+    /// `.dashboard`, so reopening MemWatch never restores a previously selected
+    /// detail route. Keeping the AppKit popover and SwiftUI root at the same
+    /// 430-point width also prevents dashboard and memory cards from clipping.
+    private func installDashboardRootView() {
+        popover.contentSize = Self.panelSize
         popover.contentViewController = NSHostingController(
             rootView: MenuBarView(monitor: monitor)
-                .frame(width: 380, height: 640)
+                .frame(width: Self.panelSize.width, height: Self.panelSize.height)
         )
     }
 
@@ -141,6 +151,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             closePopover()
         } else {
             monitor.refresh(forceStorage: true, forceDiagnostics: true)
+            installDashboardRootView()
             popover.show(
                 relativeTo: button.bounds,
                 of: button,
