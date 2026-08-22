@@ -36,6 +36,14 @@ jobs:
             -showBuildSettings | grep 'INFOPLIST_KEY_LSUIElement = YES'
           grep -q 'setActivationPolicy(.accessory)' MemWatchApp.swift
 
+      - name: Verify popover layout and reopen reset
+        run: |
+          grep -q 'panelSize = NSSize(width: 430, height: 640)' MemWatchApp.swift
+          grep -q 'installDashboardRootView()' MemWatchApp.swift
+          test "$(grep -c 'installDashboardRootView()' MemWatchApp.swift)" -ge 2
+          grep -q '.frame(width: 430, height: 640)' Views/MenuBarView.swift
+          ! grep -q 'NSSize(width: 380, height: 640)' MemWatchApp.swift
+
       - name: Run memory collector smoke test
         run: |
           xcrun swiftc \
