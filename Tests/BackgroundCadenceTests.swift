@@ -20,12 +20,26 @@ struct BackgroundCadenceTests {
             pattern: #"scheduledTimer\(withTimeInterval:\s*([0-9.]+)"#,
             name: "main monitoring timer"
         )
+        let powerHistoryLimit = try captureNumber(
+            in: source,
+            pattern: #"powerHistoryLimit\s*=\s*([0-9.]+)"#,
+            name: "powerHistoryLimit"
+        )
+        let systemHistoryLimit = try captureNumber(
+            in: source,
+            pattern: #"systemHistoryLimit\s*=\s*([0-9.]+)"#,
+            name: "systemHistoryLimit"
+        )
 
         require(mainInterval >= 5, "Main background polling must not be faster than 5s")
         require(storageInterval >= 30, "Storage polling must not be faster than 30s")
         require(processInterval >= 30, "Process snapshot polling must not be faster than 30s")
-        require(source.contains("powerHistoryLimit = 120"), "Power history must remain bounded")
-        require(source.contains("systemHistoryLimit = 120"), "System history must remain bounded")
+
+        // Power history stores only a handful of Doubles plus timestamp/UUID per sample.
+        // 360 samples is 30 minutes at the existing 5-second cadence and stays a small,
+        // strictly bounded in-memory buffer without increasing wake-up frequency.
+        require(powerHistoryLimit > 0 && powerHistoryLimit <= 360, "Power history must remain bounded to at most 360 samples")
+        require(systemHistoryLimit > 0 && systemHistoryLimit <= 120, "System history must remain bounded to at most 120 samples")
 
         let wakeupsPerMinute = 60.0 / mainInterval
         require(wakeupsPerMinute <= 12.0, "Background main timer exceeds 12 scheduled polls/minute")
@@ -34,6 +48,7 @@ struct BackgroundCadenceTests {
         print("  main: \(mainInterval)s (<= \(String(format: "%.1f", wakeupsPerMinute)) scheduled polls/min)")
         print("  storage: \(storageInterval)s")
         print("  processes: \(processInterval)s")
+        print("  power history: \(Int(powerHistoryLimit)) samples")
     }
 
     private static func captureNumber(in source: String, pattern: String, name: String) throws -> Double {
