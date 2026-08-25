@@ -49,15 +49,22 @@ final class MonitoringService: ObservableObject {
     }
 
     var averageObservablePowerWatts: Double? {
-        guard !powerHistory.isEmpty else { return nil }
-        let sum = powerHistory.reduce(0) { $0 + $1.watts }
-        return sum / Double(powerHistory.count)
+        average(powerHistory.compactMap { $0.systemLoadWatts })
+    }
+
+    var averageInputPowerWatts: Double? {
+        average(powerHistory.compactMap { $0.adapterInputWatts })
+    }
+
+    var peakSystemPowerWatts: Double? {
+        powerHistory.compactMap { $0.systemLoadWatts }.max()
     }
 
     private static let notificationsEnabledKey = "MemWatch.notificationsEnabled"
     private static let storageRefreshInterval: TimeInterval = 30
     private static let processRefreshInterval: TimeInterval = 30
-    private static let powerHistoryLimit = 120
+    // 5-second samples × 360 = 30 minutes of lightweight in-memory power history.
+    private static let powerHistoryLimit = 360
     private static let systemHistoryLimit = 120
 
     private let collector = MemoryCollector()
@@ -212,14 +219,20 @@ final class MonitoringService: ObservableObject {
         let nextSnapshot = powerCollector.collect()
         powerSnapshot = nextSnapshot
 
-        guard let watts = nextSnapshot.observableWatts, watts.isFinite, watts >= 0 else {
+        let systemLoad = nextSnapshot.systemLoadWatts
+        let adapterInput = nextSnapshot.adapterInputWatts
+        let batteryFlow = nextSnapshot.batteryFlowWatts
+
+        guard systemLoad != nil || adapterInput != nil || batteryFlow != nil else {
             return
         }
 
         powerHistory.append(
             PowerHistoryPoint(
                 timestamp: nextSnapshot.timestamp,
-                watts: watts,
+                systemLoadWatts: systemLoad,
+                adapterInputWatts: adapterInput,
+                batteryFlowWatts: batteryFlow,
                 flow: nextSnapshot.flow
             )
         )
@@ -336,6 +349,11 @@ final class MonitoringService: ObservableObject {
         NSWorkspace.shared.open(
             URL(fileURLWithPath: "/System/Applications/System Settings.app")
         )
+    }
+
+    private func average(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     private func monotonicDelta(current: UInt64, previous: UInt64) -> UInt64 {
