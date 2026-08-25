@@ -33,10 +33,13 @@ struct PowerCollector {
         let maxCapacity = number(batteryDescription, key: kIOPSMaxCapacityKey)
         let batteryPercent = percent(current: currentCapacity, max: maxCapacity)
 
-        let registryTelemetry = readAppleSmartBatteryTelemetry()
-        let currentMilliAmps = number(batteryDescription, key: kIOPSCurrentKey) ?? registryTelemetry.currentMilliAmps
-        let voltageMilliVolts = number(batteryDescription, key: kIOPSVoltageKey) ?? registryTelemetry.voltageMilliVolts
-        let flowWatts = PowerSnapshot.watts(
+        let registry = readAppleSmartBatteryTelemetry()
+        let currentMilliAmps = registry.currentMilliAmps
+            ?? signedNumber(batteryDescription?.object(forKey: kIOPSCurrentKey))
+        let voltageMilliVolts = registry.voltageMilliVolts
+            ?? number(batteryDescription, key: kIOPSVoltageKey)
+
+        let signedBatteryWatts = PowerSnapshot.signedWatts(
             currentMilliAmps: currentMilliAmps,
             voltageMilliVolts: voltageMilliVolts
         )
@@ -51,9 +54,11 @@ struct PowerCollector {
             isCharged: isCharged,
             currentMilliAmps: currentMilliAmps,
             voltageMilliVolts: voltageMilliVolts,
-            batteryFlowWatts: flowWatts,
-            adapterRatedWatts: adapter.ratedWatts,
-            adapterCurrentMilliAmps: adapter.currentMilliAmps,
+            signedBatteryWatts: signedBatteryWatts,
+            systemInputWatts: registry.systemInputWatts,
+            measuredSystemLoadWatts: registry.systemLoadWatts,
+            adapterRatedWatts: adapter.ratedWatts ?? registry.adapterRatedWatts,
+            adapterCurrentMilliAmps: adapter.currentMilliAmps ?? registry.adapterCurrentMilliAmps,
             timeToEmptyMinutes: positiveMinutes(batteryDescription, key: kIOPSTimeToEmptyKey),
             timeToFullMinutes: positiveMinutes(batteryDescription, key: kIOPSTimeToFullChargeKey)
         )
@@ -86,41 +91,86 @@ struct PowerCollector {
         )
     }
 
-    /// IOPowerSources does not expose current/voltage on every Mac/OS build.
-    /// AppleSmartBattery is used only as a telemetry fallback; all access still
-    /// goes through public IORegistry APIs and failure simply yields nil values.
-    private func readAppleSmartBatteryTelemetry() -> (currentMilliAmps: Double?, voltageMilliVolts: Double?) {
+    /// Reads AppleSmartBattery in one registry pass. Newer Apple Silicon Macs
+    /// expose PowerTelemetryData with SystemPowerIn and SystemLoad in mW. Those
+    /// values let MemWatch distinguish external input, Mac load, and battery flow
+    /// instead of presenting the charger's rated wattage as live consumption.
+    private func readAppleSmartBatteryTelemetry() -> RegistryTelemetry {
         guard let matching = IOServiceMatching("AppleSmartBattery") else {
-            return (nil, nil)
+            return .empty
         }
 
         let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
         guard service != 0 else {
-            return (nil, nil)
+            return .empty
         }
         defer { IOObjectRelease(service) }
 
-        let instantCurrent = registryNumber(service, key: "InstantAmperage")
-        let current = instantCurrent ?? registryNumber(service, key: "Amperage")
-        let voltage = registryNumber(service, key: "Voltage")
-        return (current, voltage)
-    }
-
-    private func registryNumber(_ service: io_service_t, key: String) -> Double? {
-        guard let value = IORegistryEntryCreateCFProperty(
+        var unmanagedProperties: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(
             service,
-            key as CFString,
+            &unmanagedProperties,
             kCFAllocatorDefault,
             0
-        )?.takeRetainedValue() as? NSNumber else {
-            return nil
+        )
+
+        guard result == KERN_SUCCESS,
+              let properties = unmanagedProperties?.takeRetainedValue() as? [String: Any] else {
+            return .empty
         }
 
-        return value.doubleValue
+        let powerTelemetry = properties["PowerTelemetryData"] as? [String: Any]
+        let instantCurrent = signedNumber(properties["InstantAmperage"])
+        let averageCurrent = signedNumber(properties["Amperage"])
+        let voltage = number(properties["Voltage"])
+
+        let rawAdapter = firstAdapterDictionary(in: properties)
+
+        return RegistryTelemetry(
+            currentMilliAmps: instantCurrent ?? averageCurrent,
+            voltageMilliVolts: voltage,
+            systemInputWatts: wattsFromMilliwatts(number(powerTelemetry?["SystemPowerIn"])),
+            systemLoadWatts: wattsFromMilliwatts(number(powerTelemetry?["SystemLoad"])),
+            adapterRatedWatts: number(rawAdapter?["Watts"]),
+            adapterCurrentMilliAmps: number(rawAdapter?["Current"])
+        )
+    }
+
+    private func firstAdapterDictionary(in properties: [String: Any]) -> [String: Any]? {
+        if let adapters = properties["AppleRawAdapterDetails"] as? [[String: Any]],
+           let first = adapters.first {
+            return first
+        }
+
+        if let adapter = properties["AdapterDetails"] as? [String: Any] {
+            return adapter
+        }
+
+        return nil
+    }
+
+    private func wattsFromMilliwatts(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value >= 0, value < 1_000_000 else {
+            return nil
+        }
+        return value / 1_000
+    }
+
+    private func number(_ value: Any?) -> Double? {
+        guard let value = value as? NSNumber else { return nil }
+        let result = value.doubleValue
+        return result.isFinite ? result : nil
+    }
+
+    /// AppleSmartBattery may surface negative current through an unsigned-looking
+    /// CFNumber. int64Value preserves the two's-complement direction.
+    private func signedNumber(_ value: Any?) -> Double? {
+        guard let value = value as? NSNumber else { return nil }
+        return Double(value.int64Value)
     }
 
     private func number(_ dictionary: NSDictionary?, key: Any) -> Double? {
-        (dictionary?.object(forKey: key) as? NSNumber)?.doubleValue
+        number(dictionary?.object(forKey: key))
     }
 
     private func bool(_ dictionary: NSDictionary?, key: Any) -> Bool? {
@@ -142,4 +192,22 @@ struct PowerCollector {
     private func maximum(_ lhs: Int, _ rhs: Int) -> Int {
         lhs > rhs ? lhs : rhs
     }
+}
+
+private struct RegistryTelemetry {
+    let currentMilliAmps: Double?
+    let voltageMilliVolts: Double?
+    let systemInputWatts: Double?
+    let systemLoadWatts: Double?
+    let adapterRatedWatts: Double?
+    let adapterCurrentMilliAmps: Double?
+
+    static let empty = RegistryTelemetry(
+        currentMilliAmps: nil,
+        voltageMilliVolts: nil,
+        systemInputWatts: nil,
+        systemLoadWatts: nil,
+        adapterRatedWatts: nil,
+        adapterCurrentMilliAmps: nil
+    )
 }
