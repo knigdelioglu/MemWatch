@@ -5,21 +5,21 @@ struct PowerMonitorView: View {
     let history: [PowerHistoryPoint]
     let averageWatts: Double?
 
-    @State private var selectedWindow: PowerHistoryWindow = .fifteenMinutes
+    @State private var window: PowerHistoryWindow = .fifteenMinutes
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            heroCard
+            hero
             metricStrip
             PowerFlowCard(snapshot: snapshot)
             historyCard
-            sensorCard
+            electricalDetails
         }
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Power")
                     .font(.headline)
@@ -39,8 +39,8 @@ struct PowerMonitorView: View {
         }
     }
 
-    private var heroCard: some View {
-        HStack(alignment: .center, spacing: 16) {
+    private var hero: some View {
+        HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("MAC DRAW")
                     .font(.caption2.weight(.semibold))
@@ -57,7 +57,7 @@ struct PowerMonitorView: View {
 
             Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 5) {
                 HStack(spacing: 6) {
                     Image(systemName: batterySymbol)
                         .font(.title2)
@@ -96,7 +96,6 @@ struct PowerMonitorView: View {
                 symbol: "powerplug.fill",
                 tint: .blue
             )
-
             PowerMetricTile(
                 title: "MAC",
                 value: snapshot.systemLoadWatts.map(wattString) ?? "—",
@@ -104,7 +103,6 @@ struct PowerMonitorView: View {
                 symbol: "laptopcomputer",
                 tint: .primary
             )
-
             PowerMetricTile(
                 title: "BATTERY",
                 value: batteryMetricValue,
@@ -121,16 +119,16 @@ struct PowerMonitorView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Power History")
                         .font(.subheadline.weight(.semibold))
-                    Text("Mac, adapter input and battery flow")
+                    Text("Mac · Input · Battery")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                Picker("Window", selection: $selectedWindow) {
-                    ForEach(PowerHistoryWindow.allCases) { window in
-                        Text(window.shortName).tag(window)
+                Picker("Window", selection: $window) {
+                    ForEach(PowerHistoryWindow.allCases) { option in
+                        Text(option.label).tag(option)
                     }
                 }
                 .labelsHidden()
@@ -143,16 +141,16 @@ struct PowerMonitorView: View {
                     .frame(height: 112)
 
                 HStack(spacing: 12) {
-                    chartLegend("Mac", color: .primary)
-                    chartLegend("Input", color: .blue)
-                    chartLegend("Battery", color: .green)
+                    legend("Mac", color: .primary)
+                    legend("Input", color: .blue)
+                    legend("Battery", color: .green)
                     Spacer()
                 }
 
                 HStack {
-                    summaryValue("Avg", value: visibleAverageWatts ?? averageWatts)
+                    summary("Avg", value: visibleAverage ?? averageWatts)
                     Spacer()
-                    summaryValue("Peak", value: visiblePeakWatts)
+                    summary("Peak", value: visiblePeak)
                 }
             } else {
                 HStack {
@@ -174,7 +172,7 @@ struct PowerMonitorView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
-    private var sensorCard: some View {
+    private var electricalDetails: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Electrical Details")
@@ -185,18 +183,18 @@ struct PowerMonitorView: View {
                     .foregroundStyle(.secondary)
             }
 
-            sensorRow("Live input", value: snapshot.adapterInputWatts.map(wattString) ?? "—")
-            sensorRow("Mac load", value: snapshot.systemLoadWatts.map(wattString) ?? "—")
-            sensorRow("Battery flow", value: signedBatteryString)
+            detailRow("Live input", snapshot.adapterInputWatts.map(wattString) ?? "—")
+            detailRow("Mac load", snapshot.systemLoadWatts.map(wattString) ?? "—")
+            detailRow("Battery flow", signedBatteryString)
 
-            if let ratedWatts = snapshot.adapterRatedWatts {
-                sensorRow("Adapter capacity", value: integerWattString(ratedWatts))
+            if let rated = snapshot.adapterRatedWatts {
+                detailRow("Adapter capacity", String(format: "%.0f W", rated))
             }
             if let voltage = snapshot.voltageMilliVolts {
-                sensorRow("Battery voltage", value: String(format: "%.2f V", voltage / 1_000))
+                detailRow("Battery voltage", String(format: "%.2f V", voltage / 1_000))
             }
             if let current = snapshot.currentMilliAmps {
-                sensorRow("Battery current", value: String(format: "%+.2f A", current / 1_000))
+                detailRow("Battery current", String(format: "%+.2f A", current / 1_000))
             }
 
             Divider()
@@ -211,17 +209,17 @@ struct PowerMonitorView: View {
     }
 
     private var visibleHistory: [PowerHistoryPoint] {
-        Array(history.suffix(selectedWindow.sampleCount))
+        Array(history.suffix(window.sampleCount))
     }
 
-    private var visibleAverageWatts: Double? {
-        let values = visibleHistory.compactMap { $0.systemLoadWatts }
+    private var visibleAverage: Double? {
+        let values = visibleHistory.compactMap(\.systemLoadWatts)
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
     }
 
-    private var visiblePeakWatts: Double? {
-        visibleHistory.compactMap { $0.systemLoadWatts }.max()
+    private var visiblePeak: Double? {
+        visibleHistory.compactMap(\.systemLoadWatts).max()
     }
 
     private var telemetrySymbol: String {
@@ -243,9 +241,11 @@ struct PowerMonitorView: View {
     }
 
     private var batterySymbol: String {
-        if snapshot.flow == .charging { return "battery.100percent.bolt" }
-        if snapshot.flow == .discharging { return "battery.50percent" }
-        return "battery.100percent"
+        switch snapshot.flow {
+        case .charging: return "battery.100percent.bolt"
+        case .discharging: return "battery.50percent"
+        case .idle, .unavailable: return "battery.100percent"
+        }
     }
 
     private var flowColor: Color {
@@ -259,14 +259,11 @@ struct PowerMonitorView: View {
 
     private var systemPowerSubtitle: String {
         switch snapshot.telemetryCoverage {
-        case .detailed:
-            return "Measured by AppleSmartBattery telemetry"
-        case .derived:
-            return "Derived from input and battery flow"
+        case .detailed: return "Measured by AppleSmartBattery telemetry"
+        case .derived: return "Derived from input and battery flow"
         case .batteryOnly:
             return snapshot.source == .battery ? "Measured from battery output" : "Battery telemetry only"
-        case .unavailable:
-            return "Live power telemetry unavailable"
+        case .unavailable: return "Live power telemetry unavailable"
         }
     }
 
@@ -295,8 +292,8 @@ struct PowerMonitorView: View {
         if snapshot.flow == .charging, let minutes = snapshot.timeToFullMinutes {
             return timeString(minutes) + " to full"
         }
-        if snapshot.flow == .discharging,
-           snapshot.source == .battery,
+        if snapshot.source == .battery,
+           snapshot.flow == .discharging,
            let minutes = snapshot.timeToEmptyMinutes {
             return timeString(minutes) + " remaining"
         }
@@ -306,45 +303,13 @@ struct PowerMonitorView: View {
     private var accuracyNote: String {
         switch snapshot.telemetryCoverage {
         case .detailed:
-            return "Input and Mac load come from AppleSmartBattery PowerTelemetryData. Battery direction uses signed battery current × voltage. Adapter capacity is the negotiated/rated ceiling, not live draw."
+            return "Input and Mac load use AppleSmartBattery PowerTelemetryData. Battery direction uses signed current × voltage. Adapter capacity is a ceiling, not live draw."
         case .derived:
-            return "Live adapter input is measured by AppleSmartBattery. Mac load is calculated from input minus signed battery flow."
+            return "Live adapter input is measured. Mac load is calculated from input minus signed battery flow."
         case .batteryOnly:
-            return "This Mac is exposing battery electrical telemetry but not detailed external-input telemetry. Battery discharge still gives a useful Mac-load reading while unplugged."
+            return "Detailed external-input telemetry is unavailable. While unplugged, battery discharge still provides the Mac-load reading."
         case .unavailable:
-            return "Detailed power sensors are not exposed on this Mac/macOS combination right now. MemWatch leaves unavailable values blank instead of substituting adapter rating."
-        }
-    }
-
-    private func chartLegend(_ title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func summaryValue(_ title: String, value: Double?) -> some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(value.map(wattString) ?? "—")
-                .font(.caption.monospacedDigit().weight(.semibold))
-        }
-    }
-
-    private func sensorRow(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.caption.monospacedDigit().weight(.medium))
+            return "Detailed power sensors are unavailable on this Mac/macOS combination. MemWatch leaves missing values blank instead of using adapter rating as live draw."
         }
     }
 
@@ -352,17 +317,33 @@ struct PowerMonitorView: View {
         String(format: "%.1f W", value)
     }
 
-    private func integerWattString(_ value: Double) -> String {
-        String(format: "%.0f W", value)
-    }
-
     private func timeString(_ minutes: Int) -> String {
         let hours = minutes / 60
         let remainder = minutes % 60
-        if hours > 0 {
-            return "\(hours)h \(remainder)m"
+        return hours > 0 ? "\(hours)h \(remainder)m" : "\(remainder)m"
+    }
+
+    private func legend(_ title: String, color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title).font(.caption2).foregroundStyle(.secondary)
         }
-        return "\(remainder)m"
+    }
+
+    private func summary(_ title: String, value: Double?) -> some View {
+        HStack(spacing: 5) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value.map(wattString) ?? "—")
+                .font(.caption.monospacedDigit().weight(.semibold))
+        }
+    }
+
+    private func detailRow(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).font(.caption.monospacedDigit().weight(.medium))
+        }
     }
 }
 
@@ -374,7 +355,7 @@ private enum PowerHistoryWindow: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var sampleCount: Int { rawValue }
 
-    var shortName: String {
+    var label: String {
         switch self {
         case .fiveMinutes: return "5m"
         case .fifteenMinutes: return "15m"
@@ -400,12 +381,10 @@ private struct PowerMetricTile: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-
             Text(value)
                 .font(.headline.monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
-
             Text(subtitle)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -423,28 +402,19 @@ private struct PowerFlowCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Power Flow")
-                        .font(.subheadline.weight(.semibold))
-                    Text(flowDescription)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "arrow.right")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Power Flow")
+                    .font(.subheadline.weight(.semibold))
+                Text(flowDescription)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
-                sourceNodes
-                    .frame(width: 88)
-
+                sourceColumn.frame(width: 88)
                 PowerRibbonDiagram(snapshot: snapshot)
                     .frame(maxWidth: .infinity, minHeight: 116)
-
-                destinationNodes
-                    .frame(width: 88)
+                destinationColumn.frame(width: 88)
             }
         }
         .padding(14)
@@ -452,85 +422,48 @@ private struct PowerFlowCard: View {
     }
 
     @ViewBuilder
-    private var sourceNodes: some View {
+    private var sourceColumn: some View {
         if snapshot.source == .battery {
             VStack {
                 Spacer()
-                flowNode(
-                    title: "Battery",
-                    value: snapshot.batteryDischargeWatts,
-                    symbol: "battery.75percent",
-                    color: .orange
-                )
+                node("Battery", snapshot.batteryDischargeWatts, "battery.75percent", .orange)
                 Spacer()
             }
         } else if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
             VStack(spacing: 10) {
-                flowNode(
-                    title: "Adapter",
-                    value: snapshot.adapterInputWatts,
-                    symbol: "powerplug.fill",
-                    color: .blue
-                )
-                flowNode(
-                    title: "Battery",
-                    value: snapshot.batteryDischargeWatts,
-                    symbol: "battery.50percent",
-                    color: .orange
-                )
+                node("Adapter", snapshot.adapterInputWatts, "powerplug.fill", .blue)
+                node("Battery", snapshot.batteryDischargeWatts, "battery.50percent", .orange)
             }
         } else {
             VStack {
                 Spacer()
-                flowNode(
-                    title: "Adapter",
-                    value: snapshot.adapterInputWatts,
-                    symbol: "powerplug.fill",
-                    color: .blue
-                )
+                node("Adapter", snapshot.adapterInputWatts, "powerplug.fill", .blue)
                 Spacer()
             }
         }
     }
 
     @ViewBuilder
-    private var destinationNodes: some View {
+    private var destinationColumn: some View {
         if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
             VStack(spacing: 10) {
-                flowNode(
-                    title: "Mac",
-                    value: snapshot.systemLoadWatts,
-                    symbol: "laptopcomputer",
-                    color: .primary
-                )
-                flowNode(
-                    title: "Battery",
-                    value: snapshot.batteryChargeWatts,
-                    symbol: "battery.100percent.bolt",
-                    color: .green
-                )
+                node("Mac", snapshot.systemLoadWatts, "laptopcomputer", .primary)
+                node("Battery", snapshot.batteryChargeWatts, "battery.100percent", .green)
             }
         } else {
             VStack {
                 Spacer()
-                flowNode(
-                    title: "Mac",
-                    value: snapshot.systemLoadWatts,
-                    symbol: "laptopcomputer",
-                    color: .primary
-                )
+                node("Mac", snapshot.systemLoadWatts, "laptopcomputer", .primary)
                 Spacer()
             }
         }
     }
 
-    private func flowNode(title: String, value: Double?, symbol: String, color: Color) -> some View {
+    private func node(_ title: String, _ watts: Double?, _ symbol: String, _ color: Color) -> some View {
         VStack(spacing: 3) {
-            Image(systemName: symbol)
-                .foregroundStyle(color)
-            Text(title)
-                .font(.caption2.weight(.semibold))
-            Text(value.map { String(format: "%.1f W", $0) } ?? "—")
+            Image(systemName: symbol).foregroundStyle(color)
+            Text(title).font(.caption2.weight(.semibold))
+            Text(watts.map { String(format: "%.1f W", $0) } ?? "—")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -540,9 +473,7 @@ private struct PowerFlowCard: View {
     }
 
     private var flowDescription: String {
-        if snapshot.source == .battery {
-            return "Battery powers the Mac"
-        }
+        if snapshot.source == .battery { return "Battery powers the Mac" }
         if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
             return "Adapter and battery are powering the Mac"
         }
@@ -557,115 +488,68 @@ private struct PowerRibbonDiagram: View {
     let snapshot: PowerSnapshot
 
     var body: some View {
-        GeometryReader { proxy in
-            Canvas { context, size in
-                let maxPower = max(
-                    snapshot.systemLoadWatts ?? 0,
-                    snapshot.adapterInputWatts ?? 0,
-                    snapshot.batteryFlowWatts ?? 0,
-                    1
-                )
+        Canvas { context, size in
+            let maxPower = [
+                snapshot.systemLoadWatts ?? 0,
+                snapshot.adapterInputWatts ?? 0,
+                snapshot.batteryFlowWatts ?? 0,
+                1
+            ].max() ?? 1
 
-                if snapshot.source == .battery {
-                    drawRibbon(
-                        context: &context,
-                        size: size,
-                        startY: size.height * 0.50,
-                        endY: size.height * 0.50,
-                        watts: snapshot.batteryDischargeWatts ?? snapshot.systemLoadWatts ?? 0,
-                        maxPower: maxPower,
-                        color: .orange
-                    )
-                    return
-                }
-
-                if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
-                    drawRibbon(
-                        context: &context,
-                        size: size,
-                        startY: size.height * 0.28,
-                        endY: size.height * 0.50,
-                        watts: snapshot.adapterInputWatts ?? 0,
-                        maxPower: maxPower,
-                        color: .blue
-                    )
-                    drawRibbon(
-                        context: &context,
-                        size: size,
-                        startY: size.height * 0.72,
-                        endY: size.height * 0.50,
-                        watts: snapshot.batteryDischargeWatts ?? 0,
-                        maxPower: maxPower,
-                        color: .orange
-                    )
-                    return
-                }
-
-                if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
-                    drawRibbon(
-                        context: &context,
-                        size: size,
-                        startY: size.height * 0.50,
-                        endY: size.height * 0.28,
-                        watts: snapshot.systemLoadWatts ?? 0,
-                        maxPower: maxPower,
-                        color: .blue
-                    )
-                    drawRibbon(
-                        context: &context,
-                        size: size,
-                        startY: size.height * 0.50,
-                        endY: size.height * 0.72,
-                        watts: snapshot.batteryChargeWatts ?? 0,
-                        maxPower: maxPower,
-                        color: .green
-                    )
-                    return
-                }
-
-                drawRibbon(
+            if snapshot.source == .battery {
+                ribbon(
                     context: &context,
                     size: size,
-                    startY: size.height * 0.50,
-                    endY: size.height * 0.50,
-                    watts: snapshot.systemLoadWatts ?? snapshot.adapterInputWatts ?? 0,
+                    from: 0.5,
+                    to: 0.5,
+                    watts: snapshot.batteryDischargeWatts ?? snapshot.systemLoadWatts ?? 0,
                     maxPower: maxPower,
-                    color: .blue
+                    color: .orange
                 )
+            } else if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
+                ribbon(context: &context, size: size, from: 0.28, to: 0.5, watts: snapshot.adapterInputWatts ?? 0, maxPower: maxPower, color: .blue)
+                ribbon(context: &context, size: size, from: 0.72, to: 0.5, watts: snapshot.batteryDischargeWatts ?? 0, maxPower: maxPower, color: .orange)
+            } else if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
+                ribbon(context: &context, size: size, from: 0.5, to: 0.28, watts: snapshot.systemLoadWatts ?? 0, maxPower: maxPower, color: .blue)
+                ribbon(context: &context, size: size, from: 0.5, to: 0.72, watts: snapshot.batteryChargeWatts ?? 0, maxPower: maxPower, color: .green)
+            } else {
+                ribbon(context: &context, size: size, from: 0.5, to: 0.5, watts: snapshot.systemLoadWatts ?? snapshot.adapterInputWatts ?? 0, maxPower: maxPower, color: .blue)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Power flow diagram")
     }
 
-    private func drawRibbon(
+    private func ribbon(
         context: inout GraphicsContext,
         size: CGSize,
-        startY: CGFloat,
-        endY: CGFloat,
+        from startFraction: CGFloat,
+        to endFraction: CGFloat,
         watts: Double,
         maxPower: Double,
         color: Color
     ) {
+        let startY = size.height * startFraction
+        let endY = size.height * endFraction
         let normalized = min(max(watts / maxPower, 0), 1)
         let thickness = CGFloat(7 + normalized * 23)
-        let controlX = size.width * 0.48
+        let c1 = size.width * 0.42
+        let c2 = size.width * 0.58
 
         var path = Path()
         path.move(to: CGPoint(x: 0, y: startY - thickness / 2))
         path.addCurve(
             to: CGPoint(x: size.width, y: endY - thickness / 2),
-            control1: CGPoint(x: controlX, y: startY - thickness / 2),
-            control2: CGPoint(x: size.width - controlX, y: endY - thickness / 2)
+            control1: CGPoint(x: c1, y: startY - thickness / 2),
+            control2: CGPoint(x: c2, y: endY - thickness / 2)
         )
         path.addLine(to: CGPoint(x: size.width, y: endY + thickness / 2))
         path.addCurve(
             to: CGPoint(x: 0, y: startY + thickness / 2),
-            control1: CGPoint(x: size.width - controlX, y: endY + thickness / 2),
-            control2: CGPoint(x: controlX, y: startY + thickness / 2)
+            control1: CGPoint(x: c2, y: endY + thickness / 2),
+            control2: CGPoint(x: c1, y: startY + thickness / 2)
         )
         path.closeSubpath()
-
         context.fill(path, with: .color(color.opacity(0.48)))
     }
 }
@@ -674,30 +558,20 @@ private struct PowerTrendGraph: View {
     let points: [PowerHistoryPoint]
 
     var body: some View {
-        GeometryReader { proxy in
-            Canvas { context, size in
-                drawGrid(context: &context, size: size)
+        Canvas { context, size in
+            grid(context: &context, size: size)
 
-                let maxValue = chartMaximum
-                guard maxValue > 0 else { return }
+            let maximum = chartMaximum
+            guard maximum > 0 else { return }
 
-                let systemValues = points.map { $0.systemLoadWatts }
-                let inputValues = points.map { $0.adapterInputWatts }
-                let batteryValues = points.map { $0.batteryFlowWatts }
-
-                if let area = areaPath(values: systemValues, maxValue: maxValue, size: size) {
-                    context.fill(area, with: .color(Color.primary.opacity(0.07)))
-                }
-
-                if let systemPath = linePath(values: systemValues, maxValue: maxValue, size: size) {
-                    context.stroke(systemPath, with: .color(.primary), lineWidth: 1.8)
-                }
-                if let inputPath = linePath(values: inputValues, maxValue: maxValue, size: size) {
-                    context.stroke(inputPath, with: .color(.blue), lineWidth: 1.45)
-                }
-                if let batteryPath = linePath(values: batteryValues, maxValue: maxValue, size: size) {
-                    context.stroke(batteryPath, with: .color(.green), lineWidth: 1.35)
-                }
+            if let path = linePath(\.systemLoadWatts, maximum: maximum, size: size) {
+                context.stroke(path, with: .color(Color.primary), lineWidth: 1.8)
+            }
+            if let path = linePath(\.adapterInputWatts, maximum: maximum, size: size) {
+                context.stroke(path, with: .color(Color.blue), lineWidth: 1.45)
+            }
+            if let path = linePath(\.batteryFlowWatts, maximum: maximum, size: size) {
+                context.stroke(path, with: .color(Color.green), lineWidth: 1.35)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -705,14 +579,14 @@ private struct PowerTrendGraph: View {
     }
 
     private var chartMaximum: Double {
-        let values = points.flatMap { point -> [Double] in
+        let values = points.flatMap { point in
             [point.systemLoadWatts, point.adapterInputWatts, point.batteryFlowWatts].compactMap { $0 }
         }
         return max(values.max() ?? 1, 1)
     }
 
-    private func drawGrid(context: inout GraphicsContext, size: CGSize) {
-        for fraction in [0.25, 0.50, 0.75] {
+    private func grid(context: inout GraphicsContext, size: CGSize) {
+        for fraction in [0.25, 0.5, 0.75] as [CGFloat] {
             let y = size.height * fraction
             var line = Path()
             line.move(to: CGPoint(x: 0, y: y))
@@ -721,56 +595,35 @@ private struct PowerTrendGraph: View {
         }
     }
 
-    private func linePath(values: [Double?], maxValue: Double, size: CGSize) -> Path? {
-        guard values.count > 1 else { return nil }
-        let step = size.width / CGFloat(max(values.count - 1, 1))
+    private func linePath(
+        _ keyPath: KeyPath<PowerHistoryPoint, Double?>,
+        maximum: Double,
+        size: CGSize
+    ) -> Path? {
+        guard points.count > 1 else { return nil }
+        let step = size.width / CGFloat(max(points.count - 1, 1))
         var path = Path()
-        var started = false
+        var hasSegment = false
 
-        for (index, value) in values.enumerated() {
-            guard let value, value.isFinite else {
-                started = false
+        for (index, point) in points.enumerated() {
+            guard let value = point[keyPath: keyPath], value.isFinite else {
+                hasSegment = false
                 continue
             }
 
             let x = CGFloat(index) * step
-            let normalized = min(max(value / maxValue, 0), 1)
+            let normalized = min(max(value / maximum, 0), 1)
             let y = size.height - CGFloat(normalized) * (size.height - 6) - 3
-            let point = CGPoint(x: x, y: y)
+            let next = CGPoint(x: x, y: y)
 
-            if started {
-                path.addLine(to: point)
+            if hasSegment {
+                path.addLine(to: next)
             } else {
-                path.move(to: point)
-                started = true
+                path.move(to: next)
+                hasSegment = true
             }
         }
 
-        return path
-    }
-
-    private func areaPath(values: [Double?], maxValue: Double, size: CGSize) -> Path? {
-        guard values.count > 1,
-              values.allSatisfy({ $0 != nil }) else { return nil }
-
-        let step = size.width / CGFloat(max(values.count - 1, 1))
-        var path = Path()
-
-        for (index, optionalValue) in values.enumerated() {
-            guard let value = optionalValue else { continue }
-            let x = CGFloat(index) * step
-            let normalized = min(max(value / maxValue, 0), 1)
-            let y = size.height - CGFloat(normalized) * (size.height - 6) - 3
-            if index == 0 {
-                path.move(to: CGPoint(x: x, y: y))
-            } else {
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-        }
-
-        path.addLine(to: CGPoint(x: size.width, y: size.height))
-        path.addLine(to: CGPoint(x: 0, y: size.height))
-        path.closeSubpath()
         return path
     }
 }
