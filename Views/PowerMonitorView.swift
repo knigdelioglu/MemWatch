@@ -401,157 +401,456 @@ private struct PowerFlowCard: View {
     let snapshot: PowerSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
                 Text("Power Flow")
                     .font(.subheadline.weight(.semibold))
-                Text(flowDescription)
-                    .font(.caption2)
+                Spacer()
+                Text(flowSummary)
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
-                sourceColumn.frame(width: 88)
-                PowerRibbonDiagram(snapshot: snapshot)
-                    .frame(maxWidth: .infinity, minHeight: 116)
-                destinationColumn.frame(width: 88)
-            }
+            AlDenteFlowDiagram(snapshot: snapshot)
+                .frame(height: 136)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
-    @ViewBuilder
-    private var sourceColumn: some View {
+    private var flowSummary: String {
         if snapshot.source == .battery {
-            VStack {
-                Spacer()
-                node("Battery", snapshot.batteryDischargeWatts, "battery.75percent", .orange)
-                Spacer()
-            }
-        } else if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
-            VStack(spacing: 10) {
-                node("Adapter", snapshot.adapterInputWatts, "powerplug.fill", .blue)
-                node("Battery", snapshot.batteryDischargeWatts, "battery.50percent", .orange)
-            }
-        } else {
-            VStack {
-                Spacer()
-                node("Adapter", snapshot.adapterInputWatts, "powerplug.fill", .blue)
-                Spacer()
-            }
+            return "Battery → Mac"
         }
-    }
-
-    @ViewBuilder
-    private var destinationColumn: some View {
-        if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
-            VStack(spacing: 10) {
-                node("Mac", snapshot.systemLoadWatts, "laptopcomputer", .primary)
-                node("Battery", snapshot.batteryChargeWatts, "battery.100percent", .green)
-            }
-        } else {
-            VStack {
-                Spacer()
-                node("Mac", snapshot.systemLoadWatts, "laptopcomputer", .primary)
-                Spacer()
-            }
-        }
-    }
-
-    private func node(_ title: String, _ watts: Double?, _ symbol: String, _ color: Color) -> some View {
-        VStack(spacing: 3) {
-            Image(systemName: symbol).foregroundStyle(color)
-            Text(title).font(.caption2.weight(.semibold))
-            Text(watts.map { String(format: "%.1f W", $0) } ?? "—")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 50)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var flowDescription: String {
-        if snapshot.source == .battery { return "Battery powers the Mac" }
         if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
-            return "Adapter and battery are powering the Mac"
+            return "Adapter + Battery → Mac"
         }
         if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
-            return "Adapter power is split between Mac and battery"
+            return "Adapter → Mac + Battery"
         }
-        return "Adapter powers the Mac directly"
+        if snapshot.source == .ac || snapshot.source == .ups {
+            return "Adapter → Mac"
+        }
+        return "No live route"
     }
 }
 
-private struct PowerRibbonDiagram: View {
+private struct AlDenteFlowDiagram: View {
     let snapshot: PowerSnapshot
 
-    var body: some View {
-        Canvas { context, size in
-            let maxPower = [
-                snapshot.systemLoadWatts ?? 0,
-                snapshot.adapterInputWatts ?? 0,
-                snapshot.batteryFlowWatts ?? 0,
-                1
-            ].max() ?? 1
+    @Environment(\.colorScheme) private var colorScheme
 
-            if snapshot.source == .battery {
-                ribbon(
-                    context: &context,
-                    size: size,
-                    from: 0.5,
-                    to: 0.5,
-                    watts: snapshot.batteryDischargeWatts ?? snapshot.systemLoadWatts ?? 0,
-                    maxPower: maxPower,
-                    color: .orange
-                )
-            } else if (snapshot.batteryDischargeWatts ?? 0) > 0.15 {
-                ribbon(context: &context, size: size, from: 0.28, to: 0.5, watts: snapshot.adapterInputWatts ?? 0, maxPower: maxPower, color: .blue)
-                ribbon(context: &context, size: size, from: 0.72, to: 0.5, watts: snapshot.batteryDischargeWatts ?? 0, maxPower: maxPower, color: .orange)
-            } else if (snapshot.batteryChargeWatts ?? 0) > 0.15 {
-                ribbon(context: &context, size: size, from: 0.5, to: 0.28, watts: snapshot.systemLoadWatts ?? 0, maxPower: maxPower, color: .blue)
-                ribbon(context: &context, size: size, from: 0.5, to: 0.72, watts: snapshot.batteryChargeWatts ?? 0, maxPower: maxPower, color: .green)
-            } else {
-                ribbon(context: &context, size: size, from: 0.5, to: 0.5, watts: snapshot.systemLoadWatts ?? snapshot.adapterInputWatts ?? 0, maxPower: maxPower, color: .blue)
+    private let nodeWidth: CGFloat = 62
+    private let separatorWidth: CGFloat = 7
+    private let verticalInset: CGFloat = 7
+    private let rowGap: CGFloat = 7
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let leftX = nodeWidth + separatorWidth
+            let rightX = max(leftX + 12, size.width - nodeWidth - separatorWidth)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(surfaceColor)
+
+                Canvas { context, canvasSize in
+                    drawStructure(
+                        context: &context,
+                        size: canvasSize,
+                        leftX: leftX,
+                        rightX: rightX
+                    )
+                    drawFlow(
+                        context: &context,
+                        size: canvasSize,
+                        leftX: leftX,
+                        rightX: rightX
+                    )
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                nodeOverlays(size: size, leftX: leftX, rightX: rightX)
+                valueOverlays(size: size, leftX: leftX, rightX: rightX)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(.primary.opacity(colorScheme == .dark ? 0.10 : 0.08), lineWidth: 1)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Power flow diagram")
+        .accessibilityLabel(accessibilityText)
     }
 
-    private func ribbon(
+    private var topology: FlowTopology {
+        if snapshot.source == .battery {
+            return .batteryToMac
+        }
+        if (snapshot.batteryDischargeWatts ?? 0) > 0.15,
+           snapshot.source == .ac || snapshot.source == .ups {
+            return .adapterAndBatteryToMac
+        }
+        if (snapshot.batteryChargeWatts ?? 0) > 0.15,
+           snapshot.source == .ac || snapshot.source == .ups {
+            return .adapterToMacAndBattery
+        }
+        if snapshot.source == .ac || snapshot.source == .ups {
+            return .adapterToMac
+        }
+        return .unavailable
+    }
+
+    private var surfaceColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.055) : Color.black.opacity(0.055)
+    }
+
+    private var nodeSurfaceColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.075) : Color.black.opacity(0.075)
+    }
+
+    private var separatorColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.20) : Color.white.opacity(0.42)
+    }
+
+    private var ribbonStartColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.13) : Color.black.opacity(0.10)
+    }
+
+    private var ribbonEndColor: Color {
+        Color.blue.opacity(colorScheme == .dark ? 0.31 : 0.24)
+    }
+
+    private func drawStructure(
         context: inout GraphicsContext,
         size: CGSize,
-        from startFraction: CGFloat,
-        to endFraction: CGFloat,
-        watts: Double,
-        maxPower: Double,
-        color: Color
+        leftX: CGFloat,
+        rightX: CGFloat
     ) {
-        let startY = size.height * startFraction
-        let endY = size.height * endFraction
-        let normalized = min(max(watts / maxPower, 0), 1)
-        let thickness = CGFloat(7 + normalized * 23)
-        let c1 = size.width * 0.42
-        let c2 = size.width * 0.58
+        fillRect(
+            CGRect(x: 0, y: 0, width: nodeWidth, height: size.height),
+            color: nodeSurfaceColor,
+            context: &context
+        )
+        fillRect(
+            CGRect(x: size.width - nodeWidth, y: 0, width: nodeWidth, height: size.height),
+            color: nodeSurfaceColor,
+            context: &context
+        )
+        fillRect(
+            CGRect(x: nodeWidth, y: 0, width: separatorWidth, height: size.height),
+            color: separatorColor,
+            context: &context
+        )
+        fillRect(
+            CGRect(x: rightX, y: 0, width: separatorWidth, height: size.height),
+            color: separatorColor,
+            context: &context
+        )
+
+        switch topology {
+        case .adapterAndBatteryToMac:
+            fillRect(
+                CGRect(x: 0, y: size.height / 2 - separatorWidth / 2, width: nodeWidth, height: separatorWidth),
+                color: separatorColor,
+                context: &context
+            )
+        case .adapterToMacAndBattery:
+            fillRect(
+                CGRect(
+                    x: size.width - nodeWidth,
+                    y: size.height / 2 - separatorWidth / 2,
+                    width: nodeWidth,
+                    height: separatorWidth
+                ),
+                color: separatorColor,
+                context: &context
+            )
+        default:
+            break
+        }
+    }
+
+    private func drawFlow(
+        context: inout GraphicsContext,
+        size: CGSize,
+        leftX: CGFloat,
+        rightX: CGFloat
+    ) {
+        let top = verticalInset
+        let bottom = size.height - verticalInset
+        let midpoint = size.height / 2
+
+        switch topology {
+        case .adapterToMac, .batteryToMac:
+            let path = ribbonPath(
+                startX: leftX,
+                endX: rightX,
+                startTop: top,
+                startBottom: bottom,
+                endTop: top,
+                endBottom: bottom
+            )
+            fillRibbon(path, startX: leftX, endX: rightX, context: &context)
+
+        case .adapterAndBatteryToMac:
+            let total = max(
+                (snapshot.adapterInputWatts ?? 0) + (snapshot.batteryDischargeWatts ?? 0),
+                0.1
+            )
+            let adapterRatio = clampedRatio((snapshot.adapterInputWatts ?? 0) / total)
+            let available = bottom - top
+            let joinedSplit = top + available * CGFloat(adapterRatio)
+
+            let upper = ribbonPath(
+                startX: leftX,
+                endX: rightX,
+                startTop: top,
+                startBottom: midpoint - rowGap / 2,
+                endTop: top,
+                endBottom: joinedSplit
+            )
+            let lower = ribbonPath(
+                startX: leftX,
+                endX: rightX,
+                startTop: midpoint + rowGap / 2,
+                startBottom: bottom,
+                endTop: joinedSplit,
+                endBottom: bottom
+            )
+            fillRibbon(upper, startX: leftX, endX: rightX, context: &context)
+            fillRibbon(lower, startX: leftX, endX: rightX, context: &context)
+
+        case .adapterToMacAndBattery:
+            let total = max(
+                (snapshot.systemLoadWatts ?? 0) + (snapshot.batteryChargeWatts ?? 0),
+                0.1
+            )
+            let macRatio = clampedRatio((snapshot.systemLoadWatts ?? 0) / total)
+            let available = bottom - top
+            let sourceSplit = top + available * CGFloat(macRatio)
+
+            let upper = ribbonPath(
+                startX: leftX,
+                endX: rightX,
+                startTop: top,
+                startBottom: sourceSplit,
+                endTop: top,
+                endBottom: midpoint - rowGap / 2
+            )
+            let lower = ribbonPath(
+                startX: leftX,
+                endX: rightX,
+                startTop: sourceSplit,
+                startBottom: bottom,
+                endTop: midpoint + rowGap / 2,
+                endBottom: bottom
+            )
+            fillRibbon(upper, startX: leftX, endX: rightX, context: &context)
+            fillRibbon(lower, startX: leftX, endX: rightX, context: &context)
+
+        case .unavailable:
+            break
+        }
+    }
+
+    @ViewBuilder
+    private func nodeOverlays(size: CGSize, leftX: CGFloat, rightX: CGFloat) -> some View {
+        let leftCenterX = nodeWidth / 2
+        let rightCenterX = size.width - nodeWidth / 2
+        let upperY = size.height * 0.25
+        let lowerY = size.height * 0.75
+        let centerY = size.height / 2
+
+        switch topology {
+        case .adapterToMac:
+            flowNode(symbol: "bolt.fill", accent: .primary)
+                .position(x: leftCenterX, y: centerY)
+            flowNode(symbol: "laptopcomputer", accent: .blue)
+                .position(x: rightCenterX, y: centerY)
+
+        case .batteryToMac:
+            flowNode(symbol: "battery.50percent", accent: .primary)
+                .position(x: leftCenterX, y: centerY)
+            flowNode(symbol: "laptopcomputer", accent: .primary)
+                .position(x: rightCenterX, y: centerY)
+
+        case .adapterAndBatteryToMac:
+            flowNode(symbol: "bolt.fill", accent: .primary)
+                .position(x: leftCenterX, y: upperY)
+            flowNode(symbol: "battery.50percent", accent: .primary)
+                .position(x: leftCenterX, y: lowerY)
+            flowNode(
+                symbol: "laptopcomputer",
+                accent: .blue,
+                value: snapshot.systemLoadWatts.map(wattString)
+            )
+            .position(x: rightCenterX, y: centerY)
+
+        case .adapterToMacAndBattery:
+            flowNode(symbol: "bolt.fill", accent: .primary)
+                .position(x: leftCenterX, y: centerY)
+            flowNode(symbol: "laptopcomputer", accent: .blue)
+                .position(x: rightCenterX, y: upperY)
+            flowNode(
+                symbol: "battery.100percent",
+                accent: .green,
+                value: snapshot.batteryPercentClamped.map { "\($0)%" }
+            )
+            .position(x: rightCenterX, y: lowerY)
+
+        case .unavailable:
+            flowNode(symbol: "questionmark", accent: .secondary)
+                .position(x: leftCenterX, y: centerY)
+            flowNode(symbol: "laptopcomputer", accent: .secondary)
+                .position(x: rightCenterX, y: centerY)
+        }
+    }
+
+    @ViewBuilder
+    private func valueOverlays(size: CGSize, leftX: CGFloat, rightX: CGFloat) -> some View {
+        let centerX = (leftX + rightX) / 2
+
+        switch topology {
+        case .adapterToMac:
+            flowValue(snapshot.systemLoadWatts ?? snapshot.adapterInputWatts)
+                .position(x: centerX, y: size.height / 2)
+
+        case .batteryToMac:
+            flowValue(snapshot.batteryDischargeWatts ?? snapshot.systemLoadWatts)
+                .position(x: centerX, y: size.height / 2)
+
+        case .adapterAndBatteryToMac:
+            flowValue(snapshot.adapterInputWatts)
+                .position(x: centerX, y: size.height * 0.28)
+            flowValue(snapshot.batteryDischargeWatts)
+                .position(x: centerX, y: size.height * 0.72)
+
+        case .adapterToMacAndBattery:
+            flowValue(snapshot.systemLoadWatts)
+                .position(x: centerX, y: size.height * 0.28)
+            flowValue(snapshot.batteryChargeWatts)
+                .position(x: centerX, y: size.height * 0.72)
+
+        case .unavailable:
+            Text("—")
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .position(x: centerX, y: size.height / 2)
+        }
+    }
+
+    private func flowNode(symbol: String, accent: Color, value: String? = nil) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(accent)
+
+            if let value {
+                Text(value)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+        .frame(width: nodeWidth - 10)
+    }
+
+    private func flowValue(_ watts: Double?) -> some View {
+        Text(watts.map(wattString) ?? "—")
+            .font(.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+    }
+
+    private func fillRect(_ rect: CGRect, color: Color, context: inout GraphicsContext) {
+        var path = Path()
+        path.addRect(rect)
+        context.fill(path, with: .color(color))
+    }
+
+    private func fillRibbon(
+        _ path: Path,
+        startX: CGFloat,
+        endX: CGFloat,
+        context: inout GraphicsContext
+    ) {
+        context.fill(
+            path,
+            with: .linearGradient(
+                Gradient(colors: [ribbonStartColor, ribbonEndColor]),
+                startPoint: CGPoint(x: startX, y: 0),
+                endPoint: CGPoint(x: endX, y: 0)
+            )
+        )
+    }
+
+    private func ribbonPath(
+        startX: CGFloat,
+        endX: CGFloat,
+        startTop: CGFloat,
+        startBottom: CGFloat,
+        endTop: CGFloat,
+        endBottom: CGFloat
+    ) -> Path {
+        let width = max(endX - startX, 1)
+        let control1X = startX + width * 0.42
+        let control2X = startX + width * 0.66
 
         var path = Path()
-        path.move(to: CGPoint(x: 0, y: startY - thickness / 2))
+        path.move(to: CGPoint(x: startX, y: startTop))
         path.addCurve(
-            to: CGPoint(x: size.width, y: endY - thickness / 2),
-            control1: CGPoint(x: c1, y: startY - thickness / 2),
-            control2: CGPoint(x: c2, y: endY - thickness / 2)
+            to: CGPoint(x: endX, y: endTop),
+            control1: CGPoint(x: control1X, y: startTop),
+            control2: CGPoint(x: control2X, y: endTop)
         )
-        path.addLine(to: CGPoint(x: size.width, y: endY + thickness / 2))
+        path.addLine(to: CGPoint(x: endX, y: endBottom))
         path.addCurve(
-            to: CGPoint(x: 0, y: startY + thickness / 2),
-            control1: CGPoint(x: c2, y: endY + thickness / 2),
-            control2: CGPoint(x: c1, y: startY + thickness / 2)
+            to: CGPoint(x: startX, y: startBottom),
+            control1: CGPoint(x: control2X, y: endBottom),
+            control2: CGPoint(x: control1X, y: startBottom)
         )
         path.closeSubpath()
-        context.fill(path, with: .color(color.opacity(0.48)))
+        return path
     }
+
+    private func clampedRatio(_ value: Double) -> Double {
+        min(max(value, 0.18), 0.82)
+    }
+
+    private func wattString(_ value: Double) -> String {
+        if value >= 100 {
+            return String(format: "%.0f W", value)
+        }
+        return String(format: "%.2f W", value)
+    }
+
+    private var accessibilityText: String {
+        switch topology {
+        case .adapterToMac:
+            return "Power flow from adapter to Mac, \(wattString(snapshot.systemLoadWatts ?? snapshot.adapterInputWatts ?? 0))"
+        case .batteryToMac:
+            return "Power flow from battery to Mac, \(wattString(snapshot.batteryDischargeWatts ?? snapshot.systemLoadWatts ?? 0))"
+        case .adapterAndBatteryToMac:
+            return "Adapter and battery are both powering the Mac"
+        case .adapterToMacAndBattery:
+            return "Adapter power is split between the Mac and battery charging"
+        case .unavailable:
+            return "Power flow unavailable"
+        }
+    }
+}
+
+private enum FlowTopology {
+    case adapterToMac
+    case batteryToMac
+    case adapterAndBatteryToMac
+    case adapterToMacAndBattery
+    case unavailable
 }
 
 private struct PowerTrendGraph: View {
