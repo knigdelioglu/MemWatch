@@ -44,6 +44,14 @@ jobs:
           grep -q '.frame(width: 430, height: 640)' Views/MenuBarView.swift
           ! grep -q 'NSSize(width: 380, height: 640)' MemWatchApp.swift
 
+      - name: Run smart tray UX contract tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Tests/TrayUXContractTests.swift \
+            -o /tmp/memwatch-tray-ux-tests
+          /tmp/memwatch-tray-ux-tests
+
       - name: Run memory collector smoke test
         run: |
           xcrun swiftc \
