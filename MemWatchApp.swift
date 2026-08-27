@@ -127,7 +127,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         guard let button = statusItem.button else { return }
 
         let presentation = trayPresentation
-        let image = NSImage(
+        let image = NSImage(named: "TrayIcon") ?? NSImage(
             systemSymbolName: "memorychip",
             accessibilityDescription: "MemWatch"
         )
