@@ -25,6 +25,7 @@
 		A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SystemDiagnosticsCollector.swift */; };
 		A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* LaunchAtLoginService.swift */; };
 		A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SystemDiagnosticsView.swift */; };
+		A10000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +48,7 @@
 		A20000000000000000000017 /* SystemDiagnosticsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsCollector.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* SystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsView.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +66,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000001 /* MemWatchApp.swift */,
+				A20000000000000000000020 /* Assets.xcassets */,
 				A40000000000000000000003 /* Models */,
 				A40000000000000000000004 /* Collectors */,
 				A40000000000000000000005 /* Services */,
@@ -183,6 +186,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000019 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -240,6 +244,7 @@
 		AA0000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -259,6 +264,7 @@
 		AA0000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
