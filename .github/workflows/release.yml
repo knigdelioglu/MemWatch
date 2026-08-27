@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.11'
+      - '.github/release-trigger-v0.1.12'
 
 permissions:
   contents: write
@@ -51,23 +51,22 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.11"
+            TAG="v0.1.12"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch v0.1.11 makes Power Flow live, proportional, and standby-aware.
+          MemWatch v0.1.12 introduces the new smart tray and simplified health overview.
 
-          Changes in v0.1.11:
-          - Tiny adapter input during battery discharge is now shown as adapter connected/standby instead of implying meaningful adapter contribution
-          - Example: ~0.53 W adapter input with ~11 W battery discharge reads Battery → Mac · Adapter connected
-          - Removed the previous 18% minimum ribbon-share clamp
-          - Power-flow ribbon thickness now follows the live watt ratio directly, so sub-watt input stays very thin while higher input grows visibly thicker
-          - Added smooth live ribbon geometry transitions as watt values change
-          - Added a dedicated 1-second power sample loop while the Power Flow card is visible for AlDente-like responsiveness
-          - Kept the normal background/history monitoring cadence at 5 seconds
-          - Preserved the existing 5 / 15 / 30 minute power history and AppleSmartBattery telemetry details
-
-          Note: Input power is device-side DC power reported by macOS telemetry, not exact wall-socket AC consumption. Exact mains draw requires an external power meter.
+          Changes in v0.1.12:
+          - Replaced raw RAM percentage in the menu bar with an interpreted status-only tray
+          - Added a dedicated MemWatch tray glyph with stable visual identity across states
+          - Stable / Idle Swap stay visually quiet; Active Swap / Pressure use orange; critical states use red
+          - Added short transition-only pulse alerts with Reduce Motion support
+          - Reworked the default popover into a progressive-disclosure health overview
+          - Surfaces available memory, pressure, swap, storage, power, system state, and top memory users
+          - Preserved the existing detailed technical screens behind All details
+          - Added a dedicated MemWatch macOS application icon asset catalog
+          - Added regression coverage for tray identity, color roles, transition pulse, Reduce Motion, and smart overview
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
