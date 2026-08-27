@@ -7,7 +7,8 @@ struct TrayUXContractTests {
 
         expect(source.contains("button.title = \"\""), "status item should be icon-only")
         expect(!source.contains("monitor.snapshot.usagePercent)%\""), "raw RAM percentage must not return to the tray")
-        expect(source.contains("systemSymbolName: \"memorychip\""), "tray should keep one stable MemWatch glyph across states")
+        expect(source.contains("NSImage(named: \"TrayIcon\")"), "tray should use the dedicated MemWatch template glyph")
+        expect(source.contains("systemSymbolName: \"memorychip\""), "tray should retain a safe memory-chip fallback")
         expect(!source.contains("systemSymbolName: presentation.symbolName"), "tray glyph should not change with alert state")
         expect(source.contains("accessibilityDisplayShouldReduceMotion"), "tray animation must respect Reduce Motion")
         expect(source.contains("presentation.pulseOnEntry"), "pulse must be state-transition driven")
