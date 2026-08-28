@@ -184,6 +184,13 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
     }
 }
 
+struct CleanupApplicationCleanupPlan: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let itemIDs: Set<UUID>
+    let allocatedBytes: UInt64
+}
+
 struct CleanupScanIssue: Identifiable, Equatable, Sendable {
     let id = UUID()
     let scannerID: CleanupScannerID

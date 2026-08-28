@@ -7,6 +7,7 @@ enum PrivilegedHelperRegistrationState: String, Sendable {
     case enabled
     case requiresApproval
     case notFound
+    case installing
 }
 
 enum PrivilegedHelperClientError: LocalizedError {
@@ -321,6 +322,8 @@ final class PrivilegedHelperService: ObservableObject {
     @Published private(set) var state: PrivilegedHelperRegistrationState = .unavailable
     @Published private(set) var lastError: String?
     @Published private(set) var compatibilityHelperActive = false
+    @Published private(set) var connectionVerified = false
+    @Published private(set) var isRegistering = false
 
     private let service = SMAppService.daemon(
         plistName: MemWatchPrivilegedHelperConstants.daemonPlistName
@@ -333,7 +336,7 @@ final class PrivilegedHelperService: ObservableObject {
     }
 
     var isAvailableForCleanup: Bool {
-        state == .enabled || compatibilityHelperActive
+        connectionVerified && (state == .enabled || compatibilityHelperActive)
     }
 
     func refreshStatus() {
@@ -351,13 +354,29 @@ final class PrivilegedHelperService: ObservableObject {
         }
     }
 
-    func register() {
+    func register() async -> Bool {
+        guard !isRegistering else { return false }
+
+        isRegistering = true
+        defer { isRegistering = false }
+        lastError = nil
+        connectionVerified = false
+        compatibilityHelperActive = false
+
+        // A compatibility-installed daemon is not visible to SMAppService after
+        // relaunch. Reuse it if its real XPC endpoint is already alive instead of
+        // asking the user for administrator credentials again.
+        if await verifyConnection() {
+            return true
+        }
         lastError = nil
 
         do {
             _ = try compatibilityInstaller.bundledResources()
         } catch {
             lastError = error.localizedDescription
+            state = .unavailable
+            return false
         }
 
         do {
@@ -367,55 +386,80 @@ final class PrivilegedHelperService: ObservableObject {
         }
         refreshStatus()
 
+        if state == .enabled {
+            return await verifyConnection()
+        }
+
         if state == .requiresApproval {
             SMAppService.openSystemSettingsLoginItems()
-            return
+            return false
         }
 
         let compatibilityEnabled = PrivateCompatibilityPolicy.isEnabled
         if state == .notFound && compatibilityEnabled {
-            do {
-                try compatibilityInstaller.repairLaunchServicesRegistration()
+            if let errorMessage = await Self.compatibilityRepairError() {
+                lastError = errorMessage
+            } else {
                 do {
                     try service.register()
                 } catch {
                     lastError = error.localizedDescription
                 }
                 refreshStatus()
-            } catch {
-                lastError = error.localizedDescription
             }
 
+            if state == .enabled {
+                return await verifyConnection()
+            }
             if state == .requiresApproval {
                 SMAppService.openSystemSettingsLoginItems()
-                return
-            }
-            if state == .enabled {
-                lastError = nil
-                return
+                return false
             }
         }
 
-        guard state == .notFound || state == .unavailable else {
-            return
+        guard state == .notFound || state == .notRegistered || state == .unavailable else {
+            return false
         }
         guard compatibilityEnabled else {
             if lastError == nil {
                 lastError = "SMAppService yardımcıyı bulamadı. Özel uyumluluk yöntemleri kapalı olduğu için alternatif kurulum kullanılmadı."
             }
-            return
+            return false
         }
 
-        do {
-            try compatibilityInstaller.install()
-            compatibilityHelperActive = true
-            state = .enabled
-            lastError = nil
-        } catch {
+        state = .installing
+        if let errorMessage = await Self.compatibilityInstallError() {
             compatibilityHelperActive = false
-            lastError = error.localizedDescription
+            lastError = errorMessage
             refreshStatus()
+            return false
         }
+
+        // The installed daemon is authoritative only after its XPC endpoint
+        // accepts a ping. This also covers a short launchd startup delay.
+        return await verifyConnection()
+    }
+
+    nonisolated private static func compatibilityRepairError() async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            do {
+                try PrivilegedHelperCompatibilityInstaller().repairLaunchServicesRegistration()
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+    }
+
+    nonisolated private static func compatibilityInstallError() async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            do {
+                try PrivilegedHelperCompatibilityInstaller().install()
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
     }
 
     func unregister() {
@@ -437,23 +481,35 @@ final class PrivilegedHelperService: ObservableObject {
                 lastError = error.localizedDescription
             }
         }
+        connectionVerified = false
         refreshStatus()
     }
 
     func verifyConnection() async -> Bool {
-        do {
-            let response = try await client.ping()
-            let verified = response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion &&
-                response.effectiveUID == 0
-            compatibilityHelperActive = verified && service.status != .enabled
-            refreshStatus()
-            if verified { lastError = nil }
-            return verified
-        } catch {
-            compatibilityHelperActive = false
-            lastError = error.localizedDescription
-            refreshStatus()
-            return false
+        for attempt in 0..<3 {
+            do {
+                let response = try await client.ping()
+                guard response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion,
+                      response.effectiveUID == 0 else {
+                    throw PrivilegedHelperClientError.protocolMismatch
+                }
+                connectionVerified = true
+                compatibilityHelperActive = service.status != .enabled
+                refreshStatus()
+                lastError = nil
+                return true
+            } catch {
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    continue
+                }
+                connectionVerified = false
+                compatibilityHelperActive = false
+                lastError = error.localizedDescription
+                refreshStatus()
+                return false
+            }
         }
+        return false
     }
 }

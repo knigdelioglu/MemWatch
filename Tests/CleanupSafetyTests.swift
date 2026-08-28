@@ -43,6 +43,18 @@ struct CleanupSafetyTests {
         precondition(cacheAssessment.canDelete, "Known user cache should pass filesystem safety policy")
         precondition(cacheAssessment.candidate.safety == .safe, "Known user cache should remain Safe")
 
+        let activeApplicationEngine = CleanupSafetyEngine(
+            activityGuard: CleanupActivityGuard { _ in .active("Fixture App") }
+        )
+        let activeApplicationAssessment = activeApplicationEngine.assess(
+            candidate: cacheCandidate,
+            rule: requireRule("user.cache", catalog: catalog),
+            context: context
+        )
+        precondition(activeApplicationAssessment.candidate.safety == .safe, "A regenerable cache owned by a running app should remain in the safe cleanup plan")
+        precondition(!activeApplicationAssessment.candidate.requirements.contains(.explicitConfirmation), "A regenerable running-app cache should not require a separate item confirmation")
+        precondition(activeApplicationAssessment.candidate.policyNotes.contains { $0.contains("Close Fixture App") }, "A running app cache must explain that the app will be closed")
+
         let realFile = requested.appendingPathComponent("real.txt")
         let symlink = requested.appendingPathComponent("link.txt")
         try Data("important".utf8).write(to: realFile)

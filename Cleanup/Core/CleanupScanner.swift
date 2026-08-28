@@ -245,8 +245,8 @@ struct DeveloperCacheScanner: CleanupScanner {
             ("Deno cache", home.appendingPathComponent("Library/Caches/deno", isDirectory: true), .safe, []),
             ("Deno cache", home.appendingPathComponent(".cache/deno", isDirectory: true), .safe, []),
             ("mise cache", home.appendingPathComponent(".cache/mise", isDirectory: true), .safe, []),
-            ("JetBrains cache", home.appendingPathComponent("Library/Caches/JetBrains", isDirectory: true), .review, [.applicationInactive, .explicitConfirmation]),
-            ("Docker Desktop cache", home.appendingPathComponent("Library/Caches/com.docker.docker", isDirectory: true), .review, [.applicationInactive, .explicitConfirmation])
+            ("JetBrains cache", home.appendingPathComponent("Library/Caches/JetBrains", isDirectory: true), .safe, [.applicationInactive]),
+            ("Docker Desktop cache", home.appendingPathComponent("Library/Caches/com.docker.docker", isDirectory: true), .safe, [.applicationInactive])
         ]
         for (name, url, safety, requirements) in cacheTargets {
             try Task.checkCancellation()
@@ -260,7 +260,7 @@ struct DeveloperCacheScanner: CleanupScanner {
             try Task.checkCancellation()
             let url = vscodeRoot.appendingPathComponent(component, isDirectory: true)
             guard !context.isIgnored(url) else { continue }
-            if let item = support.candidate(url: url, scannerID: id, ruleID: "developer.cache", category: category, displayName: "VS Code \(component)", safety: .review, deletionMode: .permanent, requirements: [.applicationInactive, .explicitConfirmation], reason: "VS Code generated cache", regenerationHint: "VS Code can recreate this cache after restart."), item.allocatedBytes > 0 {
+            if let item = support.candidate(url: url, scannerID: id, ruleID: "developer.cache", category: category, displayName: "VS Code \(component)", safety: .safe, deletionMode: .permanent, requirements: [.applicationInactive], reason: "VS Code generated cache", regenerationHint: "VS Code can recreate this cache after restart."), item.allocatedBytes > 0 {
                 results.append(item)
             }
         }

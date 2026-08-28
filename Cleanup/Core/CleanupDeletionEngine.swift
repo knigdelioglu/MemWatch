@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 enum CleanupExecutionMode: String, Codable, Sendable {
@@ -281,10 +280,6 @@ actor CleanupDeletionEngine {
         }
 
         let evaluated = reassessment.candidate
-        if evaluated.requirements.contains(.explicitConfirmation), !explicitlyConfirmed {
-            throw CleanupDeletionError.explicitConfirmationRequired
-        }
-
         if evaluated.requirements.contains(.applicationInactive) {
             switch activityGuard.state(for: evaluated) {
             case .inactive:
@@ -296,6 +291,10 @@ actor CleanupDeletionEngine {
                     throw CleanupDeletionError.applicationStateUnknown(name)
                 }
             }
+        }
+
+        if evaluated.requirements.contains(.explicitConfirmation), !explicitlyConfirmed {
+            throw CleanupDeletionError.explicitConfirmationRequired
         }
 
         return evaluated
@@ -360,92 +359,5 @@ struct CleanupMaintenanceBackend: @unchecked Sendable {
         let expected = candidate.allocatedBytes
         try fileManager.removeItem(at: candidate.url)
         return expected
-    }
-}
-
-enum CleanupApplicationActivityState: Sendable {
-    case inactive
-    case active(String)
-    case unknown(String)
-}
-
-struct CleanupActivityGuard: Sendable {
-    func state(for candidate: CleanupCandidate) -> CleanupApplicationActivityState {
-        if candidate.category == .xcode {
-            return running(bundleIdentifiers: ["com.apple.dt.Xcode"], displayName: "Xcode")
-        }
-
-        let name = candidate.displayName.lowercased()
-        if name.contains("vs code") || candidate.url.path.contains("Application Support/Code") {
-            return running(bundleIdentifiers: ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"], displayName: "Visual Studio Code")
-        }
-        if name.contains("docker") || candidate.url.path.lowercased().contains("docker") {
-            return running(bundleIdentifiers: ["com.docker.docker"], displayName: "Docker Desktop")
-        }
-        if name.contains("jetbrains") || candidate.url.path.contains("JetBrains") {
-            let matches = NSWorkspace.shared.runningApplications.filter {
-                ($0.bundleIdentifier ?? "").hasPrefix("com.jetbrains.")
-            }
-            return matches.isEmpty ? .inactive : .active(matches.first?.localizedName ?? "JetBrains IDE")
-        }
-
-        if let identifier = inferredBundleIdentifier(from: candidate.url) {
-            let matches = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
-            if !matches.isEmpty {
-                return .active(matches.first?.localizedName ?? identifier)
-            }
-
-            let related = NSWorkspace.shared.runningApplications.filter { app in
-                guard let bundleID = app.bundleIdentifier else { return false }
-                return bundleID == identifier ||
-                    bundleID.hasPrefix(identifier + ".") ||
-                    identifier.hasPrefix(bundleID + ".")
-            }
-            return related.isEmpty ? .inactive : .active(related.first?.localizedName ?? identifier)
-        }
-
-        return .unknown(candidate.displayName)
-    }
-
-    private func running(
-        bundleIdentifiers: [String],
-        displayName: String
-    ) -> CleanupApplicationActivityState {
-        let apps = bundleIdentifiers.flatMap {
-            NSRunningApplication.runningApplications(withBundleIdentifier: $0)
-        }
-        return apps.isEmpty ? .inactive : .active(apps.first?.localizedName ?? displayName)
-    }
-
-    private func inferredBundleIdentifier(from url: URL) -> String? {
-        let components = url.standardizedFileURL.pathComponents
-        let markers: [[String]] = [
-            ["Library", "Caches"],
-            ["Library", "Containers"],
-            ["Library", "Group Containers"]
-        ]
-
-        for marker in markers {
-            guard let start = index(of: marker, in: components) else { continue }
-            let candidateIndex = start + marker.count
-            guard candidateIndex < components.count else { continue }
-            var identifier = components[candidateIndex]
-            if identifier.hasPrefix("group.") {
-                identifier.removeFirst("group.".count)
-            }
-            guard identifier.contains("."), !identifier.contains("/") else { continue }
-            return identifier
-        }
-        return nil
-    }
-
-    private func index(of needle: [String], in haystack: [String]) -> Int? {
-        guard !needle.isEmpty, needle.count <= haystack.count else { return nil }
-        for start in 0...(haystack.count - needle.count) {
-            if Array(haystack[start..<(start + needle.count)]) == needle {
-                return start
-            }
-        }
-        return nil
     }
 }

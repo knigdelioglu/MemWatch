@@ -43,6 +43,35 @@ struct CleanupDeletionTests {
         precondition(dryReport.results[0].status == .wouldRemove, "Dry run should report wouldRemove")
         precondition(fm.fileExists(atPath: dryTarget.path), "Dry run must not mutate the filesystem")
 
+        let activeCache = home.appendingPathComponent("Library/Caches/org.example.active", isDirectory: true)
+        try fm.createDirectory(at: activeCache, withIntermediateDirectories: true)
+        try Data("active".utf8).write(to: activeCache.appendingPathComponent("payload"))
+        let activeCacheCandidate = CleanupCandidate(
+            scannerID: "user-cache",
+            ruleID: "user.cache",
+            category: .userCaches,
+            url: activeCache,
+            displayName: "Active app cache",
+            logicalBytes: 6,
+            allocatedBytes: 6,
+            safety: .safe,
+            deletionMode: .permanent,
+            requirements: [.applicationInactive],
+            reason: "test active app cache",
+            identity: CleanupPathValidator.identity(for: activeCache)
+        )
+        let activeAppEngine = CleanupDeletionEngine(
+            activityGuard: CleanupActivityGuard { _ in .active("Fixture App") }
+        )
+        let activeAppReport = await activeAppEngine.execute(
+            candidates: [activeCacheCandidate],
+            context: context,
+            mode: .apply
+        )
+        precondition(activeAppReport.results[0].status == .failed, "A cache for a running app must not be removed")
+        precondition(activeAppReport.results[0].message.contains("still running"), "Active app failure must explain the blocking condition")
+        precondition(fm.fileExists(atPath: activeCache.path), "Active app cache must survive the blocked cleanup")
+
         let applyTarget = projects.appendingPathComponent("target", isDirectory: true)
         try fm.createDirectory(at: applyTarget, withIntermediateDirectories: true)
         try Data(repeating: 0x42, count: 4096).write(to: applyTarget.appendingPathComponent("artifact.bin"))

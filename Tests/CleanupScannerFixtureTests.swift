@@ -39,6 +39,22 @@ struct CleanupScannerFixtureTests {
         try writePayload(into: npmCache, fm: fm)
         assertContains(try await DeveloperCacheScanner().scan(context: context), path: npmCache.path, label: "developer cache")
 
+        let jetBrainsCache = home.appendingPathComponent("Library/Caches/JetBrains", isDirectory: true)
+        try writePayload(into: jetBrainsCache, fm: fm)
+        let developerItems = try await DeveloperCacheScanner().scan(context: context)
+        guard let jetBrainsItem = developerItems.first(where: { $0.url.path == jetBrainsCache.path }) else {
+            preconditionFailure("Missing JetBrains cache fixture")
+        }
+        precondition(jetBrainsItem.safety == .safe && jetBrainsItem.requirements == [.applicationInactive], "JetBrains cache should be safe with app-close protection")
+
+        let vscodeCache = home.appendingPathComponent("Library/Application Support/Code/Cache", isDirectory: true)
+        try writePayload(into: vscodeCache, fm: fm)
+        let vscodeItems = try await DeveloperCacheScanner().scan(context: context)
+        guard let vscodeItem = vscodeItems.first(where: { $0.url.path == vscodeCache.path }) else {
+            preconditionFailure("Missing VS Code cache fixture")
+        }
+        precondition(vscodeItem.safety == .safe && vscodeItem.requirements == [.applicationInactive], "VS Code cache should be safe with app-close protection")
+
         let nodeModules = projects.appendingPathComponent("FixtureApp/node_modules", isDirectory: true)
         try writePayload(into: nodeModules, fm: fm)
         assertContains(try await ProjectArtifactScanner().scan(context: context), path: nodeModules.path, label: "project artifact")

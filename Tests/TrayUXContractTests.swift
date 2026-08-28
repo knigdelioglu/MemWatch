@@ -5,6 +5,8 @@ struct TrayUXContractTests {
     static func main() throws {
         let source = try String(contentsOfFile: "MemWatchApp.swift", encoding: .utf8)
         let cleanupSource = try String(contentsOfFile: "Views/CleanupView.swift", encoding: .utf8)
+        let helperSource = try String(contentsOfFile: "Services/PrivilegedHelperService.swift", encoding: .utf8)
+        let coordinatorSource = try String(contentsOfFile: "Services/CleanupCoordinator.swift", encoding: .utf8)
 
         expect(source.contains("button.title = \"\""), "status item should be icon-only")
         expect(!source.contains("monitor.snapshot.usagePercent)%\""), "raw RAM percentage must not return to the tray")
@@ -29,8 +31,17 @@ struct TrayUXContractTests {
         expect(cleanupSource.contains("title: \"İNCELE\""), "review scope must be explicitly explained")
         expect(cleanupSource.contains("title: \"KORUNAN\""), "protected scope must be explicitly explained")
         expect(cleanupSource.contains("Ana düğme bunları silmez"), "review items must be described as opt-in only")
-        expect(cleanupSource.contains("Güvenli \\(bytes(automaticSafeBytes)) Temizle"), "primary cleanup action must clearly name the safe-only scope")
+        expect(cleanupSource.contains("Güvenli \\(bytes(coordinator.automaticSafeBytes)) Temizle"), "primary cleanup action must clearly name the safe-only scope")
         expect(cleanupSource.contains("Silmeden Kontrol Et"), "dry run should use understandable Turkish wording")
+        expect(cleanupSource.contains("Uygulamayı kapat ve yeniden tara"), "active app cleanup should offer a close-and-rescan action")
+        expect(cleanupSource.contains("Çalışan uygulamalar"), "cleanup should warn about applications that will be closed")
+        expect(cleanupSource.contains("setApplicationCleanupEnabled"), "cleanup should offer an application-level opt-out")
+        expect(helperSource.contains("func register() async -> Bool"), "helper registration must not block the cleanup window")
+        expect(helperSource.contains("Task.detached"), "administrator installation must run off the main actor")
+        expect(helperSource.contains("connectionVerified"), "helper availability must be based on a live XPC check")
+        expect(coordinatorSource.contains("if currentPreferences.privilegedOperationsEnabled"), "scan should rediscover an installed helper after relaunch")
+        expect(coordinatorSource.contains("await helperService.verifyConnection()"), "startup should verify an installed helper before showing it as missing")
+        expect(cleanupSource.contains("helperService.lastError"), "helper installation failures must remain visible in the cleanup UI")
         expect(!cleanupSource.contains("Label(\"Dry Run\""), "English dry-run label must not return to cleanup UI")
 
         print("Tray UX contract tests passed")
