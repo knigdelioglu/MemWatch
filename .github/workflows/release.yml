@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.13'
+      - '.github/release-trigger-v0.1.14'
 
 permissions:
   contents: write
@@ -51,24 +51,19 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.13"
+            TAG="v0.1.14"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch v0.1.13 delivers Phase 8 — Deep Storage & Cleanup.
+          MemWatch v0.1.14 makes Phase 8 Cleanup visible from the normal tray workflow.
 
-          Highlights:
-          - Dedicated on-demand cleanup flow kept separate from lightweight background monitoring
-          - Rule-based user cache/log, developer cache, project artifact, Trash, download/installer, device-backup and AI storage scanning
-          - Deep application-leftover, diagnostics, large/old-file, duplicate and similar-image analysis
-          - Safe / Review / Protected classification with explicit selection semantics
-          - Canonical-path, symlink, ownership, file-identity and TOCTOU protections before deletion
-          - Ignore rules, cleanup history, dry-run and reclaimed-space verification
-          - Full Disk Access and narrowly scoped privileged-helper capability states
-          - System cleanup, Time Machine and purgeable-space maintenance through restricted backends
-          - Cleanup, privileged-operation and private-backend kill switches
-          - Cancellation and truthful progress reporting without adding recursive work to normal monitoring cadence
-          - Phase 8 safety, persistence, helper, performance and Universal Release DMG validation gates passing on main
+          Changes:
+          - Added a prominent Cleanup & Storage card to the normal left-click tray overview
+          - The card opens the full Deep Cleanup window directly
+          - Kept Cleanup & Storage available from the tray right-click menu as a secondary shortcut
+          - Added a tray UX regression contract so the Cleanup entry cannot disappear from the normal overview again
+          - Includes the full Phase 8 Deep Storage & Cleanup engine from v0.1.13: Safe / Review / Protected classification, developer/project/AI scanning, duplicates, large/old files, application leftovers, APFS intelligence, Full Disk Access, privileged helper, Time Machine maintenance, dry-run, history, ignore rules and deletion safety protections
+          - macOS CI, Phase 8 Cleanup Validation and Universal Release DMG checks pass with the visible Cleanup entry
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
@@ -77,13 +72,13 @@ jobs:
             gh release upload "$TAG" dist/MemWatch.dmg dist/MemWatch.dmg.sha256 --clobber
             gh release edit "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Phase 8" \
+              --title "MemWatch $TAG — Visible Cleanup UI" \
               --notes-file /tmp/release-notes.md \
               --prerelease
           else
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Phase 8" \
+              --title "MemWatch $TAG — Visible Cleanup UI" \
               --notes-file /tmp/release-notes.md \
               --prerelease \
               dist/MemWatch.dmg \
@@ -95,7 +90,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT_TAG="v0.1.13"
+          CURRENT_TAG="v0.1.14"
           gh release list --limit 1000 --json tagName --jq '.[].tagName' | while IFS= read -r TAG; do
             [[ -z "$TAG" || "$TAG" == "$CURRENT_TAG" ]] && continue
             echo "Deleting previous release: $TAG"
