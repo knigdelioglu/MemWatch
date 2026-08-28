@@ -87,6 +87,14 @@ jobs:
             -o /tmp/memwatch-storage-filter-tests
           /tmp/memwatch-storage-filter-tests
 
+      - name: Run APFS storage intelligence tests
+        run: |
+          xcrun swiftc \
+            Models/StorageSnapshot.swift \
+            Tests/StorageSpaceIntelligenceTests.swift \
+            -o /tmp/memwatch-storage-space-tests
+          /tmp/memwatch-storage-space-tests
+
       - name: Run power model tests
         run: |
           xcrun swiftc \
@@ -151,6 +159,66 @@ jobs:
             Tests/StorageNotificationPolicyTests.swift \
             -o /tmp/memwatch-storage-policy-tests
           /tmp/memwatch-storage-policy-tests
+
+      - name: Run cleanup safety policy tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Tests/CleanupSafetyTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -o /tmp/memwatch-cleanup-safety-tests
+          /tmp/memwatch-cleanup-safety-tests
+
+      - name: Run cleanup deletion and TOCTOU tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupDeletionEngine.swift \
+            Tests/CleanupDeletionTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -framework Security \
+            -o /tmp/memwatch-cleanup-deletion-tests
+          /tmp/memwatch-cleanup-deletion-tests
+
+      - name: Run privileged helper protocol tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            PrivilegedHelper/HelperProtocol.swift \
+            Tests/PrivilegedHelperProtocolTests.swift \
+            -framework Security \
+            -o /tmp/memwatch-helper-protocol-tests
+          /tmp/memwatch-helper-protocol-tests
+
+      - name: Verify cleanup architecture contracts
+        run: |
+          grep -q 'Deep Cleanup' MemWatchApp.swift
+          grep -q 'CleanupWindowController' MemWatchApp.swift
+          grep -q 'privateBackendEnabled' Services/CleanupCoordinator.swift
+          grep -q 'CleanupScannerID(rawValue: "privileged-system")' Services/CleanupCoordinator.swift
+          grep -q 'SecCodeCopyStaticCode' PrivilegedHelper/HelperProtocol.swift
+          grep -q 'SMAppService.daemon' Services/PrivilegedHelperService.swift
+          grep -q 'Contents/Library/HelperTools' MemWatch.xcodeproj/project.pbxproj
+          grep -q 'Contents/Library/LaunchDaemons' MemWatch.xcodeproj/project.pbxproj
+          ! grep -q 'func delete(path:' PrivilegedHelper/HelperProtocol.swift
+          ! grep -q 'rm -rf' PrivilegedHelper/HelperMain.swift
 
       - name: Run collector performance budgets
         run: |
