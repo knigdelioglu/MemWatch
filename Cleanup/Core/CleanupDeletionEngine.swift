@@ -336,7 +336,9 @@ struct CleanupActivityGuard: Sendable {
         bundleIdentifiers: [String],
         displayName: String
     ) -> CleanupApplicationActivityState {
-        let apps = bundleIdentifiers.flatMap(NSRunningApplication.runningApplications(withBundleIdentifier:))
+        let apps = bundleIdentifiers.flatMap {
+            NSRunningApplication.runningApplications(withBundleIdentifier: $0)
+        }
         return apps.isEmpty ? .inactive : .active(apps.first?.localizedName ?? displayName)
     }
 
