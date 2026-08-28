@@ -8,7 +8,7 @@ struct CleanupFileSize: Equatable, Sendable {
     let allocatedBytes: UInt64
 }
 
-struct CleanupFileSizer: Sendable {
+struct CleanupFileSizer: @unchecked Sendable {
     private let fileManager: FileManager
 
     init(fileManager: FileManager = .default) {
@@ -287,10 +287,11 @@ struct ExactDuplicateScanner: CleanupScanner {
                     if let hash = fullHash(record.url) { fullGroups[hash, default: []].append(record) }
                 }
                 for fullGroup in fullGroups.values where fullGroup.count > 1 {
-                    let keeper = fullGroup[0]
-                    for duplicate in fullGroup.dropFirst() {
-                        if duplicate.identity == keeper.identity { continue }
-                        if let item = support.candidate(url: duplicate.url, scannerID: id, ruleID: "duplicate.exact", category: category, displayName: "Duplicate: \(duplicate.url.lastPathComponent)", safety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], reason: "Full SHA-256 matches \(keeper.url.path)", regenerationHint: "Exact duplicates require explicit review; one copy is retained as the reference.") {
+                    let physicalCopies = uniquePhysicalRecords(fullGroup)
+                    guard physicalCopies.count > 1 else { continue }
+                    let keeper = physicalCopies[0]
+                    for duplicate in physicalCopies.dropFirst() {
+                        if let item = support.candidate(url: duplicate.url, scannerID: id, ruleID: "duplicate.exact", category: category, displayName: "Duplicate: \(duplicate.url.lastPathComponent)", safety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], reason: "Full SHA-256 matches \(keeper.url.path)", regenerationHint: "Exact duplicates require explicit review; one physical copy is retained as the reference. Hard links are counted only once.") {
                             results.append(item)
                         }
                     }
@@ -304,6 +305,23 @@ struct ExactDuplicateScanner: CleanupScanner {
         let url: URL
         let size: UInt64
         let identity: FileIdentity?
+    }
+
+    private func uniquePhysicalRecords(_ records: [DuplicateFileRecord]) -> [DuplicateFileRecord] {
+        var seenPhysicalIDs = Set<String>()
+        var results: [DuplicateFileRecord] = []
+        for record in records {
+            let key: String
+            if let identity = record.identity {
+                key = "\(identity.deviceID):\(identity.inode)"
+            } else {
+                key = "path:\(record.url.standardizedFileURL.path)"
+            }
+            if seenPhysicalIDs.insert(key).inserted {
+                results.append(record)
+            }
+        }
+        return results
     }
 
     private func collectFiles(context: CleanupScanContext) throws -> [DuplicateFileRecord] {
