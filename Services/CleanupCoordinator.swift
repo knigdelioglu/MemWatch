@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 @MainActor
@@ -20,6 +21,7 @@ final class CleanupCoordinator: ObservableObject {
     @Published private(set) var ignoreRules: [CleanupIgnoreRule] = []
     @Published private(set) var preferences: CleanupPreferences = .defaults()
     @Published private(set) var snapshots: [PrivilegedScannedItem] = []
+    @Published private(set) var storageSpaceIntelligence: StorageSpaceIntelligence? = .startupVolume()
     @Published var selectedIDs = Set<UUID>()
 
     let helperService = PrivilegedHelperService()
@@ -205,7 +207,9 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func thinTimeMachineSnapshots(targetBytes: UInt64) {
-        guard helperService.isAvailableForCleanup, targetBytes > 0 else { return }
+        guard preferences.privateBackendEnabled,
+              helperService.isAvailableForCleanup,
+              targetBytes > 0 else { return }
         executionTask?.cancel()
         executionTask = Task { [weak self] in
             guard let self else { return }
@@ -213,6 +217,7 @@ final class CleanupCoordinator: ObservableObject {
             do {
                 _ = try await self.timeMachineBackend.thinSnapshots(targetBytes: targetBytes)
                 await self.refreshSnapshotsIfAvailable()
+                self.storageSpaceIntelligence = .startupVolume()
                 await self.runScan()
             } catch {
                 self.phase = .failed(error.localizedDescription)
@@ -277,6 +282,7 @@ final class CleanupCoordinator: ObservableObject {
         history = loadedHistory
         ignoreRules = loadedIgnores
         preferences = loadedPreferences
+        storageSpaceIntelligence = .startupVolume()
         helperService.refreshStatus()
         fullDiskAccessService.refresh()
     }
@@ -284,6 +290,7 @@ final class CleanupCoordinator: ObservableObject {
     private func runScan() async {
         phase = .scanning
         selectedIDs.removeAll()
+        storageSpaceIntelligence = .startupVolume()
         fullDiskAccessService.refresh()
         helperService.refreshStatus()
 
@@ -292,8 +299,19 @@ final class CleanupCoordinator: ObservableObject {
         preferences = currentPreferences
 
         var helperAvailable = false
-        if helperService.isAvailableForCleanup {
+        if currentPreferences.privateBackendEnabled && helperService.isAvailableForCleanup {
             helperAvailable = await helperService.verifyConnection()
+        }
+
+        let effectivePolicy: CleanupScanPolicy
+        if currentPreferences.privateBackendEnabled {
+            effectivePolicy = ignoreSnapshot.policy
+        } else {
+            effectivePolicy = CleanupScanPolicy(
+                ignoredRuleIDs: ignoreSnapshot.policy.ignoredRuleIDs,
+                ignoredCategories: ignoreSnapshot.policy.ignoredCategories,
+                ignoredScannerIDs: ignoreSnapshot.policy.ignoredScannerIDs.union([CleanupScannerID(rawValue: "privileged-system")])
+            )
         }
 
         let requestedRoots = existingDirectories(currentPreferences.requestedRootPaths)
@@ -310,7 +328,7 @@ final class CleanupCoordinator: ObservableObject {
         do {
             let result = try await scanEngine.scan(
                 context: context,
-                policy: ignoreSnapshot.policy
+                policy: effectivePolicy
             ) { [weak self] progress in
                 await MainActor.run {
                     self?.scanProgress = progress
@@ -318,6 +336,7 @@ final class CleanupCoordinator: ObservableObject {
             }
             if Task.isCancelled { return }
             scanResult = result
+            storageSpaceIntelligence = .startupVolume()
             phase = .ready
             await refreshSnapshotsIfAvailable()
         } catch is CancellationError {
@@ -351,6 +370,7 @@ final class CleanupCoordinator: ObservableObject {
                 return
             }
 
+            self.storageSpaceIntelligence = .startupVolume()
             if mode == .apply {
                 await self.runScan()
             } else {
@@ -360,7 +380,8 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     private func refreshSnapshotsIfAvailable() async {
-        guard helperService.isAvailableForCleanup else {
+        guard preferences.privateBackendEnabled,
+              helperService.isAvailableForCleanup else {
             snapshots = []
             return
         }
