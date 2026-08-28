@@ -33,7 +33,49 @@
 		B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* CleanupSafetyEngine.swift */; };
 		B10000000000000000000006 /* CleanupScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* CleanupScanEngine.swift */; };
 		B10000000000000000000007 /* CleanupFileSizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* CleanupFileSizer.swift */; };
+		D10000000000000000000001 /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
+		D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PrivilegedHelperService.swift */; };
+		D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* PrivilegedSystemScanner.swift */; };
+		D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
+		D10000000000000000000005 /* HelperMain.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* HelperMain.swift */; };
+		D10000000000000000000006 /* MemWatchPrivilegedHelper in Copy Helper */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* MemWatchPrivilegedHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		D10000000000000000000007 /* Helper daemon plist in Copy LaunchDaemons */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D80000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A80000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D50000000000000000000001;
+			remoteInfo = MemWatchPrivilegedHelper;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D71000000000000000000001 /* Copy Privileged Helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/HelperTools";
+			dstSubfolderSpec = 1;
+			files = (
+				D10000000000000000000006 /* MemWatchPrivilegedHelper in Copy Helper */,
+			);
+			name = "Copy Privileged Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D71000000000000000000002 /* Copy LaunchDaemon Plist */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "Contents/Library/LaunchDaemons";
+			dstSubfolderSpec = 1;
+			files = (
+				D10000000000000000000007 /* Helper daemon plist in Copy LaunchDaemons */,
+			);
+			name = "Copy LaunchDaemon Plist";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A20000000000000000000001 /* MemWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemWatchApp.swift; sourceTree = "<group>"; };
@@ -63,10 +105,23 @@
 		B20000000000000000000005 /* CleanupSafetyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSafetyEngine.swift; sourceTree = "<group>"; };
 		B20000000000000000000006 /* CleanupScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanEngine.swift; sourceTree = "<group>"; };
 		B20000000000000000000007 /* CleanupFileSizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupFileSizer.swift; sourceTree = "<group>"; };
+		D20000000000000000000001 /* HelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperProtocol.swift; sourceTree = "<group>"; };
+		D20000000000000000000002 /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
+		D20000000000000000000003 /* PrivilegedHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperService.swift; sourceTree = "<group>"; };
+		D20000000000000000000004 /* PrivilegedSystemScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedSystemScanner.swift; sourceTree = "<group>"; };
+		D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = com.knigdelioglu.MemWatch.PrivilegedHelper.plist; sourceTree = "<group>"; };
+		D20000000000000000000006 /* MemWatchPrivilegedHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MemWatchPrivilegedHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D30000000000000000000001 /* Helper Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -85,6 +140,7 @@
 				A40000000000000000000004 /* Collectors */,
 				A40000000000000000000005 /* Services */,
 				B40000000000000000000001 /* Cleanup */,
+				D40000000000000000000001 /* PrivilegedHelper */,
 				A40000000000000000000006 /* Views */,
 				A40000000000000000000002 /* Products */,
 			);
@@ -94,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000006 /* MemWatch.app */,
+				D20000000000000000000006 /* MemWatchPrivilegedHelper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -130,6 +187,7 @@
 				A20000000000000000000009 /* NotificationService.swift */,
 				A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */,
 				A20000000000000000000018 /* LaunchAtLoginService.swift */,
+				D20000000000000000000003 /* PrivilegedHelperService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -161,8 +219,19 @@
 				B20000000000000000000005 /* CleanupSafetyEngine.swift */,
 				B20000000000000000000006 /* CleanupScanEngine.swift */,
 				B20000000000000000000007 /* CleanupFileSizer.swift */,
+				D20000000000000000000004 /* PrivilegedSystemScanner.swift */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		D40000000000000000000001 /* PrivilegedHelper */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000001 /* HelperProtocol.swift */,
+				D20000000000000000000002 /* HelperMain.swift */,
+				D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */,
+			);
+			path = PrivilegedHelper;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -175,15 +244,34 @@
 				A60000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
 				A70000000000000000000001 /* Resources */,
+				D71000000000000000000001 /* Copy Privileged Helper */,
+				D71000000000000000000002 /* Copy LaunchDaemon Plist */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D90000000000000000000001 /* PBXTargetDependency */,
 			);
 			name = MemWatch;
 			productName = MemWatch;
 			productReference = A20000000000000000000006 /* MemWatch.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D50000000000000000000001 /* MemWatchPrivilegedHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DB00000000000000000000001 /* Build configuration list for PBXNativeTarget "MemWatchPrivilegedHelper" */;
+			buildPhases = (
+				D60000000000000000000001 /* Helper Sources */,
+				D30000000000000000000001 /* Helper Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MemWatchPrivilegedHelper;
+			productName = MemWatchPrivilegedHelper;
+			productReference = D20000000000000000000006 /* MemWatchPrivilegedHelper */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -196,6 +284,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A50000000000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					D50000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -214,6 +305,7 @@
 			projectRoot = "";
 			targets = (
 				A50000000000000000000001 /* MemWatch */,
+				D50000000000000000000001 /* MemWatchPrivilegedHelper */,
 			);
 		};
 /* End PBXProject section */
@@ -259,10 +351,30 @@
 				B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */,
 				B10000000000000000000006 /* CleanupScanEngine.swift in Sources */,
 				B10000000000000000000007 /* CleanupFileSizer.swift in Sources */,
+				D10000000000000000000001 /* HelperProtocol.swift in Sources */,
+				D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */,
+				D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D60000000000000000000001 /* Helper Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */,
+				D10000000000000000000005 /* HelperMain.swift in Helper Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D90000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D50000000000000000000001 /* MemWatchPrivilegedHelper */;
+			targetProxy = D80000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000001 /* Debug */ = {
@@ -325,6 +437,34 @@
 			};
 			name = Release;
 		};
+		DA0000000000000000000001 /* Helper Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = MemWatchPrivilegedHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DA0000000000000000000002 /* Helper Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_NAME = MemWatchPrivilegedHelper;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -342,6 +482,15 @@
 			buildConfigurations = (
 				AA0000000000000000000003 /* Debug */,
 				AA0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DB00000000000000000000001 /* Build configuration list for PBXNativeTarget "MemWatchPrivilegedHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA0000000000000000000001 /* Helper Debug */,
+				DA0000000000000000000002 /* Helper Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
