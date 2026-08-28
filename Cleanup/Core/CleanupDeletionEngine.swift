@@ -11,6 +11,7 @@ enum CleanupExecutionStatus: String, Codable, Sendable {
     case removed
     case movedToTrash
     case privilegedRemoved
+    case maintenanceCompleted
     case skipped
     case failed
 }
@@ -75,7 +76,7 @@ struct CleanupExecutionReport: Identifiable, Codable, Sendable {
     }
 
     var successfulCount: Int {
-        results.filter { [.removed, .movedToTrash, .privilegedRemoved].contains($0.status) }.count
+        results.filter { [.removed, .movedToTrash, .privilegedRemoved, .maintenanceCompleted].contains($0.status) }.count
     }
 
     var failureCount: Int {
@@ -93,6 +94,7 @@ enum CleanupDeletionError: LocalizedError {
     case applicationActive(String)
     case applicationStateUnknown(String)
     case unsupportedMode
+    case maintenanceTargetRejected
     case verificationFailed
 
     var errorDescription: String? {
@@ -105,7 +107,8 @@ enum CleanupDeletionError: LocalizedError {
         case .identityChanged: return "The cleanup target changed after scanning. Rescan before deleting it."
         case .applicationActive(let name): return "\(name) is still running. Close it before cleanup."
         case .applicationStateUnknown(let name): return "MemWatch could not safely verify that \(name) is inactive. Review it manually."
-        case .unsupportedMode: return "This cleanup operation requires a dedicated maintenance backend."
+        case .unsupportedMode: return "This cleanup operation has no approved execution backend."
+        case .maintenanceTargetRejected: return "The maintenance target is outside MemWatch's strict Xcode maintenance allowlist."
         case .verificationFailed: return "The cleanup operation returned success but the original target still exists."
         }
     }
@@ -117,19 +120,22 @@ actor CleanupDeletionEngine {
     private let safetyEngine: CleanupSafetyEngine
     private let helperClient: PrivilegedHelperClient
     private let activityGuard: CleanupActivityGuard
+    private let maintenanceBackend: CleanupMaintenanceBackend
 
     init(
         fileManager: FileManager = .default,
         catalog: CleanupRuleCatalog = CleanupRuleCatalog(),
         safetyEngine: CleanupSafetyEngine = CleanupSafetyEngine(),
         helperClient: PrivilegedHelperClient = PrivilegedHelperClient(),
-        activityGuard: CleanupActivityGuard = CleanupActivityGuard()
+        activityGuard: CleanupActivityGuard = CleanupActivityGuard(),
+        maintenanceBackend: CleanupMaintenanceBackend = CleanupMaintenanceBackend()
     ) {
         self.fileManager = fileManager
         self.catalog = catalog
         self.safetyEngine = safetyEngine
         self.helperClient = helperClient
         self.activityGuard = activityGuard
+        self.maintenanceBackend = maintenanceBackend
     }
 
     func execute(
@@ -153,7 +159,7 @@ actor CleanupDeletionEngine {
                 if mode == .dryRun {
                     results.append(
                         result(
-                            candidate,
+                            validated,
                             status: .wouldRemove,
                             message: "Validated. No files were changed."
                         )
@@ -195,7 +201,12 @@ actor CleanupDeletionEngine {
                     try verifyOriginalPathRemoved(validated.url)
                     results.append(result(validated, status: .privilegedRemoved, reclaimedBytes: response.reclaimedBytes, message: response.message))
 
-                case .maintenance, .none:
+                case .maintenance:
+                    let reclaimed = try maintenanceBackend.execute(validated, context: context)
+                    try verifyOriginalPathRemoved(validated.url)
+                    results.append(result(validated, status: .maintenanceCompleted, reclaimedBytes: reclaimed, message: "Approved Xcode maintenance target removed and verified."))
+
+                case .none:
                     throw CleanupDeletionError.unsupportedMode
                 }
             } catch {
@@ -285,6 +296,35 @@ actor CleanupDeletionEngine {
             reclaimedBytes: reclaimedBytes,
             message: message
         )
+    }
+}
+
+struct CleanupMaintenanceBackend: @unchecked Sendable {
+    private let fileManager: FileManager
+
+    init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    func execute(_ candidate: CleanupCandidate, context: CleanupScanContext) throws -> UInt64 {
+        guard candidate.ruleID.rawValue == "xcode.simulatorcache" else {
+            throw CleanupDeletionError.maintenanceTargetRejected
+        }
+
+        let developer = context.homeDirectory.appendingPathComponent("Library/Developer", isDirectory: true)
+        let coreSimulatorCaches = developer.appendingPathComponent("CoreSimulator/Caches", isDirectory: true).standardizedFileURL.path
+        let xctestDevices = developer.appendingPathComponent("XCTestDevices", isDirectory: true).standardizedFileURL.path
+        let candidatePath = candidate.url.standardizedFileURL.path
+
+        let isCoreSimulatorCache = CleanupPathValidator.path(candidatePath, isEqualToOrDescendantOf: coreSimulatorCaches)
+        let isXCTestDeviceChild = candidatePath != xctestDevices && CleanupPathValidator.path(candidatePath, isEqualToOrDescendantOf: xctestDevices)
+        guard isCoreSimulatorCache || isXCTestDeviceChild else {
+            throw CleanupDeletionError.maintenanceTargetRejected
+        }
+
+        let expected = candidate.allocatedBytes
+        try fileManager.removeItem(at: candidate.url)
+        return expected
     }
 }
 
