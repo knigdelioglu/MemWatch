@@ -230,6 +230,19 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
     let observedFreeSpaceDeltaBytes: UInt64?
     let results: [CleanupExecutionItemResult]
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case timestamp
+        case mode
+        case requestedCount
+        case successfulCount
+        case failedCount
+        case reclaimedBytes
+        case movedToTrashBytes
+        case observedFreeSpaceDeltaBytes
+        case results
+    }
+
     init(report: CleanupExecutionReport) {
         id = report.id
         timestamp = report.finishedAt
@@ -241,6 +254,20 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
         movedToTrashBytes = report.movedToTrashBytes
         observedFreeSpaceDeltaBytes = report.observedFreeSpaceDeltaBytes
         results = report.results
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        mode = try container.decode(CleanupExecutionMode.self, forKey: .mode)
+        requestedCount = try container.decode(Int.self, forKey: .requestedCount)
+        successfulCount = try container.decode(Int.self, forKey: .successfulCount)
+        failedCount = try container.decode(Int.self, forKey: .failedCount)
+        reclaimedBytes = try container.decode(UInt64.self, forKey: .reclaimedBytes)
+        movedToTrashBytes = try container.decodeIfPresent(UInt64.self, forKey: .movedToTrashBytes) ?? 0
+        observedFreeSpaceDeltaBytes = try container.decodeIfPresent(UInt64.self, forKey: .observedFreeSpaceDeltaBytes)
+        results = try container.decode([CleanupExecutionItemResult].self, forKey: .results)
     }
 }
 
@@ -287,6 +314,14 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
     var privilegedOperationsEnabled: Bool
     var privateBackendEnabled: Bool
 
+    private enum CodingKeys: String, CodingKey {
+        case requestedRootPaths
+        case projectRootPaths
+        case cleanupEnabled
+        case privilegedOperationsEnabled
+        case privateBackendEnabled
+    }
+
     static func defaults(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> CleanupPreferences {
         CleanupPreferences(
             requestedRootPaths: ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music"].map {
@@ -299,6 +334,30 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
             privilegedOperationsEnabled: true,
             privateBackendEnabled: true
         )
+    }
+
+    init(
+        requestedRootPaths: [String],
+        projectRootPaths: [String],
+        cleanupEnabled: Bool,
+        privilegedOperationsEnabled: Bool,
+        privateBackendEnabled: Bool
+    ) {
+        self.requestedRootPaths = requestedRootPaths
+        self.projectRootPaths = projectRootPaths
+        self.cleanupEnabled = cleanupEnabled
+        self.privilegedOperationsEnabled = privilegedOperationsEnabled
+        self.privateBackendEnabled = privateBackendEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = CleanupPreferences.defaults()
+        requestedRootPaths = try container.decodeIfPresent([String].self, forKey: .requestedRootPaths) ?? defaults.requestedRootPaths
+        projectRootPaths = try container.decodeIfPresent([String].self, forKey: .projectRootPaths) ?? defaults.projectRootPaths
+        cleanupEnabled = try container.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? true
+        privilegedOperationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .privilegedOperationsEnabled) ?? true
+        privateBackendEnabled = try container.decodeIfPresent(Bool.self, forKey: .privateBackendEnabled) ?? true
     }
 }
 
