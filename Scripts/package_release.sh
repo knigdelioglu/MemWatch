@@ -103,10 +103,11 @@ verify_helper_bundle "$APP_PATH"
 
 # Ad-hoc signing makes the CI artifact internally consistent, but it is not
 # Developer ID signing and does not replace Apple notarization for distribution.
+HELPER_BUNDLE_PROGRAM="$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$APP_PATH/$HELPER_PLIST_REL")"
+codesign --force --sign - "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
-HELPER_BUNDLE_PROGRAM="$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$APP_PATH/$HELPER_PLIST_REL")"
 codesign --verify --strict --verbose=2 "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
 
 mkdir -p "$STAGE_DIR"
