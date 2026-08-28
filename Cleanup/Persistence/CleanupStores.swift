@@ -2,6 +2,8 @@ import Foundation
 
 enum CleanupIgnoreKind: String, Codable, CaseIterable, Sendable {
     case path
+    case project
+    case application
     case rule
     case category
     case scanner
@@ -33,15 +35,21 @@ struct CleanupScanPolicy: Sendable {
     let ignoredRuleIDs: Set<CleanupRuleID>
     let ignoredCategories: Set<CleanupCategory>
     let ignoredScannerIDs: Set<CleanupScannerID>
+    let ignoredProjectPaths: Set<String>
+    let ignoredApplicationIdentifiers: Set<String>
 
     init(
         ignoredRuleIDs: Set<CleanupRuleID> = [],
         ignoredCategories: Set<CleanupCategory> = [],
-        ignoredScannerIDs: Set<CleanupScannerID> = []
+        ignoredScannerIDs: Set<CleanupScannerID> = [],
+        ignoredProjectPaths: Set<String> = [],
+        ignoredApplicationIdentifiers: Set<String> = []
     ) {
         self.ignoredRuleIDs = ignoredRuleIDs
         self.ignoredCategories = ignoredCategories
         self.ignoredScannerIDs = ignoredScannerIDs
+        self.ignoredProjectPaths = Set(ignoredProjectPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        self.ignoredApplicationIdentifiers = ignoredApplicationIdentifiers
     }
 
     func skips(scanner: any CleanupScanner) -> Bool {
@@ -49,9 +57,75 @@ struct CleanupScanPolicy: Sendable {
     }
 
     func skips(candidate: CleanupCandidate) -> Bool {
-        ignoredRuleIDs.contains(candidate.ruleID) ||
+        if ignoredRuleIDs.contains(candidate.ruleID) ||
             ignoredCategories.contains(candidate.category) ||
-            ignoredScannerIDs.contains(candidate.scannerID)
+            ignoredScannerIDs.contains(candidate.scannerID) {
+            return true
+        }
+
+        if ignoredProjectPaths.contains(where: {
+            CleanupPathValidator.path(candidate.url.path, isEqualToOrDescendantOf: $0)
+        }) {
+            return true
+        }
+
+        if let identifier = Self.applicationIdentifier(for: candidate) {
+            return ignoredApplicationIdentifiers.contains { ignored in
+                identifier == ignored ||
+                    identifier.hasPrefix(ignored + ".") ||
+                    ignored.hasPrefix(identifier + ".")
+            }
+        }
+        return false
+    }
+
+    static func applicationIdentifier(for candidate: CleanupCandidate) -> String? {
+        for prefix in ["System orphan: ", "Orphan: "] where candidate.displayName.hasPrefix(prefix) {
+            let value = String(candidate.displayName.dropFirst(prefix.count))
+            if looksLikeBundleIdentifier(value) { return normalizedIdentifier(value) }
+        }
+
+        let components = candidate.url.standardizedFileURL.pathComponents
+        let markers: [[String]] = [
+            ["Library", "Caches"],
+            ["Library", "Containers"],
+            ["Library", "Group Containers"],
+            ["Library", "Preferences"],
+            ["Library", "HTTPStorages"],
+            ["Library", "WebKit"],
+            ["Library", "Saved Application State"]
+        ]
+        for marker in markers {
+            guard let index = sequenceIndex(marker, in: components) else { continue }
+            let valueIndex = index + marker.count
+            guard valueIndex < components.count else { continue }
+            var value = components[valueIndex]
+            for suffix in [".savedState", ".plist"] where value.hasSuffix(suffix) {
+                value.removeLast(suffix.count)
+            }
+            value = normalizedIdentifier(value)
+            if looksLikeBundleIdentifier(value) { return value }
+        }
+        return nil
+    }
+
+    private static func normalizedIdentifier(_ value: String) -> String {
+        value.hasPrefix("group.") ? String(value.dropFirst("group.".count)) : value
+    }
+
+    private static func looksLikeBundleIdentifier(_ value: String) -> Bool {
+        let components = value.split(separator: ".")
+        return components.count >= 2 && components.allSatisfy {
+            !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        }
+    }
+
+    private static func sequenceIndex(_ needle: [String], in haystack: [String]) -> Int? {
+        guard !needle.isEmpty, needle.count <= haystack.count else { return nil }
+        for start in 0...(haystack.count - needle.count) {
+            if Array(haystack[start..<(start + needle.count)]) == needle { return start }
+        }
+        return nil
     }
 }
 
@@ -74,6 +148,8 @@ actor CleanupIgnoreStore {
     func snapshot() -> CleanupIgnoreSnapshot {
         let rules = load()
         var paths = Set<String>()
+        var projects = Set<String>()
+        var applications = Set<String>()
         var ruleIDs = Set<CleanupRuleID>()
         var categories = Set<CleanupCategory>()
         var scanners = Set<CleanupScannerID>()
@@ -82,6 +158,12 @@ actor CleanupIgnoreStore {
             switch rule.kind {
             case .path:
                 paths.insert(URL(fileURLWithPath: rule.value).standardizedFileURL.path)
+            case .project:
+                let path = URL(fileURLWithPath: rule.value).standardizedFileURL.path
+                paths.insert(path)
+                projects.insert(path)
+            case .application:
+                applications.insert(rule.value)
             case .rule:
                 ruleIDs.insert(CleanupRuleID(rawValue: rule.value))
             case .category:
@@ -95,7 +177,9 @@ actor CleanupIgnoreStore {
             policy: CleanupScanPolicy(
                 ignoredRuleIDs: ruleIDs,
                 ignoredCategories: categories,
-                ignoredScannerIDs: scanners
+                ignoredScannerIDs: scanners,
+                ignoredProjectPaths: projects,
+                ignoredApplicationIdentifiers: applications
             )
         )
     }
@@ -142,6 +226,8 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
     let successfulCount: Int
     let failedCount: Int
     let reclaimedBytes: UInt64
+    let movedToTrashBytes: UInt64
+    let observedFreeSpaceDeltaBytes: UInt64?
     let results: [CleanupExecutionItemResult]
 
     init(report: CleanupExecutionReport) {
@@ -152,6 +238,8 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
         successfulCount = report.successfulCount
         failedCount = report.failureCount
         reclaimedBytes = report.reclaimedBytes
+        movedToTrashBytes = report.movedToTrashBytes
+        observedFreeSpaceDeltaBytes = report.observedFreeSpaceDeltaBytes
         results = report.results
     }
 }
@@ -195,6 +283,8 @@ actor CleanupHistoryStore {
 struct CleanupPreferences: Codable, Equatable, Sendable {
     var requestedRootPaths: [String]
     var projectRootPaths: [String]
+    var cleanupEnabled: Bool
+    var privilegedOperationsEnabled: Bool
     var privateBackendEnabled: Bool
 
     static func defaults(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> CleanupPreferences {
@@ -205,6 +295,8 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
             projectRootPaths: ["Projects", "Code", "dev", "GitHub", "Workspace"].map {
                 home.appendingPathComponent($0, isDirectory: true).path
             },
+            cleanupEnabled: true,
+            privilegedOperationsEnabled: true,
             privateBackendEnabled: true
         )
     }
