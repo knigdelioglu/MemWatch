@@ -109,7 +109,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func installDashboardRootView() {
         popover.contentSize = Self.panelSize
         popover.contentViewController = NSHostingController(
-            rootView: SmartMenuBarRootView(monitor: monitor)
+            rootView: SmartMenuBarRootView(
+                monitor: monitor,
+                openCleanup: { [weak self] in
+                    self?.openCleanupWindow()
+                }
+            )
                 .frame(width: Self.panelSize.width, height: Self.panelSize.height)
         )
     }
@@ -273,13 +278,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         let menu = NSMenu()
 
         let cleanupItem = NSMenuItem(
-            title: "Deep Cleanup…",
+            title: "Cleanup & Storage…",
             action: #selector(openCleanupWindow),
             keyEquivalent: ""
         )
         cleanupItem.image = NSImage(
             systemSymbolName: "sparkles",
-            accessibilityDescription: "Deep Cleanup"
+            accessibilityDescription: "Cleanup & Storage"
         )
         cleanupItem.target = self
         menu.addItem(cleanupItem)
@@ -419,6 +424,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 private struct SmartMenuBarRootView: View {
     @ObservedObject var monitor: MonitoringService
+    let openCleanup: () -> Void
     @State private var showingTechnicalDetails = false
 
     private var snapshot: MemorySnapshot { monitor.snapshot }
@@ -460,6 +466,7 @@ private struct SmartMenuBarRootView: View {
                 healthCard
                 memoryFocusCard
                 quickFactsCard
+                cleanupCard
                 topConsumersCard
                 controlsRow
             }
@@ -582,6 +589,48 @@ private struct SmartMenuBarRootView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+
+    private var cleanupCard: some View {
+        Button(action: openCleanup) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.12))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Cleanup & Storage")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Scan caches, developer files, duplicates, large items and system cleanup")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(15)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            Color.accentColor.opacity(0.07),
+            in: RoundedRectangle(cornerRadius: 17, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+        }
+        .help("Open Cleanup & Storage")
     }
 
     private var topConsumersCard: some View {

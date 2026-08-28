@@ -16,6 +16,11 @@ struct TrayUXContractTests {
         expect(source.contains("tintRole: .red"), "critical states must have a red presentation")
         expect(source.contains("SmartMenuBarRootView"), "smart overview must remain the popover root")
         expect(source.contains("No action is needed"), "overview should communicate when no action is required")
+        expect(source.contains("let openCleanup: () -> Void"), "smart overview must receive a cleanup action")
+        expect(source.contains("cleanupCard"), "cleanup must have a visible card in the normal left-click overview")
+        expect(source.contains("Text(\"Cleanup & Storage\")"), "cleanup entry must be clearly named in the normal overview")
+        expect(source.contains("Button(action: openCleanup)"), "visible cleanup card must open the cleanup window")
+        expect(source.contains("title: \"Cleanup & Storage…\""), "right-click cleanup shortcut must remain available")
 
         print("Tray UX contract tests passed")
     }
