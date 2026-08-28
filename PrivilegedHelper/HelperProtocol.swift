@@ -1,4 +1,38 @@
 import Foundation
+import Security
+
+// Xcode 26's Security overlay requires SecStaticCode for signing-information
+// and path queries. The helper validates a live XPC guest as SecCode first,
+// then converts that guest to its static code before calling those APIs.
+// Keeping these overloads next to the shared helper protocol avoids unsafe
+// forced casts and preserves the audit-token based validation flow.
+@inline(__always)
+func SecCodeCopySigningInformation(
+    _ code: SecCode,
+    _ flags: SecCSFlags,
+    _ information: UnsafeMutablePointer<CFDictionary?>
+) -> OSStatus {
+    var staticCode: SecStaticCode?
+    let conversionStatus = Security.SecCodeCopyStaticCode(code, [], &staticCode)
+    guard conversionStatus == errSecSuccess, let staticCode else {
+        return conversionStatus
+    }
+    return Security.SecCodeCopySigningInformation(staticCode, flags, information)
+}
+
+@inline(__always)
+func SecCodeCopyPath(
+    _ code: SecCode,
+    _ flags: SecCSFlags,
+    _ path: UnsafeMutablePointer<CFURL?>
+) -> OSStatus {
+    var staticCode: SecStaticCode?
+    let conversionStatus = Security.SecCodeCopyStaticCode(code, [], &staticCode)
+    guard conversionStatus == errSecSuccess, let staticCode else {
+        return conversionStatus
+    }
+    return Security.SecCodeCopyPath(staticCode, flags, path)
+}
 
 enum MemWatchPrivilegedHelperConstants {
     static let daemonPlistName = "com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
