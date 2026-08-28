@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import ImageIO
 import Vision
@@ -19,13 +20,22 @@ struct CleanupFileSizer: @unchecked Sendable {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]
         guard let rootValues = try? url.resourceValues(forKeys: keys) else { return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0) }
         if rootValues.isSymbolicLink == true { return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0) }
-        if rootValues.isDirectory != true { return size(from: rootValues) }
+        if rootValues.isDirectory != true {
+            let measured = size(from: rootValues)
+            if let metadata = hardlinkMetadata(for: url), metadata.linkCount > 1 {
+                return CleanupFileSize(logicalBytes: measured.logicalBytes, allocatedBytes: 0)
+            }
+            return measured
+        }
         guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }) else {
             return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0)
         }
+
         var logical: UInt64 = 0
         var allocated: UInt64 = 0
-        for case let childURL as URL in enumerator {
+        var hardlinks: [HardlinkKey: HardlinkAggregate] = [:]
+
+        while let childURL = enumerator.nextObject() as? URL {
             guard let values = try? childURL.resourceValues(forKeys: keys) else { continue }
             if values.isSymbolicLink == true {
                 if values.isDirectory == true { enumerator.skipDescendants() }
@@ -33,10 +43,56 @@ struct CleanupFileSizer: @unchecked Sendable {
             }
             guard values.isRegularFile == true else { continue }
             let childSize = size(from: values)
+
+            if let metadata = hardlinkMetadata(for: childURL), metadata.linkCount > 1 {
+                var aggregate = hardlinks[metadata.key] ?? HardlinkAggregate(
+                    logicalBytes: childSize.logicalBytes,
+                    allocatedBytes: childSize.allocatedBytes,
+                    observedLinks: 0,
+                    totalLinks: metadata.linkCount
+                )
+                aggregate.observedLinks += 1
+                aggregate.totalLinks = max(aggregate.totalLinks, metadata.linkCount)
+                hardlinks[metadata.key] = aggregate
+                continue
+            }
+
             logical = addingWithoutOverflow(logical, childSize.logicalBytes)
             allocated = addingWithoutOverflow(allocated, childSize.allocatedBytes)
         }
+
+        for aggregate in hardlinks.values {
+            logical = addingWithoutOverflow(logical, aggregate.logicalBytes)
+            if aggregate.observedLinks >= aggregate.totalLinks {
+                allocated = addingWithoutOverflow(allocated, aggregate.allocatedBytes)
+            }
+        }
+
         return CleanupFileSize(logicalBytes: logical, allocatedBytes: allocated)
+    }
+
+    private struct HardlinkKey: Hashable {
+        let deviceID: UInt64
+        let inode: UInt64
+    }
+
+    private struct HardlinkAggregate {
+        let logicalBytes: UInt64
+        let allocatedBytes: UInt64
+        var observedLinks: UInt64
+        var totalLinks: UInt64
+    }
+
+    private func hardlinkMetadata(for url: URL) -> (key: HardlinkKey, linkCount: UInt64)? {
+        var info = stat()
+        guard lstat(url.path, &info) == 0,
+              (UInt32(info.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFREG) else {
+            return nil
+        }
+        return (
+            HardlinkKey(deviceID: UInt64(info.st_dev), inode: UInt64(info.st_ino)),
+            UInt64(info.st_nlink)
+        )
     }
 
     private func size(from values: URLResourceValues) -> CleanupFileSize {
@@ -246,7 +302,7 @@ struct LargeOldFileScanner: CleanupScanner {
         for root in context.requestedRoots where seen.insert(root.path).inserted {
             try Task.checkCancellation()
             guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
-            for case let url as URL in enumerator {
+            while let url = enumerator.nextObject() as? URL {
                 try Task.checkCancellation()
                 guard !context.isIgnored(url), let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
                 let size = UInt64(max(values.fileSize ?? 0, 0))
@@ -386,7 +442,7 @@ struct SimilarImageScanner: CleanupScanner {
             try Task.checkCancellation()
             let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
             guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
-            for case let url as URL in enumerator {
+            while let url = enumerator.nextObject() as? URL {
                 try Task.checkCancellation()
                 guard supportedExtensions.contains(url.pathExtension.lowercased()), !context.isIgnored(url), let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
                 if let record = featureRecord(for: url) { buckets[record.aspectBucket, default: []].append(record) }
