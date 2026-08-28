@@ -26,6 +26,13 @@
 		A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* LaunchAtLoginService.swift */; };
 		A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SystemDiagnosticsView.swift */; };
 		A10000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* Assets.xcassets */; };
+		B10000000000000000000001 /* CleanupModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* CleanupModels.swift */; };
+		B10000000000000000000002 /* CleanupScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* CleanupScanner.swift */; };
+		B10000000000000000000003 /* CleanupRuleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* CleanupRuleCatalog.swift */; };
+		B10000000000000000000004 /* CleanupPathValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* CleanupPathValidator.swift */; };
+		B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* CleanupSafetyEngine.swift */; };
+		B10000000000000000000006 /* CleanupScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* CleanupScanEngine.swift */; };
+		B10000000000000000000007 /* CleanupFileSizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* CleanupFileSizer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +56,13 @@
 		A20000000000000000000018 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* SystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B20000000000000000000001 /* CleanupModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupModels.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* CleanupScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanner.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* CleanupRuleCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupRuleCatalog.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* CleanupPathValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupPathValidator.swift; sourceTree = "<group>"; };
+		B20000000000000000000005 /* CleanupSafetyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSafetyEngine.swift; sourceTree = "<group>"; };
+		B20000000000000000000006 /* CleanupScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanEngine.swift; sourceTree = "<group>"; };
+		B20000000000000000000007 /* CleanupFileSizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupFileSizer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +84,7 @@
 				A40000000000000000000003 /* Models */,
 				A40000000000000000000004 /* Collectors */,
 				A40000000000000000000005 /* Services */,
+				B40000000000000000000001 /* Cleanup */,
 				A40000000000000000000006 /* Views */,
 				A40000000000000000000002 /* Products */,
 			);
@@ -90,6 +105,7 @@
 				A20000000000000000000010 /* StorageSnapshot.swift */,
 				A20000000000000000000013 /* PowerSnapshot.swift */,
 				A20000000000000000000016 /* SystemDiagnosticsSnapshot.swift */,
+				B20000000000000000000001 /* CleanupModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -126,6 +142,27 @@
 				A20000000000000000000019 /* SystemDiagnosticsView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000001 /* Cleanup */ = {
+			isa = PBXGroup;
+			children = (
+				B40000000000000000000002 /* Core */,
+			);
+			path = Cleanup;
+			sourceTree = "<group>";
+		};
+		B40000000000000000000002 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000002 /* CleanupScanner.swift */,
+				B20000000000000000000003 /* CleanupRuleCatalog.swift */,
+				B20000000000000000000004 /* CleanupPathValidator.swift */,
+				B20000000000000000000005 /* CleanupSafetyEngine.swift */,
+				B20000000000000000000006 /* CleanupScanEngine.swift */,
+				B20000000000000000000007 /* CleanupFileSizer.swift */,
+			);
+			path = Core;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -215,6 +252,13 @@
 				A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */,
 				A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */,
 				A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */,
+				B10000000000000000000001 /* CleanupModels.swift in Sources */,
+				B10000000000000000000002 /* CleanupScanner.swift in Sources */,
+				B10000000000000000000003 /* CleanupRuleCatalog.swift in Sources */,
+				B10000000000000000000004 /* CleanupPathValidator.swift in Sources */,
+				B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */,
+				B10000000000000000000006 /* CleanupScanEngine.swift in Sources */,
+				B10000000000000000000007 /* CleanupFileSizer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
