@@ -296,7 +296,7 @@ struct ProjectArtifactScanner: CleanupScanner {
             guard FileManager.default.fileExists(atPath: root.path), !context.isIgnored(root) else { continue }
             let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
             guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true }) else { continue }
-            for case let url as URL in enumerator {
+            while let url = enumerator.nextObject() as? URL {
                 try Task.checkCancellation()
                 guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isDirectory == true else { continue }
                 if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
