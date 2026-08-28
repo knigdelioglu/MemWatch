@@ -122,14 +122,179 @@ struct PrivilegedHelperClient: Sendable {
     }
 }
 
+private enum PrivilegedHelperCompatibilityError: LocalizedError {
+    case bundledHelperMissing
+    case bundledDaemonPlistMissing
+    case malformedBundledDaemonPlist
+    case administratorAuthorizationFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .bundledHelperMissing:
+            return "MemWatch uygulama paketinde yetkili yardımcı bulunamadı."
+        case .bundledDaemonPlistMissing:
+            return "MemWatch uygulama paketinde LaunchDaemon tanımı bulunamadı."
+        case .malformedBundledDaemonPlist:
+            return "MemWatch LaunchDaemon tanımı geçersiz veya helper yoluyla eşleşmiyor."
+        case .administratorAuthorizationFailed(let message):
+            return "Yönetici yetkili yardımcı kurulumu başarısız: \(message)"
+        }
+    }
+}
+
+/// A deliberately narrow fallback for machines where SMAppService cannot locate
+/// the bundled LaunchDaemon. It can only install MemWatch's own helper and plist
+/// at fixed system locations. There is no arbitrary command/path interface.
+private struct PrivilegedHelperCompatibilityInstaller {
+    private let fileManager = FileManager.default
+    private let label = MemWatchPrivilegedHelperConstants.daemonLabel
+    private let plistName = MemWatchPrivilegedHelperConstants.daemonPlistName
+
+    private var installedHelperPath: String {
+        "/Library/PrivilegedHelperTools/MemWatchPrivilegedHelper"
+    }
+
+    private var installedPlistPath: String {
+        "/Library/LaunchDaemons/\(plistName)"
+    }
+
+    func bundledResources() throws -> (helper: URL, plist: URL) {
+        let bundle = Bundle.main.bundleURL.standardizedFileURL
+        let plist = bundle
+            .appendingPathComponent("Contents/Library/LaunchDaemons", isDirectory: true)
+            .appendingPathComponent(plistName, isDirectory: false)
+        guard fileManager.fileExists(atPath: plist.path) else {
+            throw PrivilegedHelperCompatibilityError.bundledDaemonPlistMissing
+        }
+
+        let object = try? PropertyListSerialization.propertyList(
+            from: Data(contentsOf: plist),
+            options: [],
+            format: nil
+        )
+        guard let dictionary = object as? [String: Any],
+              let bundleProgram = dictionary["BundleProgram"] as? String,
+              !bundleProgram.isEmpty else {
+            throw PrivilegedHelperCompatibilityError.malformedBundledDaemonPlist
+        }
+
+        let declaredHelper = bundle.appendingPathComponent(bundleProgram, isDirectory: false).standardizedFileURL
+        let fallbackCandidates = [
+            declaredHelper,
+            bundle.appendingPathComponent("Contents/Resources/MemWatchPrivilegedHelper"),
+            bundle.appendingPathComponent("Contents/Library/HelperTools/MemWatchPrivilegedHelper")
+        ]
+        guard let helper = fallbackCandidates.first(where: {
+            fileManager.isExecutableFile(atPath: $0.path)
+        }) else {
+            throw PrivilegedHelperCompatibilityError.bundledHelperMissing
+        }
+        return (helper, plist)
+    }
+
+    func install() throws {
+        let resources = try bundledResources()
+        let temporaryPlist = try makeStandaloneLaunchDaemonPlist()
+        defer { try? fileManager.removeItem(at: temporaryPlist) }
+
+        let command = [
+            "/bin/mkdir -p /Library/PrivilegedHelperTools",
+            "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
+            "/usr/bin/install -o root -g wheel -m 755 \(shellQuote(resources.helper.path)) \(shellQuote(installedHelperPath))",
+            "/usr/bin/install -o root -g wheel -m 644 \(shellQuote(temporaryPlist.path)) \(shellQuote(installedPlistPath))",
+            "/bin/launchctl bootstrap system \(shellQuote(installedPlistPath))",
+            "/bin/launchctl enable system/\(label)"
+        ].joined(separator: "; ")
+
+        try runWithAdministratorPrivileges(command)
+    }
+
+    func uninstall() throws {
+        let command = [
+            "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
+            "/bin/rm -f \(shellQuote(installedPlistPath))",
+            "/bin/rm -f \(shellQuote(installedHelperPath))"
+        ].joined(separator: "; ")
+        try runWithAdministratorPrivileges(command)
+    }
+
+    private func makeStandaloneLaunchDaemonPlist() throws -> URL {
+        let dictionary: [String: Any] = [
+            "Label": label,
+            "Program": installedHelperPath,
+            "AssociatedBundleIdentifiers": [MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier],
+            "MachServices": [MemWatchPrivilegedHelperConstants.machServiceName: true],
+            "RunAtLoad": false,
+            "KeepAlive": false,
+            "ThrottleInterval": 5
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: dictionary,
+            format: .xml,
+            options: 0
+        )
+        let url = fileManager.temporaryDirectory
+            .appendingPathComponent("memwatch-\(UUID().uuidString)-\(plistName)")
+        try data.write(to: url, options: [.atomic])
+        return url
+    }
+
+    private func runWithAdministratorPrivileges(_ shellCommand: String) throws {
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e",
+            "do shell script \(appleScriptQuoted(shellCommand)) with administrator privileges"
+        ]
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+            let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? "Bilinmeyen hata"
+            throw PrivilegedHelperCompatibilityError.administratorAuthorizationFailed(message)
+        }
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private func appleScriptQuoted(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+}
+
+private enum PrivateCompatibilityPolicy {
+    static var isEnabled: Bool {
+        guard let data = try? Data(contentsOf: CleanupPersistencePaths.preferencesFile),
+              let preferences = try? JSONDecoder().decode(CleanupPreferences.self, from: data) else {
+            return CleanupPreferences.defaults().privateBackendEnabled
+        }
+        return preferences.privateBackendEnabled
+    }
+}
+
 @MainActor
 final class PrivilegedHelperService: ObservableObject {
     @Published private(set) var state: PrivilegedHelperRegistrationState = .unavailable
     @Published private(set) var lastError: String?
+    @Published private(set) var compatibilityHelperActive = false
 
     private let service = SMAppService.daemon(
         plistName: MemWatchPrivilegedHelperConstants.daemonPlistName
     )
+    private let compatibilityInstaller = PrivilegedHelperCompatibilityInstaller()
     let client = PrivilegedHelperClient()
 
     init() {
@@ -137,32 +302,65 @@ final class PrivilegedHelperService: ObservableObject {
     }
 
     var isAvailableForCleanup: Bool {
-        state == .enabled
+        state == .enabled || compatibilityHelperActive
     }
 
     func refreshStatus() {
         switch service.status {
         case .notRegistered:
-            state = .notRegistered
+            state = compatibilityHelperActive ? .enabled : .notRegistered
         case .enabled:
             state = .enabled
         case .requiresApproval:
             state = .requiresApproval
         case .notFound:
-            state = .notFound
+            state = compatibilityHelperActive ? .enabled : .notFound
         @unknown default:
-            state = .unavailable
+            state = compatibilityHelperActive ? .enabled : .unavailable
         }
     }
 
     func register() {
         lastError = nil
+
+        do {
+            _ = try compatibilityInstaller.bundledResources()
+        } catch {
+            lastError = error.localizedDescription
+        }
+
         do {
             try service.register()
         } catch {
             lastError = error.localizedDescription
         }
         refreshStatus()
+
+        if state == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+            return
+        }
+
+        guard state == .notFound || state == .unavailable else {
+            return
+        }
+        guard PrivateCompatibilityPolicy.isEnabled else {
+            if lastError == nil {
+                lastError = "SMAppService yardımcıyı bulamadı. Özel uyumluluk yöntemleri kapalı olduğu için alternatif kurulum kullanılmadı."
+            }
+            return
+        }
+
+        do {
+            try compatibilityInstaller.install()
+            compatibilityHelperActive = true
+            state = .enabled
+            lastError = nil
+        } catch {
+            compatibilityHelperActive = false
+            lastError = error.localizedDescription
+            refreshStatus()
+        }
     }
 
     func unregister() {
@@ -170,7 +368,19 @@ final class PrivilegedHelperService: ObservableObject {
         do {
             try service.unregister()
         } catch {
-            lastError = error.localizedDescription
+            // A compatibility-installed daemon is not registered with SMAppService.
+            if !compatibilityHelperActive {
+                lastError = error.localizedDescription
+            }
+        }
+
+        if compatibilityHelperActive {
+            do {
+                try compatibilityInstaller.uninstall()
+                compatibilityHelperActive = false
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
         refreshStatus()
     }
@@ -178,10 +388,16 @@ final class PrivilegedHelperService: ObservableObject {
     func verifyConnection() async -> Bool {
         do {
             let response = try await client.ping()
-            return response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion &&
+            let verified = response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion &&
                 response.effectiveUID == 0
+            compatibilityHelperActive = verified && service.status != .enabled
+            refreshStatus()
+            if verified { lastError = nil }
+            return verified
         } catch {
+            compatibilityHelperActive = false
             lastError = error.localizedDescription
+            refreshStatus()
             return false
         }
     }
