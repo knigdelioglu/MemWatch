@@ -22,6 +22,7 @@ jobs:
           xcrun swiftc \
             -parse-as-library \
             Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
             Cleanup/Core/CleanupPathValidator.swift \
             Cleanup/Core/CleanupScanner.swift \
             Cleanup/Core/CleanupFileSizer.swift \
