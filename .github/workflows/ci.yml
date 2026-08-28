@@ -213,6 +213,27 @@ jobs:
             -o /tmp/memwatch-cleanup-deletion-tests
           /tmp/memwatch-cleanup-deletion-tests
 
+      - name: Run cleanup persistence migration tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupDeletionEngine.swift \
+            Cleanup/Persistence/CleanupStores.swift \
+            Tests/CleanupPersistenceMigrationTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -framework Security \
+            -o /tmp/memwatch-cleanup-persistence-tests
+          /tmp/memwatch-cleanup-persistence-tests
+
       - name: Run privileged helper protocol tests
         run: |
           xcrun swiftc \
