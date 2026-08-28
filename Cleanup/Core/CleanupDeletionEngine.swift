@@ -23,6 +23,7 @@ struct CleanupExecutionItemResult: Identifiable, Codable, Sendable {
     let path: String
     let displayName: String
     let status: CleanupExecutionStatus
+    let affectedBytes: UInt64
     let reclaimedBytes: UInt64
     let message: String
 
@@ -33,6 +34,7 @@ struct CleanupExecutionItemResult: Identifiable, Codable, Sendable {
         path: String,
         displayName: String,
         status: CleanupExecutionStatus,
+        affectedBytes: UInt64 = 0,
         reclaimedBytes: UInt64 = 0,
         message: String
     ) {
@@ -42,6 +44,7 @@ struct CleanupExecutionItemResult: Identifiable, Codable, Sendable {
         self.path = path
         self.displayName = displayName
         self.status = status
+        self.affectedBytes = affectedBytes
         self.reclaimedBytes = reclaimedBytes
         self.message = message
     }
@@ -53,19 +56,25 @@ struct CleanupExecutionReport: Identifiable, Codable, Sendable {
     let finishedAt: Date
     let mode: CleanupExecutionMode
     let results: [CleanupExecutionItemResult]
+    let availableBytesBefore: UInt64?
+    let availableBytesAfter: UInt64?
 
     init(
         id: UUID = UUID(),
         startedAt: Date,
         finishedAt: Date,
         mode: CleanupExecutionMode,
-        results: [CleanupExecutionItemResult]
+        results: [CleanupExecutionItemResult],
+        availableBytesBefore: UInt64? = nil,
+        availableBytesAfter: UInt64? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
         self.finishedAt = finishedAt
         self.mode = mode
         self.results = results
+        self.availableBytesBefore = availableBytesBefore
+        self.availableBytesAfter = availableBytesAfter
     }
 
     var reclaimedBytes: UInt64 {
@@ -73,6 +82,18 @@ struct CleanupExecutionReport: Identifiable, Codable, Sendable {
             let (value, overflow) = partial.addingReportingOverflow(result.reclaimedBytes)
             return overflow ? UInt64.max : value
         }
+    }
+
+    var movedToTrashBytes: UInt64 {
+        results.filter { $0.status == .movedToTrash }.reduce(0) { partial, result in
+            let (value, overflow) = partial.addingReportingOverflow(result.affectedBytes)
+            return overflow ? UInt64.max : value
+        }
+    }
+
+    var observedFreeSpaceDeltaBytes: UInt64? {
+        guard mode == .apply, let before = availableBytesBefore, let after = availableBytesAfter else { return nil }
+        return after > before ? after - before : 0
     }
 
     var successfulCount: Int {
@@ -145,6 +166,7 @@ actor CleanupDeletionEngine {
         explicitlyConfirmedIDs: Set<UUID> = []
     ) async -> CleanupExecutionReport {
         let startedAt = Date()
+        let availableBefore = mode == .apply ? startupVolumeAvailableBytes() : nil
         var results: [CleanupExecutionItemResult] = []
 
         for candidate in candidates {
@@ -161,6 +183,7 @@ actor CleanupDeletionEngine {
                         result(
                             validated,
                             status: .wouldRemove,
+                            affectedBytes: validated.allocatedBytes,
                             message: "Validated. No files were changed."
                         )
                     )
@@ -172,14 +195,14 @@ actor CleanupDeletionEngine {
                     let expected = validated.allocatedBytes
                     try fileManager.removeItem(at: validated.url)
                     try verifyOriginalPathRemoved(validated.url)
-                    results.append(result(validated, status: .removed, reclaimedBytes: expected, message: "Removed and verified."))
+                    results.append(result(validated, status: .removed, affectedBytes: expected, reclaimedBytes: expected, message: "Removed and verified."))
 
                 case .trash:
-                    let expected = validated.allocatedBytes
+                    let affected = validated.allocatedBytes
                     var resultingURL: NSURL?
                     try fileManager.trashItem(at: validated.url, resultingItemURL: &resultingURL)
                     try verifyOriginalPathRemoved(validated.url)
-                    results.append(result(validated, status: .movedToTrash, reclaimedBytes: expected, message: "Moved to Trash and verified."))
+                    results.append(result(validated, status: .movedToTrash, affectedBytes: affected, reclaimedBytes: 0, message: "Moved to Trash and verified. Disk space is reclaimed only after Trash is emptied."))
 
                 case .privileged:
                     guard let identity = validated.identity else {
@@ -199,26 +222,29 @@ actor CleanupDeletionEngine {
                         )
                     )
                     try verifyOriginalPathRemoved(validated.url)
-                    results.append(result(validated, status: .privilegedRemoved, reclaimedBytes: response.reclaimedBytes, message: response.message))
+                    results.append(result(validated, status: .privilegedRemoved, affectedBytes: validated.allocatedBytes, reclaimedBytes: response.reclaimedBytes, message: response.message))
 
                 case .maintenance:
                     let reclaimed = try maintenanceBackend.execute(validated, context: context)
                     try verifyOriginalPathRemoved(validated.url)
-                    results.append(result(validated, status: .maintenanceCompleted, reclaimedBytes: reclaimed, message: "Approved Xcode maintenance target removed and verified."))
+                    results.append(result(validated, status: .maintenanceCompleted, affectedBytes: validated.allocatedBytes, reclaimedBytes: reclaimed, message: "Approved Xcode maintenance target removed and verified."))
 
                 case .none:
                     throw CleanupDeletionError.unsupportedMode
                 }
             } catch {
-                results.append(result(candidate, status: .failed, message: error.localizedDescription))
+                results.append(result(candidate, status: .failed, affectedBytes: candidate.allocatedBytes, message: error.localizedDescription))
             }
         }
 
+        let availableAfter = mode == .apply ? startupVolumeAvailableBytes() : nil
         return CleanupExecutionReport(
             startedAt: startedAt,
             finishedAt: Date(),
             mode: mode,
-            results: results
+            results: results,
+            availableBytesBefore: availableBefore,
+            availableBytesAfter: availableAfter
         )
     }
 
@@ -275,6 +301,13 @@ actor CleanupDeletionEngine {
         return evaluated
     }
 
+    private func startupVolumeAvailableBytes() -> UInt64? {
+        let root = URL(fileURLWithPath: "/", isDirectory: true)
+        guard let values = try? root.resourceValues(forKeys: [.volumeAvailableCapacityKey]),
+              let available = values.volumeAvailableCapacity else { return nil }
+        return UInt64(max(0, available))
+    }
+
     private func verifyOriginalPathRemoved(_ url: URL) throws {
         if fileManager.fileExists(atPath: url.path) {
             throw CleanupDeletionError.verificationFailed
@@ -284,6 +317,7 @@ actor CleanupDeletionEngine {
     private func result(
         _ candidate: CleanupCandidate,
         status: CleanupExecutionStatus,
+        affectedBytes: UInt64 = 0,
         reclaimedBytes: UInt64 = 0,
         message: String
     ) -> CleanupExecutionItemResult {
@@ -293,6 +327,7 @@ actor CleanupDeletionEngine {
             path: candidate.url.path,
             displayName: candidate.displayName,
             status: status,
+            affectedBytes: affectedBytes,
             reclaimedBytes: reclaimedBytes,
             message: message
         )
