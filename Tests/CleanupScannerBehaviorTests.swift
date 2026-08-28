@@ -18,6 +18,27 @@ struct CleanupScannerBehaviorTests {
         try fm.linkItem(at: first, to: hardlink)
         try payload.write(to: physicalCopy)
 
+        let sizer = CleanupFileSizer()
+        let physicalCopySize = sizer.measure(physicalCopy)
+        precondition(physicalCopySize.allocatedBytes > 0, "Physical fixture copy should have allocated storage")
+        precondition(sizer.measure(first).allocatedBytes == 0, "Deleting one path of a multi-link inode must not be advertised as reclaiming blocks")
+        let requestedSize = sizer.measure(requested)
+        precondition(
+            requestedSize.allocatedBytes == physicalCopySize.allocatedBytes * 2,
+            "A directory containing both hard links should count that inode once plus the independent physical copy"
+        )
+
+        let externalLinkDirectory = home.appendingPathComponent("ExternalLinkFixture", isDirectory: true)
+        let externalLinkOutside = home.appendingPathComponent("external-hardlink.bin")
+        try fm.createDirectory(at: externalLinkDirectory, withIntermediateDirectories: true)
+        let externalLinkSource = externalLinkDirectory.appendingPathComponent("source.bin")
+        try payload.write(to: externalLinkSource)
+        try fm.linkItem(at: externalLinkSource, to: externalLinkOutside)
+        precondition(
+            sizer.measure(externalLinkDirectory).allocatedBytes == 0,
+            "A target directory must not claim reclaimable blocks when another hard link survives outside it"
+        )
+
         let context = CleanupScanContext(
             homeDirectory: home,
             requestedRoots: [requested],
