@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 enum FullDiskAccessState: String, Sendable {
@@ -75,5 +76,14 @@ final class FullDiskAccessService: ObservableObject {
         } catch {
             return false
         }
+    }
+}
+
+// History entries use a stable UUID assigned from the execution report. The
+// detailed result array does not need to be Equatable merely to let SwiftUI
+// compare history identities.
+extension CleanupHistoryEntry {
+    static func == (lhs: CleanupHistoryEntry, rhs: CleanupHistoryEntry) -> Bool {
+        lhs.id == rhs.id
     }
 }
