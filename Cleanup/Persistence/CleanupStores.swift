@@ -218,7 +218,7 @@ actor CleanupIgnoreStore {
     }
 }
 
-struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
+struct CleanupHistoryEntry: Identifiable, Codable, Sendable {
     let id: UUID
     let timestamp: Date
     let mode: CleanupExecutionMode
@@ -243,6 +243,17 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
         case results
     }
 
+    private struct LegacyExecutionItemResult: Decodable {
+        let id: UUID
+        let candidateID: UUID
+        let ruleID: String
+        let path: String
+        let displayName: String
+        let status: CleanupExecutionStatus
+        let reclaimedBytes: UInt64
+        let message: String
+    }
+
     init(report: CleanupExecutionReport) {
         id = report.id
         timestamp = report.finishedAt
@@ -264,10 +275,41 @@ struct CleanupHistoryEntry: Identifiable, Codable, Equatable, Sendable {
         requestedCount = try container.decode(Int.self, forKey: .requestedCount)
         successfulCount = try container.decode(Int.self, forKey: .successfulCount)
         failedCount = try container.decode(Int.self, forKey: .failedCount)
-        reclaimedBytes = try container.decode(UInt64.self, forKey: .reclaimedBytes)
-        movedToTrashBytes = try container.decodeIfPresent(UInt64.self, forKey: .movedToTrashBytes) ?? 0
+
+        let storedReclaimedBytes = try container.decode(UInt64.self, forKey: .reclaimedBytes)
+        let decodedCurrentResults = try? container.decode([CleanupExecutionItemResult].self, forKey: .results)
+        if let decodedCurrentResults {
+            results = decodedCurrentResults
+            reclaimedBytes = storedReclaimedBytes
+        } else {
+            let legacyResults = try container.decode([LegacyExecutionItemResult].self, forKey: .results)
+            results = legacyResults.map { legacy in
+                let movedToTrash = legacy.status == .movedToTrash
+                return CleanupExecutionItemResult(
+                    id: legacy.id,
+                    candidateID: legacy.candidateID,
+                    ruleID: legacy.ruleID,
+                    path: legacy.path,
+                    displayName: legacy.displayName,
+                    status: legacy.status,
+                    affectedBytes: legacy.reclaimedBytes,
+                    reclaimedBytes: movedToTrash ? 0 : legacy.reclaimedBytes,
+                    message: legacy.message
+                )
+            }
+            reclaimedBytes = results.reduce(0) { partial, result in
+                let (value, overflow) = partial.addingReportingOverflow(result.reclaimedBytes)
+                return overflow ? UInt64.max : value
+            }
+        }
+
+        movedToTrashBytes = try container.decodeIfPresent(UInt64.self, forKey: .movedToTrashBytes) ?? results
+            .filter { $0.status == .movedToTrash }
+            .reduce(0) { partial, result in
+                let (value, overflow) = partial.addingReportingOverflow(result.affectedBytes)
+                return overflow ? UInt64.max : value
+            }
         observedFreeSpaceDeltaBytes = try container.decodeIfPresent(UInt64.self, forKey: .observedFreeSpaceDeltaBytes)
-        results = try container.decode([CleanupExecutionItemResult].self, forKey: .results)
     }
 }
 
