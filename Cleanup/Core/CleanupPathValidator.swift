@@ -139,6 +139,9 @@ struct CleanupPathValidator: Sendable {
         case .privateVar:
             return Self.allowedPrivateVarRoots.contains { Self.path(path, isEqualToOrDescendantOf: $0) }
 
+        case .projectRoots:
+            return context.projectRoots.contains { Self.path(path, isEqualToOrDescendantOf: $0.path) }
+
         case .requestedRoots:
             return context.requestedRoots.contains { Self.path(path, isEqualToOrDescendantOf: $0.path) }
         }

@@ -8,7 +8,7 @@ actor CleanupScanEngine {
     private let safetyEngine: CleanupSafetyEngine
 
     init(
-        scanners: [any CleanupScanner],
+        scanners: [any CleanupScanner] = CleanupScannerRegistry.userSpaceScanners,
         ruleCatalog: CleanupRuleCatalog = CleanupRuleCatalog(),
         safetyEngine: CleanupSafetyEngine = CleanupSafetyEngine()
     ) {

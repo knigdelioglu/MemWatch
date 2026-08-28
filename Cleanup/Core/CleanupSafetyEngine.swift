@@ -39,12 +39,7 @@ struct CleanupSafetyEngine: Sendable {
         }
 
         guard let identity = validation.identity else {
-            return blocked(
-                candidate,
-                requirements: requirements,
-                identity: nil,
-                message: "Cleanup target no longer exists or cannot be identified"
-            )
+            return blocked(candidate, requirements: requirements, identity: nil, message: "Cleanup target no longer exists or cannot be identified")
         }
 
         if rule.deletionMode == .none || rule.defaultSafety == .protected {
@@ -63,7 +58,7 @@ struct CleanupSafetyEngine: Sendable {
         }
 
         switch rule.rootPolicy {
-        case .userHome, .userLibrary, .requestedRoots, .temporaryDirectory:
+        case .userHome, .userLibrary, .projectRoots, .requestedRoots, .temporaryDirectory:
             if identity.ownerUID != getuid() {
                 safety = .protected
                 blockers.append("Target is not owned by the current user")
