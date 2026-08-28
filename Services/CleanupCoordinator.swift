@@ -349,7 +349,7 @@ final class CleanupCoordinator: ObservableObject {
 
         do {
             let result = try await scanEngine.scan(context: context, policy: effectivePolicy) { [weak self] progress in
-                await MainActor.run { self?.scanProgress = progress }
+                await self?.receiveScanProgress(progress)
             }
             if Task.isCancelled { return }
             scanResult = result
@@ -361,6 +361,10 @@ final class CleanupCoordinator: ObservableObject {
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    private func receiveScanProgress(_ progress: CleanupScanProgress) {
+        scanProgress = progress
     }
 
     private func execute(
