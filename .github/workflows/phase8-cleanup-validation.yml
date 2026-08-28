@@ -1,0 +1,71 @@
+name: Phase 8 Cleanup Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cleanup-validation:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Run deep cleanup scanner fixture tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Tests/CleanupScannerFixtureTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -framework CoreGraphics \
+            -o /tmp/memwatch-cleanup-fixture-tests
+          /tmp/memwatch-cleanup-fixture-tests
+
+      - name: Run cleanup cancellation tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Cleanup/Core/CleanupScanEngine.swift \
+            Tests/CleanupCancellationTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -framework CoreGraphics \
+            -o /tmp/memwatch-cleanup-cancellation-tests
+          /tmp/memwatch-cleanup-cancellation-tests
+
+      - name: Verify cleanup has no idle monitoring hook
+        run: |
+          ! grep -q 'CleanupScanEngine' Services/MonitoringService.swift
+          ! grep -q 'CleanupCoordinator' Services/MonitoringService.swift
+          ! grep -q 'startScan' Services/MonitoringService.swift
+          grep -q 'Timer.scheduledTimer' Services/MonitoringService.swift
+
+      - name: Verify Phase 8 safety boundaries
+        run: |
+          grep -q 'cleanupEnabled' Services/CleanupCoordinator.swift
+          grep -q 'privilegedOperationsEnabled' Services/CleanupCoordinator.swift
+          grep -q 'privateBackendEnabled' Services/CleanupCoordinator.swift
+          grep -q 'AI models must stay Protected' Tests/CleanupScannerFixtureTests.swift
+          grep -q 'another hard link survives outside it' Tests/CleanupScannerBehaviorTests.swift
+          grep -q 'Cancelled cleanup scan must not complete successfully' Tests/CleanupCancellationTests.swift
+          ! grep -q 'func delete(path:' PrivilegedHelper/HelperProtocol.swift
+          ! grep -q 'rm -rf' PrivilegedHelper/HelperMain.swift
