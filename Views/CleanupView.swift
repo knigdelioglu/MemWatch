@@ -15,6 +15,7 @@ struct CleanupView: View {
             VStack(alignment: .leading, spacing: 13) {
                 header
                 capabilityCard
+                storageIntelligenceCard
 
                 if coordinator.phase == .scanning {
                     progressCard
@@ -107,6 +108,23 @@ struct CleanupView: View {
 
     private var capabilityCard: some View {
         VStack(alignment: .leading, spacing: 9) {
+            Toggle(
+                "Advanced system backend",
+                isOn: Binding(
+                    get: { coordinator.preferences.privateBackendEnabled },
+                    set: { coordinator.setPrivateBackendEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.caption.weight(.semibold))
+
+            Text("When disabled, privileged system scans and Time Machine maintenance are excluded even if the helper is installed.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
             capabilityRow(
                 symbol: "lock.shield",
                 title: "Privileged helper",
@@ -155,6 +173,45 @@ struct CleanupView: View {
         }
         .padding(13)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
+
+    private var storageIntelligenceCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("APFS storage", systemImage: "internaldrive")
+                .font(.subheadline.weight(.semibold))
+
+            if let capacity = coordinator.storageSpaceIntelligence {
+                HStack(spacing: 8) {
+                    capacityMetric("Free now", value: capacity.immediateAvailableBytes)
+                    capacityMetric("Purgeable", value: capacity.purgeableEstimateBytes)
+                    capacityMetric("Usable if needed", value: capacity.importantUsageAvailableBytes)
+                }
+                Text("Purgeable space is managed by macOS and is intentionally not added to MemWatch cleanup totals, avoiding double counting with caches and snapshots.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("APFS capacity details are unavailable for the startup volume.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(13)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
+
+    private func capacityMetric(_ title: String, value: UInt64) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Text(bytes(value))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func capabilityRow(
@@ -415,7 +472,11 @@ struct CleanupView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if coordinator.snapshots.isEmpty {
+            if !coordinator.preferences.privateBackendEnabled {
+                Text("Advanced system backend is disabled. Snapshot inspection and thinning are excluded from this scan.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if coordinator.snapshots.isEmpty {
                 Text(coordinator.helperService.isAvailableForCleanup ? "No local snapshots reported." : "Enable the privileged helper to inspect local snapshots.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
