@@ -92,7 +92,7 @@ struct CleanupSafetyEngine: Sendable {
 
         let evaluated = candidate.applying(
             safety: safety,
-            deletionMode: safety == .protected ? .none : rule.deletionMode,
+            deletionMode: safety == .protected ? CleanupDeletionMode.none : rule.deletionMode,
             requirements: requirements,
             identity: identity,
             policyNotes: notes
@@ -110,7 +110,7 @@ struct CleanupSafetyEngine: Sendable {
         CleanupSafetyAssessment(
             candidate: candidate.applying(
                 safety: .protected,
-                deletionMode: .none,
+                deletionMode: CleanupDeletionMode.none,
                 requirements: requirements,
                 identity: identity,
                 policyNotes: candidate.policyNotes + [message]
