@@ -17,21 +17,28 @@ actor CleanupScanEngine {
         self.safetyEngine = safetyEngine
     }
 
-    func scan(context: CleanupScanContext, progress: ProgressHandler? = nil) async throws -> CleanupScanResult {
+    func scan(
+        context: CleanupScanContext,
+        policy: CleanupScanPolicy = CleanupScanPolicy(),
+        progress: ProgressHandler? = nil
+    ) async throws -> CleanupScanResult {
         let startedAt = Date()
         var items: [CleanupCandidate] = []
         var issues: [CleanupScanIssue] = []
         await progress?(.preparing)
 
-        for (index, scanner) in scanners.enumerated() {
+        let activeScanners = scanners.filter { !policy.skips(scanner: $0) }
+
+        for (index, scanner) in activeScanners.enumerated() {
             try Task.checkCancellation()
-            await progress?(.scanning(scannerID: scanner.id, completed: index, total: scanners.count))
+            await progress?(.scanning(scannerID: scanner.id, completed: index, total: activeScanners.count))
             do {
                 let candidates = try await scanner.scan(context: context)
                 try Task.checkCancellation()
                 await progress?(.evaluating(scannerID: scanner.id, candidateCount: candidates.count))
                 for candidate in candidates {
                     try Task.checkCancellation()
+                    guard !policy.skips(candidate: candidate) else { continue }
                     guard candidate.scannerID == scanner.id else {
                         issues.append(CleanupScanIssue(scannerID: scanner.id, path: candidate.url.path, message: "Scanner returned a candidate with a mismatched scanner ID"))
                         continue
