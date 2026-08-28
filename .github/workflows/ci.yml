@@ -257,10 +257,10 @@ jobs:
           grep -q 'SMAppService.daemon' Services/PrivilegedHelperService.swift
           grep -q 'Contents/Library/HelperTools' MemWatch.xcodeproj/project.pbxproj
           grep -q 'Contents/Library/LaunchDaemons' MemWatch.xcodeproj/project.pbxproj
-          grep -q 'Cleanup enabled' Views/CleanupView.swift
-          grep -q 'Privileged system operations' Views/CleanupView.swift
-          grep -q 'Private compatibility backends' Views/CleanupView.swift
-          grep -q 'Purgeable' Views/CleanupView.swift
+          grep -q 'coordinator.preferences.cleanupEnabled' Views/CleanupView.swift
+          grep -q 'coordinator.preferences.privilegedOperationsEnabled' Views/CleanupView.swift
+          grep -q 'coordinator.preferences.privateBackendEnabled' Views/CleanupView.swift
+          grep -q 'purgeableEstimateBytes' Views/CleanupView.swift
           ! grep -q 'func delete(path:' PrivilegedHelper/HelperProtocol.swift
           ! grep -q 'rm -rf' PrivilegedHelper/HelperMain.swift
 

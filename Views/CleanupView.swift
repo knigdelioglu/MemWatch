@@ -23,6 +23,7 @@ struct CleanupView: View {
 
                 if let result = coordinator.scanResult {
                     summaryCard(result)
+                    deletionScopeCard
                     primaryActions
                     categoryList(result)
                 } else if coordinator.phase != .scanning {
@@ -42,51 +43,68 @@ struct CleanupView: View {
             }
         }
         .confirmationDialog(
-            "Clean safe items?",
+            "Yalnızca güvenli öğeler temizlensin mi?",
             isPresented: $showSafeConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Clean \(bytes(coordinator.safeBytes))") {
+            Button("\(bytes(automaticSafeBytes)) Güvenli Temizle") {
                 coordinator.cleanSafeItemsConfirmed()
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("Only items classified Safe and not requiring explicit review will be removed. Every target is revalidated immediately before deletion.")
+            Text("Yalnızca GÜVENLİ olarak sınıflandırılan ve ayrıca açık onay gerektirmeyen öğeler kaldırılır. İNCELE ve KORUNAN öğeler bu işlemde silinmez. Her hedef silinmeden hemen önce yeniden doğrulanır.")
         }
         .confirmationDialog(
-            "Clean selected items?",
+            "Seçilen öğeler temizlensin mi?",
             isPresented: $showSelectedConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Clean \(bytes(coordinator.selectedBytes))") {
+            Button("\(bytes(coordinator.selectedBytes)) Seçili Öğeyi Temizle") {
                 coordinator.cleanSelectedConfirmed()
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("Review items may include project dependencies, backups, downloads or other data with a rebuild or recovery cost.")
+            Text("Seçtiğin İNCELE öğeleri proje bağımlılıkları, yedekler, indirilenler veya yeniden oluşturma/kurtarma maliyeti olan başka veriler içerebilir. Yalnızca seçili öğeler işleme alınır.")
         }
         .confirmationDialog(
-            "Thin Time Machine snapshots?",
+            "Time Machine anlık görüntüleri inceltilsin mi?",
             isPresented: $showSnapshotConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Request \(bytes(snapshotTargetBytes))") {
+            Button("\(bytes(snapshotTargetBytes)) Alan İste") {
                 coordinator.thinTimeMachineSnapshots(targetBytes: snapshotTargetBytes)
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("MemWatch will ask tmutil to reclaim the requested amount. It never deletes snapshot storage by manipulating APFS files directly.")
+            Text("MemWatch, istenen alanı geri kazanmak için tmutil kullanır. APFS anlık görüntü dosyalarını doğrudan silmez veya değiştirmez.")
         }
+    }
+
+    private var automaticSafeItems: [CleanupCandidate] {
+        coordinator.safeItems.filter { !$0.requirements.contains(.explicitConfirmation) }
+    }
+
+    private var automaticSafeBytes: UInt64 {
+        automaticSafeItems.reduce(0) { partial, item in
+            let (value, overflow) = partial.addingReportingOverflow(item.allocatedBytes)
+            return overflow ? UInt64.max : value
+        }
+    }
+
+    private func isAutomaticSafe(_ item: CleanupCandidate) -> Bool {
+        item.safety == .safe &&
+            item.isPotentiallyDeletable &&
+            !item.requirements.contains(.explicitConfirmation)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("Deep Cleanup", systemImage: "sparkles")
+                Label("Derin Temizleme", systemImage: "sparkles")
                     .font(.headline)
                 Spacer()
                 if coordinator.isBusy {
-                    Button("Cancel") { coordinator.cancelCurrentOperation() }
+                    Button("İptal") { coordinator.cancelCurrentOperation() }
                         .buttonStyle(.plain)
                         .font(.caption)
                 } else {
@@ -96,11 +114,11 @@ struct CleanupView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.plain)
-                    .help("Scan again")
+                    .help("Yeniden tara")
                 }
             }
 
-            Text("Scan first. Delete only after rule, path and file identity validation.")
+            Text("Önce tara; yalnızca kural, yol ve dosya kimliği doğrulandıktan sonra temizle.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -109,7 +127,7 @@ struct CleanupView: View {
     private var capabilityCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             Toggle(
-                "Cleanup enabled",
+                "Temizleme etkin",
                 isOn: Binding(
                     get: { coordinator.preferences.cleanupEnabled },
                     set: { coordinator.setCleanupEnabled($0) }
@@ -119,14 +137,14 @@ struct CleanupView: View {
             .controlSize(.small)
             .font(.caption.weight(.semibold))
 
-            Text("Master switch for cleanup scans and cleanup execution. Monitoring continues when cleanup is disabled.")
+            Text("Temizleme taramalarını ve temizleme işlemlerini açıp kapatır. Kapatıldığında MemWatch izlemeye devam eder.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
             Divider()
 
             Toggle(
-                "Privileged system operations",
+                "Yetkili sistem işlemleri",
                 isOn: Binding(
                     get: { coordinator.preferences.privilegedOperationsEnabled },
                     set: { coordinator.setPrivilegedOperationsEnabled($0) }
@@ -137,14 +155,14 @@ struct CleanupView: View {
             .font(.caption.weight(.semibold))
             .disabled(!coordinator.preferences.cleanupEnabled)
 
-            Text("Controls privileged system scans and Time Machine maintenance. User-space cleanup remains available when this is off.")
+            Text("Yetki gerektiren sistem taramalarını ve Time Machine bakımını denetler. Kapalıyken kullanıcı alanındaki temizlik kullanılmaya devam eder.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
             Divider()
 
             Toggle(
-                "Private compatibility backends",
+                "Özel uyumluluk yöntemleri",
                 isOn: Binding(
                     get: { coordinator.preferences.privateBackendEnabled },
                     set: { coordinator.setPrivateBackendEnabled($0) }
@@ -155,7 +173,7 @@ struct CleanupView: View {
             .font(.caption.weight(.semibold))
             .disabled(!coordinator.preferences.cleanupEnabled)
 
-            Text("Allows isolated undocumented compatibility backends only when one is explicitly implemented and available at runtime.")
+            Text("Yalnızca açıkça uygulanmış ve çalışma anında kullanılabilir olan izole, belgelenmemiş uyumluluk yöntemlerine izin verir.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -163,20 +181,20 @@ struct CleanupView: View {
 
             capabilityRow(
                 symbol: "lock.shield",
-                title: "Privileged helper",
+                title: "Yetkili yardımcı",
                 value: helperLabel,
                 good: coordinator.helperService.isAvailableForCleanup
             )
 
             if !coordinator.helperService.isAvailableForCleanup {
-                Button("Enable Deep System Cleanup") {
+                Button("Derin Sistem Temizlemeyi Etkinleştir") {
                     coordinator.registerHelper()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!coordinator.preferences.cleanupEnabled || !coordinator.preferences.privilegedOperationsEnabled)
             } else {
-                Button("Disable Privileged Helper") {
+                Button("Yetkili Yardımcıyı Devre Dışı Bırak") {
                     coordinator.unregisterHelper()
                 }
                 .buttonStyle(.plain)
@@ -188,20 +206,20 @@ struct CleanupView: View {
 
             capabilityRow(
                 symbol: "externaldrive.badge.checkmark",
-                title: "Full Disk Access",
-                value: coordinator.fullDiskAccessService.state.displayName,
+                title: "Tam Disk Erişimi",
+                value: fullDiskAccessLabel,
                 good: coordinator.fullDiskAccessService.isAvailable
             )
 
             if !coordinator.fullDiskAccessService.isAvailable {
-                Button("Open Full Disk Access Settings") {
+                Button("Tam Disk Erişimi Ayarlarını Aç") {
                     coordinator.openFullDiskAccessSettings()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
 
-            Button("Recheck permissions") {
+            Button("İzinleri yeniden denetle") {
                 coordinator.refreshPermissionsAndHelper()
             }
             .buttonStyle(.plain)
@@ -214,20 +232,20 @@ struct CleanupView: View {
 
     private var storageIntelligenceCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label("APFS storage", systemImage: "internaldrive")
+            Label("APFS depolama", systemImage: "internaldrive")
                 .font(.subheadline.weight(.semibold))
 
             if let capacity = coordinator.storageSpaceIntelligence {
                 HStack(spacing: 8) {
-                    capacityMetric("Free now", value: capacity.immediateAvailableBytes)
-                    capacityMetric("Purgeable", value: capacity.purgeableEstimateBytes)
-                    capacityMetric("Usable if needed", value: capacity.importantUsageAvailableBytes)
+                    capacityMetric("Şu an boş", value: capacity.immediateAvailableBytes)
+                    capacityMetric("macOS boşaltabilir", value: capacity.purgeableEstimateBytes)
+                    capacityMetric("Gerekirse kullanılabilir", value: capacity.importantUsageAvailableBytes)
                 }
-                Text("Purgeable space is managed by macOS and is intentionally not added to MemWatch cleanup totals, avoiding double counting with caches and snapshots.")
+                Text("macOS'un yönetebildiği boşaltılabilir alan, önbellekler ve anlık görüntülerle çift sayımı önlemek için MemWatch temizleme toplamına eklenmez.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Text("APFS capacity details are unavailable for the startup volume.")
+                Text("Başlangıç diski için APFS kapasite ayrıntıları alınamadı.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -272,11 +290,19 @@ struct CleanupView: View {
 
     private var helperLabel: String {
         switch coordinator.helperService.state {
-        case .enabled: return "Enabled"
-        case .notRegistered: return "Not installed"
-        case .requiresApproval: return "Needs approval"
-        case .notFound: return "Not found"
-        case .unavailable: return "Unavailable"
+        case .enabled: return "Etkin"
+        case .notRegistered: return "Yüklü değil"
+        case .requiresApproval: return "Onay gerekiyor"
+        case .notFound: return "Bulunamadı"
+        case .unavailable: return "Kullanılamıyor"
+        }
+    }
+
+    private var fullDiskAccessLabel: String {
+        switch coordinator.fullDiskAccessService.state {
+        case .granted: return "Verildi"
+        case .denied: return "Verilmedi"
+        case .unknown: return "Bilinmiyor"
         }
     }
 
@@ -285,7 +311,7 @@ struct CleanupView: View {
             ProgressView()
                 .controlSize(.small)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Scanning…")
+                Text("Taranıyor…")
                     .font(.caption.weight(.semibold))
                 Text(progressText)
                     .font(.caption2)
@@ -300,28 +326,34 @@ struct CleanupView: View {
 
     private var progressText: String {
         switch coordinator.scanProgress {
-        case .preparing: return "Preparing scanners"
+        case .preparing:
+            return "Tarayıcılar hazırlanıyor"
         case .scanning(let scannerID, let completed, let total):
-            return "\(scannerID.rawValue) · \(completed + 1) / \(max(total, 1))"
+            return "\(scannerName(scannerID)) · \(completed + 1) / \(max(total, 1))"
         case .evaluating(let scannerID, let candidateCount):
-            return "Evaluating \(candidateCount) candidates from \(scannerID.rawValue)"
-        case .finishing: return "Applying safety policy"
+            return "\(scannerName(scannerID)): \(candidateCount) aday değerlendiriliyor"
+        case .finishing:
+            return "Güvenlik kuralları uygulanıyor"
         }
     }
 
     private func summaryCard(_ result: CleanupScanResult) -> some View {
         VStack(alignment: .leading, spacing: 11) {
-            Text("\(bytes(result.reclaimableBytes)) reclaimable")
+            Text("\(bytes(result.reclaimableBytes)) temizlenebilir aday")
                 .font(.title3.monospacedDigit().weight(.semibold))
 
             HStack(spacing: 8) {
-                summaryPill("Safe", bytes: result.safeBytes, color: .green)
-                summaryPill("Review", bytes: result.reviewBytes, color: .orange)
-                summaryPill("Protected", bytes: result.protectedBytes, color: .secondary)
+                summaryPill("Güvenli", bytes: automaticSafeBytes, color: .green)
+                summaryPill("İncele", bytes: result.reviewBytes, color: .orange)
+                summaryPill("Korunan", bytes: result.protectedBytes, color: .secondary)
             }
 
+            Text("Ana temizleme düğmesi yalnızca \(bytes(automaticSafeBytes)) GÜVENLİ veriyi temizler. İNCELE öğeleri ayrıca seçilmedikçe silinmez.")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+
             if !result.issues.isEmpty {
-                Text("\(result.issues.count) scan issue\(result.issues.count == 1 ? "" : "s") · inaccessible areas are not counted as zero-byte results")
+                Text("\(result.issues.count) tarama sorunu var · erişilemeyen alanlar 0 bayt olarak sayılmadı")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -345,40 +377,84 @@ struct CleanupView: View {
         .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private var deletionScopeCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("Ne silinecek?", systemImage: "checklist")
+                .font(.subheadline.weight(.semibold))
+
+            scopeRow(
+                symbol: "checkmark.circle.fill",
+                color: .green,
+                title: "GÜVENLİ",
+                text: "Ana “Güvenli Temizle” düğmesine otomatik dahildir."
+            )
+            scopeRow(
+                symbol: "circle",
+                color: .orange,
+                title: "İNCELE",
+                text: "Ana düğme bunları silmez. Önce turuncu daireden seçmen gerekir."
+            )
+            scopeRow(
+                symbol: "lock.fill",
+                color: .secondary,
+                title: "KORUNAN",
+                text: "Seçilemez ve MemWatch tarafından temizlenmez."
+            )
+        }
+        .padding(13)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
+
+    private func scopeRow(symbol: String, color: Color, title: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                Text(text)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var primaryActions: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Button {
                     coordinator.dryRunSafeItems()
                 } label: {
-                    Label("Dry Run", systemImage: "eye")
+                    Label("Silmeden Kontrol Et", systemImage: "eye")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .disabled(coordinator.safeBytes == 0 || coordinator.isBusy)
+                .disabled(automaticSafeBytes == 0 || coordinator.isBusy)
 
                 Button {
                     showSafeConfirmation = true
                 } label: {
-                    Label("Clean \(bytes(coordinator.safeBytes))", systemImage: "sparkles")
+                    Label("Güvenli \(bytes(automaticSafeBytes)) Temizle", systemImage: "sparkles")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(coordinator.safeBytes == 0 || coordinator.isBusy)
+                .disabled(automaticSafeBytes == 0 || coordinator.isBusy)
             }
 
             if !coordinator.selectedIDs.isEmpty {
                 HStack(spacing: 8) {
-                    Button("Dry Run Selected") { coordinator.dryRunSelected() }
+                    Button("Seçilenleri Silmeden Kontrol Et") { coordinator.dryRunSelected() }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
-                    Button("Clean Selected") { showSelectedConfirmation = true }
+                    Button("Seçilenleri Temizle") { showSelectedConfirmation = true }
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
                 }
                 .controlSize(.small)
 
-                Text("\(coordinator.selectedIDs.count) selected · \(bytes(coordinator.selectedBytes))")
+                Text("\(coordinator.selectedIDs.count) öğe seçili · \(bytes(coordinator.selectedBytes))")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -399,16 +475,16 @@ struct CleanupView: View {
     private func categoryList(_ result: CleanupScanResult) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("Found items")
+                Text("Bulunan öğeler")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if !coordinator.reviewItems.isEmpty {
-                    Button("Select review") { coordinator.selectAllReviewItems() }
+                    Button("Tüm İNCELE öğelerini seç") { coordinator.selectAllReviewItems() }
                         .buttonStyle(.plain)
                         .font(.caption2)
                 }
                 if !coordinator.selectedIDs.isEmpty {
-                    Button("Clear") { coordinator.clearSelection() }
+                    Button("Seçimi temizle") { coordinator.clearSelection() }
                         .buttonStyle(.plain)
                         .font(.caption2)
                 }
@@ -438,17 +514,34 @@ struct CleanupView: View {
         }
     }
 
-    private func itemRow(_ item: CleanupCandidate) -> some View {
-        HStack(alignment: .top, spacing: 9) {
+    @ViewBuilder
+    private func selectionControl(_ item: CleanupCandidate) -> some View {
+        if isAutomaticSafe(item) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.green)
+                .frame(width: 18, height: 18)
+                .help("Güvenli temizlemeye otomatik dahil")
+        } else if item.safety == .protected || !item.isPotentiallyDeletable {
+            Image(systemName: "lock.fill")
+                .foregroundStyle(Color.secondary)
+                .frame(width: 18, height: 18)
+                .help("Korunan öğe; temizlenmez")
+        } else {
             Button {
                 coordinator.toggleSelection(item)
             } label: {
-                Image(systemName: selectionSymbol(item))
+                Image(systemName: coordinator.selectedIDs.contains(item.id) ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(safetyColor(item.safety))
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
-            .disabled(item.safety == .protected)
+            .help(coordinator.selectedIDs.contains(item.id) ? "Temizleme seçiminden çıkar" : "Temizlemek için seç")
+        }
+    }
+
+    private func itemRow(_ item: CleanupCandidate) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            selectionControl(item)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -463,16 +556,16 @@ struct CleanupView: View {
                         .background(safetyColor(item.safety).opacity(0.09), in: Capsule())
                 }
 
-                Text(item.reason)
+                Text(localizedReason(for: item))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
 
                 if let note = item.policyNotes.first {
-                    Text(note)
+                    Text(localizedPolicyNote(note))
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
 
@@ -483,10 +576,10 @@ struct CleanupView: View {
                     .font(.caption2.monospacedDigit().weight(.semibold))
 
                 Menu {
-                    Button("Show in Finder") { coordinator.revealInFinder(item) }
+                    Button("Finder'da Göster") { coordinator.revealInFinder(item) }
                     Divider()
-                    Button("Ignore this path") { coordinator.ignorePath(for: item) }
-                    Button("Ignore this rule") { coordinator.ignoreRule(item) }
+                    Button("Bu yolu yok say") { coordinator.ignorePath(for: item) }
+                    Button("Bu kuralı yok say") { coordinator.ignoreRule(item) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -501,7 +594,7 @@ struct CleanupView: View {
     private var timeMachineCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label("Time Machine snapshots", systemImage: "clock.arrow.circlepath")
+                Label("Time Machine anlık görüntüleri", systemImage: "clock.arrow.circlepath")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("\(coordinator.snapshots.count)")
@@ -510,19 +603,19 @@ struct CleanupView: View {
             }
 
             if !coordinator.preferences.cleanupEnabled {
-                Text("Cleanup is disabled. Snapshot inspection and thinning are paused.")
+                Text("Temizleme kapalı. Anlık görüntü inceleme ve inceltme duraklatıldı.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else if !coordinator.preferences.privilegedOperationsEnabled {
-                Text("Privileged system operations are disabled. Snapshot inspection and thinning are excluded.")
+                Text("Yetkili sistem işlemleri kapalı. Anlık görüntü inceleme ve inceltme kapsam dışında.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else if coordinator.snapshots.isEmpty {
-                Text(coordinator.helperService.isAvailableForCleanup ? "No local snapshots reported." : "Enable the privileged helper to inspect local snapshots.")
+                Text(coordinator.helperService.isAvailableForCleanup ? "Yerel anlık görüntü bildirilmedi." : "Yerel anlık görüntüleri incelemek için yetkili yardımcıyı etkinleştir.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Picker("Reclaim target", selection: $snapshotTargetBytes) {
+                Picker("Geri kazanma hedefi", selection: $snapshotTargetBytes) {
                     Text("5 GB").tag(UInt64(5 * 1_024 * 1_024 * 1_024))
                     Text("10 GB").tag(UInt64(10 * 1_024 * 1_024 * 1_024))
                     Text("25 GB").tag(UInt64(25 * 1_024 * 1_024 * 1_024))
@@ -530,7 +623,7 @@ struct CleanupView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
 
-                Button("Thin snapshots…") { showSnapshotConfirmation = true }
+                Button("Anlık görüntüleri incelt…") { showSnapshotConfirmation = true }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
@@ -542,25 +635,25 @@ struct CleanupView: View {
     private var rootsCard: some View {
         DisclosureGroup(isExpanded: $showRoots) {
             VStack(alignment: .leading, spacing: 9) {
-                rootList(title: "File scan roots", paths: coordinator.preferences.requestedRootPaths) { path in
+                rootList(title: "Dosya tarama kökleri", paths: coordinator.preferences.requestedRootPaths) { path in
                     coordinator.removeRequestedRoot(path)
                 }
-                Button("Add file scan folder…") { coordinator.chooseRequestedRoot() }
+                Button("Tarama klasörü ekle…") { coordinator.chooseRequestedRoot() }
                     .buttonStyle(.plain)
                     .font(.caption)
 
                 Divider()
 
-                rootList(title: "Project roots", paths: coordinator.preferences.projectRootPaths) { path in
+                rootList(title: "Proje kökleri", paths: coordinator.preferences.projectRootPaths) { path in
                     coordinator.removeProjectRoot(path)
                 }
-                Button("Add project folder…") { coordinator.chooseProjectRoot() }
+                Button("Proje klasörü ekle…") { coordinator.chooseProjectRoot() }
                     .buttonStyle(.plain)
                     .font(.caption)
             }
             .padding(.top, 9)
         } label: {
-            Label("Scan roots", systemImage: "folder.badge.gearshape")
+            Label("Tarama kökleri", systemImage: "folder.badge.gearshape")
                 .font(.subheadline.weight(.semibold))
         }
         .padding(13)
@@ -595,14 +688,14 @@ struct CleanupView: View {
         DisclosureGroup(isExpanded: $showIgnoredItems) {
             VStack(spacing: 6) {
                 if coordinator.ignoreRules.isEmpty {
-                    Text("No cleanup ignores")
+                    Text("Yok sayılan temizleme öğesi yok")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(coordinator.ignoreRules) { rule in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(rule.kind.rawValue.capitalized)
+                                Text(rule.kind.displayName)
                                     .font(.caption2.weight(.semibold))
                                 Text(abbreviated(rule.value))
                                     .font(.system(size: 9).monospaced())
@@ -620,7 +713,7 @@ struct CleanupView: View {
             }
             .padding(.top, 8)
         } label: {
-            Label("Ignored items (\(coordinator.ignoreRules.count))", systemImage: "eye.slash")
+            Label("Yok sayılan öğeler (\(coordinator.ignoreRules.count))", systemImage: "eye.slash")
                 .font(.subheadline.weight(.semibold))
         }
         .padding(13)
@@ -629,25 +722,25 @@ struct CleanupView: View {
 
     private var historyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Recent cleanup", systemImage: "clock")
+            Label("Son temizlemeler", systemImage: "clock")
                 .font(.subheadline.weight(.semibold))
 
             if coordinator.history.isEmpty {
-                Text("No cleanup history yet")
+                Text("Henüz temizleme geçmişi yok")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(coordinator.history.prefix(4)) { entry in
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(entry.mode == .dryRun ? "Dry run" : "Cleanup")
+                            Text(entry.mode == .dryRun ? "Silmeden kontrol" : "Temizleme")
                                 .font(.caption.weight(.medium))
                             Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(entry.mode == .dryRun ? "\(entry.requestedCount) checked" : bytes(entry.reclaimedBytes))
+                        Text(entry.mode == .dryRun ? "\(entry.requestedCount) öğe denetlendi" : bytes(entry.reclaimedBytes))
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(entry.failedCount == 0 ? Color.secondary : Color.orange)
                     }
@@ -663,13 +756,13 @@ struct CleanupView: View {
             Image(systemName: coordinator.preferences.cleanupEnabled ? "internaldrive" : "pause.circle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text(coordinator.preferences.cleanupEnabled ? "No cleanup scan yet" : "Cleanup is disabled")
+            Text(coordinator.preferences.cleanupEnabled ? "Henüz temizleme taraması yapılmadı" : "Temizleme kapalı")
                 .font(.subheadline.weight(.semibold))
             if coordinator.preferences.cleanupEnabled {
-                Button("Scan Now") { coordinator.startScan() }
+                Button("Şimdi Tara") { coordinator.startScan() }
                     .buttonStyle(.borderedProminent)
             } else {
-                Button("Enable Cleanup") { coordinator.setCleanupEnabled(true) }
+                Button("Temizlemeyi Etkinleştir") { coordinator.setCleanupEnabled(true) }
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -695,11 +788,6 @@ struct CleanupView: View {
         }
     }
 
-    private func selectionSymbol(_ item: CleanupCandidate) -> String {
-        if item.safety == .protected { return "lock.fill" }
-        return coordinator.selectedIDs.contains(item.id) ? "checkmark.circle.fill" : "circle"
-    }
-
     private func safetyColor(_ safety: CleanupSafetyLevel) -> Color {
         switch safety {
         case .safe: return .green
@@ -710,9 +798,106 @@ struct CleanupView: View {
 
     private func executionSummary(_ report: CleanupExecutionReport) -> String {
         if report.mode == .dryRun {
-            return "Dry run: \(report.results.filter { $0.status == .wouldRemove }.count) validated, \(report.failureCount) blocked"
+            return "Silmeden kontrol: \(report.results.filter { $0.status == .wouldRemove }.count) doğrulandı, \(report.failureCount) engellendi"
         }
-        return "Removed \(report.successfulCount) items · \(bytes(report.reclaimedBytes)) · \(report.failureCount) failed"
+        return "\(report.successfulCount) öğe temizlendi · \(bytes(report.reclaimedBytes)) · \(report.failureCount) başarısız"
+    }
+
+    private func scannerName(_ id: CleanupScannerID) -> String {
+        switch id.rawValue {
+        case "user-cache": return "Kullanıcı önbellekleri"
+        case "user-log": return "Günlükler"
+        case "xcode-cleanup": return "Xcode"
+        case "developer-cache": return "Geliştirici araçları"
+        case "project-artifacts": return "Proje artıkları"
+        case "ai-artifacts": return "Yapay zekâ verileri"
+        case "application-leftovers": return "Uygulama artıkları"
+        case "launch-items": return "Başlangıç öğeleri"
+        case "ios-backups": return "iPhone / iPad yedekleri"
+        case "downloads": return "İndirilenler"
+        case "trash": return "Çöp Kutusu"
+        case "large-old-files": return "Büyük / eski dosyalar"
+        case "duplicates": return "Yinelenen dosyalar"
+        case "similar-images": return "Benzer görseller"
+        case "mail-attachments": return "Posta ekleri"
+        case "privileged-system": return "Yetkili sistem taraması"
+        default: return id.rawValue
+        }
+    }
+
+    private func localizedReason(for item: CleanupCandidate) -> String {
+        switch item.category {
+        case .userCaches:
+            return "Uygulama önbelleği; gerektiğinde uygulama tarafından yeniden oluşturulabilir."
+        case .systemCaches:
+            return "Sistem önbelleği; güvenlik kuralları izin verdiğinde yeniden oluşturulabilir veri."
+        case .logs:
+            return "Uygulama günlüğü veya tanılama verisi."
+        case .xcode:
+            if item.reason.localizedCaseInsensitiveContains("DeviceSupport") || item.displayName.localizedCaseInsensitiveContains("DeviceSupport") {
+                return "Xcode cihaz sürümü destek dosyaları; gerekirse yeniden indirilebilir."
+            }
+            if item.reason.localizedCaseInsensitiveContains("CoreSimulator") {
+                return "CoreSimulator önbelleği; simülatör farkındalıklı bakım gerektirir."
+            }
+            return "Xcode tarafından üretilmiş derleme, dizin veya önbellek verisi."
+        case .developer:
+            return "Geliştirici aracının yeniden oluşturabileceği veya yeniden indirebileceği önbellek."
+        case .projectArtifacts:
+            return "Projede yeniden oluşturulabilen bağımlılık, derleme çıktısı veya geçici dosya."
+        case .aiArtifacts:
+            if item.safety == .protected {
+                return "Yerel yapay zekâ modeli veya kullanıcı açısından değerli veri; otomatik temizlenmez."
+            }
+            return "Yapay zekâ aracının yeniden oluşturabileceği önbellek veya geçici veri."
+        case .applicationLeftovers:
+            return "Yüklü uygulama envanteriyle eşleşmeyen, kaldırılmış uygulamadan kalmış olabilecek veri."
+        case .launchItems:
+            return "Başlangıçta veya oturum açıldığında çalışan öğe."
+        case .iosBackups:
+            return "Bu Mac'te saklanan yerel iPhone veya iPad yedeği."
+        case .downloads:
+            return "İndirilen dosya, kurulum paketi veya arşiv."
+        case .trash:
+            return "Çöp Kutusu'nda bulunan öğe."
+        case .largeOldFiles:
+            return "Büyük veya uzun süredir kullanılmayan dosya; kullanıcı kararı gerekir."
+        case .duplicates:
+            return "İçeriği birebir aynı olduğu doğrulanan yinelenen dosya."
+        case .similarImages:
+            return "Görsel olarak benzer bulunan resim; otomatik seçim yapılmaz."
+        case .mailAttachments:
+            return "Posta uygulamasının yerel ek kopyası."
+        case .snapshots:
+            return "Yerel Time Machine anlık görüntüsü."
+        case .maintenance:
+            return "macOS veya bir aracın bakım işlemiyle yönetilmesi gereken veri."
+        }
+    }
+
+    private func localizedPolicyNote(_ note: String) -> String {
+        switch note {
+        case "Item is newer than the automatic-cleanup age threshold":
+            return "Öğe, otomatik temizleme için belirlenen yaş sınırından daha yeni."
+        case "Item age could not be verified":
+            return "Öğenin yaşı doğrulanamadı."
+        case "Cleanup rule explicitly protects this item":
+            return "Temizleme kuralı bu öğeyi özellikle koruyor."
+        case "Full Disk Access is required":
+            return "Tam Disk Erişimi gerekli."
+        case "Privileged helper is required":
+            return "Yetkili yardımcı gerekli."
+        case "Target is not owned by the current user":
+            return "Hedef dosyanın sahibi mevcut kullanıcı değil."
+        case "Scanner category does not match cleanup rule":
+            return "Tarayıcı kategorisi temizleme kuralıyla eşleşmiyor."
+        case "Cleanup path was rejected":
+            return "Temizleme yolu güvenlik denetiminden geçmedi."
+        case "Cleanup target no longer exists or cannot be identified":
+            return "Temizleme hedefi artık yok veya kimliği doğrulanamıyor."
+        default:
+            return note
+        }
     }
 
     private func bytes(_ value: UInt64) -> String {
@@ -728,9 +913,9 @@ struct CleanupView: View {
 private extension CleanupSafetyLevel {
     var shortLabel: String {
         switch self {
-        case .safe: return "SAFE"
-        case .review: return "REVIEW"
-        case .protected: return "PROTECTED"
+        case .safe: return "GÜVENLİ"
+        case .review: return "İNCELE"
+        case .protected: return "KORUNAN"
         }
     }
 }
@@ -738,24 +923,24 @@ private extension CleanupSafetyLevel {
 private extension CleanupCategory {
     var displayName: String {
         switch self {
-        case .userCaches: return "User Caches"
-        case .systemCaches: return "System Caches"
-        case .logs: return "Logs & Diagnostics"
+        case .userCaches: return "Kullanıcı Önbellekleri"
+        case .systemCaches: return "Sistem Önbellekleri"
+        case .logs: return "Günlükler ve Tanılama"
         case .xcode: return "Xcode"
-        case .developer: return "Developer Tools"
-        case .projectArtifacts: return "Project Artifacts"
-        case .aiArtifacts: return "AI & Local Models"
-        case .applicationLeftovers: return "Application Leftovers"
-        case .launchItems: return "Launch Items"
-        case .iosBackups: return "iPhone / iPad Backups"
-        case .downloads: return "Downloads & Installers"
-        case .trash: return "Trash"
-        case .largeOldFiles: return "Large & Old Files"
-        case .duplicates: return "Exact Duplicates"
-        case .similarImages: return "Similar Images"
-        case .mailAttachments: return "Mail Attachments"
-        case .snapshots: return "Snapshots"
-        case .maintenance: return "Maintenance"
+        case .developer: return "Geliştirici Araçları"
+        case .projectArtifacts: return "Proje Artıkları"
+        case .aiArtifacts: return "Yapay Zekâ ve Yerel Modeller"
+        case .applicationLeftovers: return "Uygulama Artıkları"
+        case .launchItems: return "Başlangıç Öğeleri"
+        case .iosBackups: return "iPhone / iPad Yedekleri"
+        case .downloads: return "İndirilenler ve Kurulum Dosyaları"
+        case .trash: return "Çöp Kutusu"
+        case .largeOldFiles: return "Büyük ve Eski Dosyalar"
+        case .duplicates: return "Birebir Yinelenen Dosyalar"
+        case .similarImages: return "Benzer Görseller"
+        case .mailAttachments: return "Posta Ekleri"
+        case .snapshots: return "Anlık Görüntüler"
+        case .maintenance: return "Bakım"
         }
     }
 
@@ -778,6 +963,19 @@ private extension CleanupCategory {
         case .mailAttachments: return "paperclip"
         case .snapshots: return "clock.arrow.circlepath"
         case .maintenance: return "wrench.and.screwdriver"
+        }
+    }
+}
+
+private extension CleanupIgnoreKind {
+    var displayName: String {
+        switch self {
+        case .path: return "Yol"
+        case .project: return "Proje"
+        case .application: return "Uygulama"
+        case .rule: return "Kural"
+        case .category: return "Kategori"
+        case .scanner: return "Tarayıcı"
         }
     }
 }
