@@ -126,6 +126,7 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
     case bundledHelperMissing
     case bundledDaemonPlistMissing
     case malformedBundledDaemonPlist
+    case launchServicesRepairFailed(String)
     case administratorAuthorizationFailed(String)
 
     var errorDescription: String? {
@@ -136,6 +137,8 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
             return "MemWatch uygulama paketinde LaunchDaemon tanımı bulunamadı."
         case .malformedBundledDaemonPlist:
             return "MemWatch LaunchDaemon tanımı geçersiz veya helper yoluyla eşleşmiyor."
+        case .launchServicesRepairFailed(let message):
+            return "LaunchServices uyumluluk onarımı başarısız: \(message)"
         case .administratorAuthorizationFailed(let message):
             return "Yönetici yetkili yardımcı kurulumu başarısız: \(message)"
         }
@@ -143,8 +146,9 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
 }
 
 /// A deliberately narrow fallback for machines where SMAppService cannot locate
-/// the bundled LaunchDaemon. It can only install MemWatch's own helper and plist
-/// at fixed system locations. There is no arbitrary command/path interface.
+/// the bundled LaunchDaemon. It can only repair MemWatch's LaunchServices entry
+/// or install MemWatch's own helper/plist at fixed locations. No arbitrary
+/// command/path interface is exposed to the rest of the application.
 private struct PrivilegedHelperCompatibilityInstaller {
     private let fileManager = FileManager.default
     private let label = MemWatchPrivilegedHelperConstants.daemonLabel
@@ -190,6 +194,33 @@ private struct PrivilegedHelperCompatibilityInstaller {
             throw PrivilegedHelperCompatibilityError.bundledHelperMissing
         }
         return (helper, plist)
+    }
+
+    /// `lsregister` is an Apple-supplied but undocumented LaunchServices tool.
+    /// This is intentionally isolated behind the private compatibility switch.
+    /// It only refreshes registration for MemWatch's own bundle.
+    func repairLaunchServicesRegistration() throws {
+        let candidates = [
+            "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+            "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+        ]
+        guard let executable = candidates.first(where: { fileManager.isExecutableFile(atPath: $0) }) else {
+            throw PrivilegedHelperCompatibilityError.launchServicesRepairFailed("lsregister bulunamadı")
+        }
+
+        let process = Process()
+        let stderr = Pipe()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["-f", Bundle.main.bundleURL.standardizedFileURL.path]
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let data = stderr.fileHandleForReading.readDataToEndOfFile()
+            let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? "çıkış kodu \(process.terminationStatus)"
+            throw PrivilegedHelperCompatibilityError.launchServicesRepairFailed(message)
+        }
     }
 
     func install() throws {
@@ -341,10 +372,34 @@ final class PrivilegedHelperService: ObservableObject {
             return
         }
 
+        let compatibilityEnabled = PrivateCompatibilityPolicy.isEnabled
+        if state == .notFound && compatibilityEnabled {
+            do {
+                try compatibilityInstaller.repairLaunchServicesRegistration()
+                do {
+                    try service.register()
+                } catch {
+                    lastError = error.localizedDescription
+                }
+                refreshStatus()
+            } catch {
+                lastError = error.localizedDescription
+            }
+
+            if state == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+                return
+            }
+            if state == .enabled {
+                lastError = nil
+                return
+            }
+        }
+
         guard state == .notFound || state == .unavailable else {
             return
         }
-        guard PrivateCompatibilityPolicy.isEnabled else {
+        guard compatibilityEnabled else {
             if lastError == nil {
                 lastError = "SMAppService yardımcıyı bulamadı. Özel uyumluluk yöntemleri kapalı olduğu için alternatif kurulum kullanılmadı."
             }
