@@ -248,14 +248,18 @@ jobs:
         run: |
           grep -q 'Deep Cleanup' MemWatchApp.swift
           grep -Fq 'private var cleanupWindowController: NSWindowController?' MemWatchApp.swift
-          grep -q 'privateBackendEnabled' Services/CleanupCoordinator.swift
+          grep -q 'setCleanupEnabled' Services/CleanupCoordinator.swift
+          grep -q 'setPrivilegedOperationsEnabled' Services/CleanupCoordinator.swift
+          grep -q 'setPrivateBackendEnabled' Services/CleanupCoordinator.swift
           grep -q 'CleanupScannerID(rawValue: "privileged-system")' Services/CleanupCoordinator.swift
           grep -q 'PrivilegedSystemScanner()' Cleanup/Core/CleanupScanEngine.swift
           grep -q 'SecCodeCopyStaticCode' PrivilegedHelper/HelperProtocol.swift
           grep -q 'SMAppService.daemon' Services/PrivilegedHelperService.swift
           grep -q 'Contents/Library/HelperTools' MemWatch.xcodeproj/project.pbxproj
           grep -q 'Contents/Library/LaunchDaemons' MemWatch.xcodeproj/project.pbxproj
-          grep -q 'Advanced system backend' Views/CleanupView.swift
+          grep -q 'Cleanup enabled' Views/CleanupView.swift
+          grep -q 'Privileged system operations' Views/CleanupView.swift
+          grep -q 'Private compatibility backends' Views/CleanupView.swift
           grep -q 'Purgeable' Views/CleanupView.swift
           ! grep -q 'func delete(path:' PrivilegedHelper/HelperProtocol.swift
           ! grep -q 'rm -rf' PrivilegedHelper/HelperMain.swift
