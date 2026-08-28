@@ -85,7 +85,25 @@ struct CleanupDeletionTests {
         precondition(confirmationReport.results[0].status == .failed, "Review item must require explicit confirmation")
         precondition(fm.fileExists(atPath: confirmTarget.path), "Unconfirmed item must not be deleted")
 
-        print("PASS Cleanup deletion and TOCTOU")
+        let simulatorCache = home.appendingPathComponent("Library/Developer/CoreSimulator/Caches/TestCache", isDirectory: true)
+        try fm.createDirectory(at: simulatorCache, withIntermediateDirectories: true)
+        try Data("simulator".utf8).write(to: simulatorCache.appendingPathComponent("cache.bin"))
+        let maintenanceCandidate = xcodeMaintenanceCandidate(simulatorCache)
+        let maintenanceBackend = CleanupMaintenanceBackend()
+        _ = try maintenanceBackend.execute(maintenanceCandidate, context: context)
+        precondition(!fm.fileExists(atPath: simulatorCache.path), "Approved simulator cache must be executable by maintenance backend")
+
+        let rejected = home.appendingPathComponent("Library/Developer/DoNotDelete", isDirectory: true)
+        try fm.createDirectory(at: rejected, withIntermediateDirectories: true)
+        let rejectedCandidate = xcodeMaintenanceCandidate(rejected)
+        do {
+            _ = try maintenanceBackend.execute(rejectedCandidate, context: context)
+            preconditionFailure("Maintenance backend must reject paths outside its Xcode allowlist")
+        } catch CleanupDeletionError.maintenanceTargetRejected {
+            precondition(fm.fileExists(atPath: rejected.path), "Rejected maintenance target must survive")
+        }
+
+        print("PASS Cleanup deletion, TOCTOU and maintenance allowlist")
     }
 
     private static func projectCandidate(_ url: URL) -> CleanupCandidate {
@@ -103,6 +121,24 @@ struct CleanupDeletionTests {
             deletionMode: .permanent,
             requirements: [.explicitConfirmation],
             reason: "test project artifact",
+            identity: CleanupPathValidator.identity(for: url)
+        )
+    }
+
+    private static func xcodeMaintenanceCandidate(_ url: URL) -> CleanupCandidate {
+        let size = CleanupFileSizer().measure(url)
+        return CleanupCandidate(
+            scannerID: "xcode-cleanup",
+            ruleID: "xcode.simulatorcache",
+            category: .xcode,
+            url: url.standardizedFileURL,
+            displayName: url.lastPathComponent,
+            logicalBytes: size.logicalBytes,
+            allocatedBytes: size.allocatedBytes,
+            safety: .review,
+            deletionMode: .maintenance,
+            requirements: [.explicitConfirmation, .applicationInactive],
+            reason: "test Xcode maintenance target",
             identity: CleanupPathValidator.identity(for: url)
         )
     }
