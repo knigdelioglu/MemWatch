@@ -18,10 +18,11 @@ struct MemWatchApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarController: StatusBarController?
     private lazy var monitor = MonitoringService()
+    private lazy var cleanup = CleanupCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
-        statusBarController = StatusBarController(monitor: monitor)
+        statusBarController = StatusBarController(monitor: monitor, cleanup: cleanup)
     }
 }
 
@@ -53,18 +54,22 @@ private struct TrayPresentation: Equatable {
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
     private static let panelSize = NSSize(width: 430, height: 640)
+    private static let cleanupWindowSize = NSSize(width: 680, height: 780)
 
     private let monitor: MonitoringService
+    private let cleanup: CleanupCoordinator
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
+    private var cleanupWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
     private var pendingSingleClick: DispatchWorkItem?
     private var localClickMonitor: Any?
     private var globalClickMonitor: Any?
     private var previousTrayPresentation: TrayPresentation?
 
-    init(monitor: MonitoringService) {
+    init(monitor: MonitoringService, cleanup: CleanupCoordinator) {
         self.monitor = monitor
+        self.cleanup = cleanup
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -187,7 +192,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             pendingSingleClick?.cancel()
             pendingSingleClick = nil
             closePopover()
-            showQuitMenu(relativeTo: sender)
+            showContextMenu(relativeTo: sender)
             return
         }
 
@@ -264,8 +269,22 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         stopOutsideClickMonitoring()
     }
 
-    private func showQuitMenu(relativeTo button: NSStatusBarButton) {
+    private func showContextMenu(relativeTo button: NSStatusBarButton) {
         let menu = NSMenu()
+
+        let cleanupItem = NSMenuItem(
+            title: "Deep Cleanup…",
+            action: #selector(openCleanupWindow),
+            keyEquivalent: ""
+        )
+        cleanupItem.image = NSImage(
+            systemSymbolName: "sparkles",
+            accessibilityDescription: "Deep Cleanup"
+        )
+        cleanupItem.target = self
+        menu.addItem(cleanupItem)
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit MemWatch",
             action: #selector(quitApplication),
@@ -275,10 +294,48 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         menu.addItem(quitItem)
 
         menu.popUp(
-            positioning: quitItem,
+            positioning: cleanupItem,
             at: NSPoint(x: 0, y: button.bounds.minY),
             in: button
         )
+    }
+
+    @objc
+    private func openCleanupWindow() {
+        closePopover()
+
+        if let window = cleanupWindowController?.window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            if cleanup.scanResult == nil, !cleanup.isBusy {
+                cleanup.startScan()
+            }
+            return
+        }
+
+        let hostingController = NSHostingController(
+            rootView: CleanupView(coordinator: cleanup)
+                .frame(
+                    minWidth: Self.cleanupWindowSize.width,
+                    minHeight: Self.cleanupWindowSize.height
+                )
+        )
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "MemWatch Deep Cleanup"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(Self.cleanupWindowSize)
+        window.minSize = NSSize(width: 560, height: 620)
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        cleanupWindowController = controller
+
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+        if cleanup.scanResult == nil, !cleanup.isBusy {
+            cleanup.startScan()
+        }
     }
 
     @objc

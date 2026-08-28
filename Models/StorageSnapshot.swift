@@ -55,3 +55,45 @@ struct StorageVolumeSnapshot: Identifiable, Equatable {
         return .normal
     }
 }
+
+/// APFS/macOS capacity signals for the startup volume.
+///
+/// `purgeableEstimateBytes` is deliberately kept separate from cleanup scan
+/// results. The same bytes may include snapshots, caches or other data that
+/// macOS can reclaim on demand, so adding this number to CleanupCandidate
+/// totals would double-count storage.
+struct StorageSpaceIntelligence: Equatable, Sendable {
+    let immediateAvailableBytes: UInt64
+    let importantUsageAvailableBytes: UInt64
+    let opportunisticUsageAvailableBytes: UInt64
+
+    var purgeableEstimateBytes: UInt64 {
+        importantUsageAvailableBytes > immediateAvailableBytes
+            ? importantUsageAvailableBytes - immediateAvailableBytes
+            : 0
+    }
+
+    static func startupVolume() -> StorageSpaceIntelligence? {
+        let root = URL(fileURLWithPath: "/", isDirectory: true)
+        let keys: Set<URLResourceKey> = [
+            .volumeAvailableCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityForOpportunisticUsageKey
+        ]
+
+        guard let values = try? root.resourceValues(forKeys: keys),
+              let immediate = values.volumeAvailableCapacity else {
+            return nil
+        }
+
+        let immediateBytes = UInt64(max(0, immediate))
+        let importantBytes = UInt64(max(0, values.volumeAvailableCapacityForImportantUsage ?? Int64(immediate)))
+        let opportunisticBytes = UInt64(max(0, values.volumeAvailableCapacityForOpportunisticUsage ?? Int64(immediate)))
+
+        return StorageSpaceIntelligence(
+            immediateAvailableBytes: immediateBytes,
+            importantUsageAvailableBytes: importantBytes,
+            opportunisticUsageAvailableBytes: opportunisticBytes
+        )
+    }
+}
