@@ -109,7 +109,42 @@ struct CleanupView: View {
     private var capabilityCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             Toggle(
-                "Advanced system backend",
+                "Cleanup enabled",
+                isOn: Binding(
+                    get: { coordinator.preferences.cleanupEnabled },
+                    set: { coordinator.setCleanupEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.caption.weight(.semibold))
+
+            Text("Master switch for cleanup scans and cleanup execution. Monitoring continues when cleanup is disabled.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Toggle(
+                "Privileged system operations",
+                isOn: Binding(
+                    get: { coordinator.preferences.privilegedOperationsEnabled },
+                    set: { coordinator.setPrivilegedOperationsEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.caption.weight(.semibold))
+            .disabled(!coordinator.preferences.cleanupEnabled)
+
+            Text("Controls privileged system scans and Time Machine maintenance. User-space cleanup remains available when this is off.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Toggle(
+                "Private compatibility backends",
                 isOn: Binding(
                     get: { coordinator.preferences.privateBackendEnabled },
                     set: { coordinator.setPrivateBackendEnabled($0) }
@@ -118,8 +153,9 @@ struct CleanupView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .font(.caption.weight(.semibold))
+            .disabled(!coordinator.preferences.cleanupEnabled)
 
-            Text("When disabled, privileged system scans and Time Machine maintenance are excluded even if the helper is installed.")
+            Text("Allows isolated undocumented compatibility backends only when one is explicitly implemented and available at runtime.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -138,6 +174,7 @@ struct CleanupView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(!coordinator.preferences.cleanupEnabled || !coordinator.preferences.privilegedOperationsEnabled)
             } else {
                 Button("Disable Privileged Helper") {
                     coordinator.unregisterHelper()
@@ -472,8 +509,12 @@ struct CleanupView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if !coordinator.preferences.privateBackendEnabled {
-                Text("Advanced system backend is disabled. Snapshot inspection and thinning are excluded from this scan.")
+            if !coordinator.preferences.cleanupEnabled {
+                Text("Cleanup is disabled. Snapshot inspection and thinning are paused.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if !coordinator.preferences.privilegedOperationsEnabled {
+                Text("Privileged system operations are disabled. Snapshot inspection and thinning are excluded.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else if coordinator.snapshots.isEmpty {
@@ -619,13 +660,18 @@ struct CleanupView: View {
 
     private var emptyState: some View {
         VStack(spacing: 9) {
-            Image(systemName: "internaldrive")
+            Image(systemName: coordinator.preferences.cleanupEnabled ? "internaldrive" : "pause.circle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("No cleanup scan yet")
+            Text(coordinator.preferences.cleanupEnabled ? "No cleanup scan yet" : "Cleanup is disabled")
                 .font(.subheadline.weight(.semibold))
-            Button("Scan Now") { coordinator.startScan() }
-                .buttonStyle(.borderedProminent)
+            if coordinator.preferences.cleanupEnabled {
+                Button("Scan Now") { coordinator.startScan() }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button("Enable Cleanup") { coordinator.setCleanupEnabled(true) }
+                    .buttonStyle(.borderedProminent)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(22)
