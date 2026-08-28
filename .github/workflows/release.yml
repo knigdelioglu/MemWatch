@@ -8,7 +8,7 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.14'
+      - '.github/release-trigger-v0.1.15'
 
 permissions:
   contents: write
@@ -51,19 +51,21 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.14"
+            TAG="v0.1.15"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch v0.1.14 makes Phase 8 Cleanup visible from the normal tray workflow.
+          MemWatch v0.1.15 makes Cleanup deletion scope explicit and translates the Cleanup interface to Turkish.
 
           Changes:
-          - Added a prominent Cleanup & Storage card to the normal left-click tray overview
-          - The card opens the full Deep Cleanup window directly
-          - Kept Cleanup & Storage available from the tray right-click menu as a secondary shortcut
-          - Added a tray UX regression contract so the Cleanup entry cannot disappear from the normal overview again
-          - Includes the full Phase 8 Deep Storage & Cleanup engine from v0.1.13: Safe / Review / Protected classification, developer/project/AI scanning, duplicates, large/old files, application leftovers, APFS intelligence, Full Disk Access, privileged helper, Time Machine maintenance, dry-run, history, ignore rules and deletion safety protections
-          - macOS CI, Phase 8 Cleanup Validation and Universal Release DMG checks pass with the visible Cleanup entry
+          - Cleanup interface is now Turkish, including categories, permissions, APFS storage, Time Machine, scan roots, ignore rules, history and item actions
+          - Main cleanup action is explicitly labeled as safe-only and shows the exact SAFE byte total it will attempt to remove
+          - SAFE items now show a filled green checkmark because they are automatically included in the main safe cleanup action
+          - REVIEW items remain opt-in: the main safe-clean button never removes them; users must select them explicitly before the separate selected-items cleanup action appears
+          - PROTECTED items show a lock and cannot be selected for cleanup
+          - Added a visible "Ne silinecek?" explanation card and clearer confirmation dialogs
+          - "Dry Run" is presented as "Silmeden Kontrol Et"
+          - CI architecture checks now validate behavior instead of hard-coded English UI strings, so localization cannot break the safety contract
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
@@ -72,13 +74,13 @@ jobs:
             gh release upload "$TAG" dist/MemWatch.dmg dist/MemWatch.dmg.sha256 --clobber
             gh release edit "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Visible Cleanup UI" \
+              --title "MemWatch $TAG — Türkçe Cleanup ve Açık Silme Kapsamı" \
               --notes-file /tmp/release-notes.md \
               --prerelease
           else
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Visible Cleanup UI" \
+              --title "MemWatch $TAG — Türkçe Cleanup ve Açık Silme Kapsamı" \
               --notes-file /tmp/release-notes.md \
               --prerelease \
               dist/MemWatch.dmg \
@@ -90,7 +92,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT_TAG="v0.1.14"
+          CURRENT_TAG="v0.1.15"
           gh release list --limit 1000 --json tagName --jq '.[].tagName' | while IFS= read -r TAG; do
             [[ -z "$TAG" || "$TAG" == "$CURRENT_TAG" ]] && continue
             echo "Deleting previous release: $TAG"
