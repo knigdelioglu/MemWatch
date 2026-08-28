@@ -1,5 +1,19 @@
 import Foundation
 
+// Standalone CI shim. The migration test only needs the execution result/report
+// model declarations from CleanupDeletionEngine, not a live privileged XPC client.
+struct PrivilegedHelperClient: Sendable {
+    init() {}
+
+    func execute(_ request: PrivilegedOperationRequest) async throws -> PrivilegedOperationResponse {
+        throw NSError(
+            domain: "CleanupPersistenceMigrationTests",
+            code: 999,
+            userInfo: [NSLocalizedDescriptionKey: "Privileged helper must not be reached by persistence migration tests"]
+        )
+    }
+}
+
 @main
 struct CleanupPersistenceMigrationTests {
     static func main() throws {
