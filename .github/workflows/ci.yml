@@ -361,7 +361,7 @@ jobs:
 
       - name: Verify cleanup architecture contracts
         run: |
-          grep -q 'Deep Cleanup' MemWatchApp.swift
+          grep -q 'Derin Temizleme' MemWatchApp.swift
           grep -Fq 'private var cleanupWindowController: NSWindowController?' MemWatchApp.swift
           grep -q 'setCleanupEnabled' Services/CleanupCoordinator.swift
           grep -q 'setPrivilegedOperationsEnabled' Services/CleanupCoordinator.swift

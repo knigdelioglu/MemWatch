@@ -326,7 +326,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 )
         )
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "MemWatch Deep Cleanup"
+        window.title = "MemWatch Derin Temizleme"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(Self.cleanupWindowSize)
         window.minSize = NSSize(width: 560, height: 620)
