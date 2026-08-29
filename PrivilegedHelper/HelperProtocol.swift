@@ -2,10 +2,10 @@ import Foundation
 import Security
 
 // Xcode 26's Security overlay requires SecStaticCode for signing-information
-// and path queries. The helper validates a live XPC guest as SecCode first,
-// then converts that guest to its static code before calling those APIs.
-// Keeping these overloads next to the shared helper protocol avoids unsafe
-// forced casts and preserves the audit-token based validation flow.
+// queries. The helper validates a live XPC guest as SecCode first, then
+// converts that guest to its static code before calling those APIs. Keeping
+// this overload next to the shared helper protocol avoids unsafe forced casts
+// and preserves the audit-token based validation flow.
 @inline(__always)
 func SecCodeCopySigningInformation(
     _ code: SecCode,
@@ -20,20 +20,6 @@ func SecCodeCopySigningInformation(
     return Security.SecCodeCopySigningInformation(staticCode, flags, information)
 }
 
-@inline(__always)
-func SecCodeCopyPath(
-    _ code: SecCode,
-    _ flags: SecCSFlags,
-    _ path: UnsafeMutablePointer<CFURL?>
-) -> OSStatus {
-    var staticCode: SecStaticCode?
-    let conversionStatus = Security.SecCodeCopyStaticCode(code, [], &staticCode)
-    guard conversionStatus == errSecSuccess, let staticCode else {
-        return conversionStatus
-    }
-    return Security.SecCodeCopyPath(staticCode, flags, path)
-}
-
 enum MemWatchPrivilegedHelperConstants {
     static let daemonPlistName = "com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
     static let daemonLabel = "com.knigdelioglu.MemWatch.PrivilegedHelper"
@@ -43,6 +29,31 @@ enum MemWatchPrivilegedHelperConstants {
     static let authorizationDirectoryPath = "/Library/Application Support/MemWatch"
     static let authorizationManifestPath = "\(authorizationDirectoryPath)/PrivilegedHelperAuthorization.plist"
     static let protocolVersion = 3
+
+    static func isExpectedHelperCodeIdentifier(_ identifier: String) -> Bool {
+        if identifier == helperCodeIdentifier {
+            return true
+        }
+
+        let generatedIdentifierPrefix = "\(helperCodeIdentifier)-"
+        guard identifier.hasPrefix(generatedIdentifierPrefix) else {
+            return false
+        }
+
+        let suffix = identifier.dropFirst(generatedIdentifierPrefix.count)
+        guard suffix.count == 40 else {
+            return false
+        }
+
+        return suffix.allSatisfy { character in
+            switch character {
+            case "0"..."9", "a"..."f", "A"..."F":
+                return true
+            default:
+                return false
+            }
+        }
+    }
 }
 
 /// A root-owned pin for local/ad-hoc builds. A bundle identifier alone is not

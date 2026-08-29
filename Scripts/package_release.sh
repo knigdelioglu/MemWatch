@@ -9,6 +9,7 @@ APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 STAGE_DIR="$DIST_DIR/dmg-root"
 HELPER_NAME="MemWatchPrivilegedHelper"
+HELPER_CODE_IDENTIFIER="MemWatchPrivilegedHelper"
 HELPER_BUILD_PATH="$DERIVED_DATA/Build/Products/Release/$HELPER_NAME"
 HELPER_SOURCE_PLIST="$ROOT_DIR/PrivilegedHelper/com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
 HELPER_PLIST_NAME="com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
@@ -97,6 +98,16 @@ verify_helper_bundle() {
   echo "Privileged helper: $bundle_program ($helper_archs)"
 }
 
+verify_helper_code_identifier() {
+  local helper="$1"
+  local helper_identifier
+  helper_identifier="$(codesign -dvvv "$helper" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')"
+  if [[ "$helper_identifier" != "$HELPER_CODE_IDENTIFIER" ]]; then
+    echo "Privileged helper code identifier is incorrect: $helper_identifier" >&2
+    exit 1
+  fi
+}
+
 # Fail the package before signing if SMAppService would not be able to find its
 # LaunchDaemon definition or the BundleProgram it references.
 verify_helper_bundle "$APP_PATH"
@@ -104,11 +115,12 @@ verify_helper_bundle "$APP_PATH"
 # Ad-hoc signing makes the CI artifact internally consistent, but it is not
 # Developer ID signing and does not replace Apple notarization for distribution.
 HELPER_BUNDLE_PROGRAM="$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$APP_PATH/$HELPER_PLIST_REL")"
-codesign --force --sign - "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
+codesign --force --sign - --identifier "$HELPER_CODE_IDENTIFIER" "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 codesign --verify --strict --verbose=2 "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
+verify_helper_code_identifier "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
 
 mkdir -p "$STAGE_DIR"
 ditto "$APP_PATH" "$STAGE_DIR/$APP_NAME.app"
@@ -139,6 +151,7 @@ fi
 # Verify the exact artifact users install, not only DerivedData output.
 verify_helper_bundle "$MOUNT_DIR/$APP_NAME.app"
 codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/$APP_NAME.app"
+verify_helper_code_identifier "$MOUNT_DIR/$APP_NAME.app/$HELPER_BUNDLE_PROGRAM"
 
 hdiutil detach "$MOUNT_DIR" -quiet
 trap - EXIT

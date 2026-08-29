@@ -106,11 +106,15 @@ private final class PrivilegedHelperService: NSObject, MemWatchPrivilegedHelperX
 
 private struct PrivilegedClientValidator {
     func isAuthorized(_ connection: NSXPCConnection) -> Bool {
-        guard let code = guestCode(for: connection) else { return false }
+        guestCodes(for: connection).contains { isAuthorized($0) }
+    }
+
+    private func isAuthorized(_ code: SecCode) -> Bool {
 
         guard let helperCode = selfCode(),
               let helperInfo = signingInformation(for: helperCode),
-              helperInfo[kSecCodeInfoIdentifier as String] as? String == MemWatchPrivilegedHelperConstants.helperCodeIdentifier,
+              let helperIdentifier = helperInfo[kSecCodeInfoIdentifier as String] as? String,
+              MemWatchPrivilegedHelperConstants.isExpectedHelperCodeIdentifier(helperIdentifier),
               let clientInfo = signingInformation(for: code),
               clientInfo[kSecCodeInfoIdentifier as String] as? String == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier else {
             return false
@@ -162,7 +166,7 @@ private struct PrivilegedClientValidator {
     ) -> Bool {
         guard teamIdentifier(in: clientInfo) == nil,
               isValidMainAppIdentifier(code),
-              let executableURL = codePath(code),
+              let executableURL = clientInfo[kSecCodeInfoMainExecutable as String] as? URL,
               let manifest = loadAuthorizationManifest(),
               manifest.bundleIdentifier == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier,
               canonicalPath(executableURL.path) == canonicalPath(manifest.executablePath),
@@ -263,26 +267,32 @@ private struct PrivilegedClientValidator {
             .path
     }
 
-    private func guestCode(for connection: NSXPCConnection) -> SecCode? {
+    private func guestCodes(for connection: NSXPCConnection) -> [SecCode] {
+        var candidates: [SecCode] = []
+
         if let auditData = auditTokenData(from: connection) {
             var code: SecCode?
             let attributes = [kSecGuestAttributeAudit as String: auditData] as CFDictionary
             if SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
                let code {
-                return code
+                candidates.append(code)
             }
         }
 
-        // Fallback only when the private auditToken accessor is unavailable.
-        // Signing requirement and executable-path checks still apply.
+        // On recent macOS releases the private NSXPCConnection auditToken
+        // accessor can yield a code object that is not the peer process. Keep
+        // the PID-derived candidate as an independent fallback; the complete
+        // signing, path, and root manifest checks still apply to every
+        // candidate before a connection is accepted.
         var code: SecCode?
         let attributes = [
             kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)
         ] as CFDictionary
-        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess else {
-            return nil
+        if SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+           let code {
+            candidates.append(code)
         }
-        return code
+        return candidates
     }
 
     private func auditTokenData(from connection: NSXPCConnection) -> Data? {
@@ -318,12 +328,6 @@ private struct PrivilegedClientValidator {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess else { return nil }
         return code
-    }
-
-    private func codePath(_ code: SecCode) -> URL? {
-        var url: CFURL?
-        guard SecCodeCopyPath(code, [], &url) == errSecSuccess, let url else { return nil }
-        return url as URL
     }
 
 }

@@ -41,6 +41,22 @@ struct PrivilegedHelperProtocolTests {
         precondition(decodedManifest == authorizationManifest)
         precondition(authorizationManifest.version == PrivilegedHelperAuthorizationManifest.currentVersion)
 
+        precondition(
+            MemWatchPrivilegedHelperConstants.isExpectedHelperCodeIdentifier(
+                MemWatchPrivilegedHelperConstants.helperCodeIdentifier
+            )
+        )
+        precondition(
+            MemWatchPrivilegedHelperConstants.isExpectedHelperCodeIdentifier(
+                "MemWatchPrivilegedHelper-0123456789abcdef0123456789abcdef01234567"
+            )
+        )
+        precondition(
+            !MemWatchPrivilegedHelperConstants.isExpectedHelperCodeIdentifier(
+                "MemWatchPrivilegedHelper-not-a-code-hash"
+            )
+        )
+
         let response = PrivilegedOperationResponse(
             requestID: request.requestID,
             success: true,

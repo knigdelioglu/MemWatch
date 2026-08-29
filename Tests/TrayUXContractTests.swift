@@ -41,6 +41,8 @@ struct TrayUXContractTests {
         expect(helperSource.contains("connectionVerified"), "helper availability must be based on a live XPC check")
         expect(coordinatorSource.contains("if currentPreferences.privilegedOperationsEnabled"), "scan should rediscover an installed helper after relaunch")
         expect(coordinatorSource.contains("await helperService.verifyConnection()"), "startup should verify an installed helper before showing it as missing")
+        expect(coordinatorSource.contains("helperRefreshTask = Task"), "manual permission refresh should run a live helper check")
+        expect(coordinatorSource.contains("await self.helperService.verifyConnection()"), "manual permission refresh should update helper connectivity")
         expect(cleanupSource.contains("helperService.lastError"), "helper installation failures must remain visible in the cleanup UI")
         expect(cleanupSource.contains("state == .requiresApproval"), "helper approval should have a dedicated UI state")
         expect(cleanupSource.contains("openHelperApprovalSettings"), "approval UI should open System Settings directly")

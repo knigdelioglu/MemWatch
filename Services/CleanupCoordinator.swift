@@ -41,6 +41,7 @@ final class CleanupCoordinator: ObservableObject {
     private var scanTask: Task<Void, Never>?
     private var executionTask: Task<Void, Never>?
     private var applicationActionTask: Task<Void, Never>?
+    private var helperRefreshTask: Task<Void, Never>?
     private var lastContext: CleanupScanContext?
     private let activityGuard = CleanupActivityGuard()
     private var operationGeneration = 0
@@ -55,6 +56,7 @@ final class CleanupCoordinator: ObservableObject {
         scanTask?.cancel()
         executionTask?.cancel()
         applicationActionTask?.cancel()
+        helperRefreshTask?.cancel()
     }
 
     var isBusy: Bool {
@@ -349,7 +351,13 @@ final class CleanupCoordinator: ObservableObject {
     func refreshPermissionsAndHelper() {
         fullDiskAccessService.refresh()
         helperService.refreshStatus()
-        startScan()
+        helperRefreshTask?.cancel()
+        helperRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            _ = await self.helperService.verifyConnection()
+            guard !Task.isCancelled else { return }
+            self.startScan()
+        }
     }
 
     func thinTimeMachineSnapshots(targetBytes: UInt64) {
