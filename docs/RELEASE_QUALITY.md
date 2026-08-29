@@ -69,6 +69,13 @@ The background/menu-closed case is the primary release criterion.
 
 The script verifies both architectures, applies an ad-hoc signature for package consistency, verifies the signature, verifies the DMG, mounts the DMG and confirms that `MemWatch.app` is present.
 
+Ad-hoc builds do not have a signing Team ID, so the first privileged-helper
+activation installs a root-owned authorization manifest that pins the exact
+MemWatch executable and its code hash. The helper accepts an ad-hoc client only
+when that pin, the canonical executable path and the live XPC code identity all
+match. A moved or rebuilt local app must be activated again so the pin can be
+recreated.
+
 ## Distribution signing and notarization
 
 The CI-generated DMG is **not** a Developer ID signed and Apple-notarized public distribution package.

@@ -20,12 +20,54 @@ func SecCodeCopySigningInformation(
     return Security.SecCodeCopySigningInformation(staticCode, flags, information)
 }
 
+@inline(__always)
+func SecCodeCopyPath(
+    _ code: SecCode,
+    _ flags: SecCSFlags,
+    _ path: UnsafeMutablePointer<CFURL?>
+) -> OSStatus {
+    var staticCode: SecStaticCode?
+    let conversionStatus = Security.SecCodeCopyStaticCode(code, [], &staticCode)
+    guard conversionStatus == errSecSuccess, let staticCode else {
+        return conversionStatus
+    }
+    return Security.SecCodeCopyPath(staticCode, flags, path)
+}
+
 enum MemWatchPrivilegedHelperConstants {
     static let daemonPlistName = "com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
     static let daemonLabel = "com.knigdelioglu.MemWatch.PrivilegedHelper"
     static let machServiceName = "com.knigdelioglu.MemWatch.PrivilegedHelper"
     static let mainAppBundleIdentifier = "com.knigdelioglu.MemWatch"
-    static let protocolVersion = 2
+    static let helperCodeIdentifier = "MemWatchPrivilegedHelper"
+    static let authorizationDirectoryPath = "/Library/Application Support/MemWatch"
+    static let authorizationManifestPath = "\(authorizationDirectoryPath)/PrivilegedHelperAuthorization.plist"
+    static let protocolVersion = 3
+}
+
+/// A root-owned pin for local/ad-hoc builds. A bundle identifier alone is not
+/// an identity, so the helper uses this manifest only when both sides lack a
+/// stable signing Team ID. The manifest is written by the administrator-only
+/// compatibility installer and binds the helper to one exact app executable
+/// and its code hash.
+struct PrivilegedHelperAuthorizationManifest: Codable, Equatable, Sendable {
+    static let currentVersion = 1
+
+    let version: Int
+    let bundleIdentifier: String
+    let executablePath: String
+    let codeHashes: [String]
+
+    init(
+        bundleIdentifier: String,
+        executablePath: String,
+        codeHashes: [String]
+    ) {
+        self.version = Self.currentVersion
+        self.bundleIdentifier = bundleIdentifier
+        self.executablePath = executablePath
+        self.codeHashes = codeHashes
+    }
 }
 
 enum PrivilegedOperationKind: String, Codable, Sendable {

@@ -28,6 +28,19 @@ struct PrivilegedHelperProtocolTests {
         precondition(decodedScan.requestID == scan.requestID)
         precondition(decodedScan.ruleIDs == ["system.cache", "timemachine.snapshot"])
 
+        let authorizationManifest = PrivilegedHelperAuthorizationManifest(
+            bundleIdentifier: MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier,
+            executablePath: "/Applications/MemWatch.app/Contents/MacOS/MemWatch",
+            codeHashes: ["0123456789abcdef0123456789abcdef01234567"]
+        )
+        let encodedManifest = try PropertyListEncoder().encode(authorizationManifest)
+        let decodedManifest = try PropertyListDecoder().decode(
+            PrivilegedHelperAuthorizationManifest.self,
+            from: encodedManifest
+        )
+        precondition(decodedManifest == authorizationManifest)
+        precondition(authorizationManifest.version == PrivilegedHelperAuthorizationManifest.currentVersion)
+
         let response = PrivilegedOperationResponse(
             requestID: request.requestID,
             success: true,

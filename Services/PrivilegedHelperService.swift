@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import ServiceManagement
 
 enum PrivilegedHelperRegistrationState: String, Sendable {
@@ -184,6 +185,7 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
     case bundledHelperMissing
     case bundledDaemonPlistMissing
     case malformedBundledDaemonPlist
+    case clientAuthorizationManifestUnavailable
     case launchServicesRepairFailed(String)
     case administratorAuthorizationFailed(String)
 
@@ -195,6 +197,8 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
             return "MemWatch uygulama paketinde LaunchDaemon tanımı bulunamadı."
         case .malformedBundledDaemonPlist:
             return "MemWatch LaunchDaemon tanımı geçersiz veya helper yoluyla eşleşmiyor."
+        case .clientAuthorizationManifestUnavailable:
+            return "Yerel imzalı paket için yetkili yardımcı kimliği oluşturulamadı."
         case .launchServicesRepairFailed(let message):
             return "LaunchServices uyumluluk onarımı başarısız: \(message)"
         case .administratorAuthorizationFailed(let message):
@@ -205,8 +209,9 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
 
 /// A deliberately narrow fallback for machines where SMAppService cannot locate
 /// the bundled LaunchDaemon. It can only repair MemWatch's LaunchServices entry
-/// or install MemWatch's own helper/plist at fixed locations. No arbitrary
-/// command/path interface is exposed to the rest of the application.
+/// or install MemWatch's own helper, plist and root-owned client identity pin at
+/// fixed locations. No arbitrary command/path interface is exposed to the rest
+/// of the application.
 private struct PrivilegedHelperCompatibilityInstaller {
     private let fileManager = FileManager.default
     private let label = MemWatchPrivilegedHelperConstants.daemonLabel
@@ -218,6 +223,10 @@ private struct PrivilegedHelperCompatibilityInstaller {
 
     private var installedPlistPath: String {
         "/Library/LaunchDaemons/\(plistName)"
+    }
+
+    private var installedAuthorizationManifestPath: String {
+        MemWatchPrivilegedHelperConstants.authorizationManifestPath
     }
 
     func bundledResources() throws -> (helper: URL, plist: URL) {
@@ -284,13 +293,18 @@ private struct PrivilegedHelperCompatibilityInstaller {
     func install() throws {
         let resources = try bundledResources()
         let temporaryPlist = try makeStandaloneLaunchDaemonPlist()
+        let temporaryAuthorizationManifest = try makeAuthorizationManifest()
         defer { try? fileManager.removeItem(at: temporaryPlist) }
+        defer { try? fileManager.removeItem(at: temporaryAuthorizationManifest) }
 
         let command = [
-            "/bin/mkdir -p /Library/PrivilegedHelperTools",
+            "/bin/mkdir -p /Library/PrivilegedHelperTools \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
+            "/bin/chmod 755 \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
+            "/usr/sbin/chown root:wheel \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
             "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
             "/usr/bin/install -o root -g wheel -m 755 \(shellQuote(resources.helper.path)) \(shellQuote(installedHelperPath))",
             "/usr/bin/install -o root -g wheel -m 644 \(shellQuote(temporaryPlist.path)) \(shellQuote(installedPlistPath))",
+            "/usr/bin/install -o root -g wheel -m 644 \(shellQuote(temporaryAuthorizationManifest.path)) \(shellQuote(installedAuthorizationManifestPath))",
             "/bin/launchctl bootstrap system \(shellQuote(installedPlistPath))",
             "/bin/launchctl enable system/\(label)"
         ].joined(separator: "; ")
@@ -302,9 +316,58 @@ private struct PrivilegedHelperCompatibilityInstaller {
         let command = [
             "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
             "/bin/rm -f \(shellQuote(installedPlistPath))",
-            "/bin/rm -f \(shellQuote(installedHelperPath))"
+            "/bin/rm -f \(shellQuote(installedHelperPath))",
+            "/bin/rm -f \(shellQuote(installedAuthorizationManifestPath))"
         ].joined(separator: "; ")
         try runWithAdministratorPrivileges(command)
+    }
+
+    private func makeAuthorizationManifest() throws -> URL {
+        guard let executableURL = Bundle.main.executableURL else {
+            throw PrivilegedHelperCompatibilityError.clientAuthorizationManifestUnavailable
+        }
+
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess,
+              let code else {
+            throw PrivilegedHelperCompatibilityError.clientAuthorizationManifestUnavailable
+        }
+
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            code,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+        let information,
+        let dictionary = information as? [String: Any],
+        let identifier = dictionary[kSecCodeInfoIdentifier as String] as? String,
+        identifier == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier else {
+            throw PrivilegedHelperCompatibilityError.clientAuthorizationManifestUnavailable
+        }
+
+        let codeHashes = (dictionary[kSecCodeInfoCdHashes as String] as? [Any] ?? [])
+            .compactMap { value -> String? in
+                guard let data = value as? Data else { return nil }
+                return data.map { String(format: "%02x", $0) }.joined()
+            }
+        guard !codeHashes.isEmpty else {
+            throw PrivilegedHelperCompatibilityError.clientAuthorizationManifestUnavailable
+        }
+
+        let manifest = PrivilegedHelperAuthorizationManifest(
+            bundleIdentifier: identifier,
+            executablePath: executableURL
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+                .path,
+            codeHashes: Array(Set(codeHashes)).sorted()
+        )
+        let data = try PropertyListEncoder().encode(manifest)
+        let url = fileManager.temporaryDirectory
+            .appendingPathComponent("memwatch-\(UUID().uuidString)-authorization.plist")
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 
     private func makeStandaloneLaunchDaemonPlist() throws -> URL {
@@ -399,6 +462,30 @@ final class PrivilegedHelperService: ObservableObject {
     private let compatibilityInstaller = PrivilegedHelperCompatibilityInstaller()
     let client = PrivilegedHelperClient()
 
+    private static var requiresPinnedAuthorization: Bool {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess,
+              let code else {
+            return true
+        }
+
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            code,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &information
+        ) == errSecSuccess,
+        let information,
+        let dictionary = information as? [String: Any] else {
+            return true
+        }
+
+        guard let team = dictionary[kSecCodeInfoTeamIdentifier as String] as? String else {
+            return true
+        }
+        return team.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     init() {
         refreshStatus()
     }
@@ -445,6 +532,30 @@ final class PrivilegedHelperService: ObservableObject {
             lastError = error.localizedDescription
             state = .unavailable
             return false
+        }
+
+        // Ad-hoc builds have no stable Team ID. Install a root-owned code-hash
+        // pin before accepting their XPC connection; bundle identifiers and
+        // paths alone must never authorize a root helper.
+        if Self.requiresPinnedAuthorization {
+            // A previous ad-hoc build may have left an SMAppService submission
+            // under the same label. Remove that submission before installing
+            // the manifest-backed compatibility daemon.
+            try? await service.unregister()
+            state = .installing
+            if let errorMessage = await Self.compatibilityInstallError() {
+                compatibilityHelperActive = false
+                lastError = errorMessage
+                refreshStatus()
+                return false
+            }
+
+            let verified = await verifyConnection()
+            if verified {
+                compatibilityHelperActive = true
+                refreshStatus()
+            }
+            return verified
         }
 
         do {

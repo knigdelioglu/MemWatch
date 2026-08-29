@@ -310,6 +310,9 @@ jobs:
           grep -q 'CleanupScannerID(rawValue: "privileged-system")' Services/CleanupCoordinator.swift
           grep -q 'PrivilegedSystemScanner()' Cleanup/Core/CleanupScanEngine.swift
           grep -q 'SecCodeCopyStaticCode' PrivilegedHelper/HelperProtocol.swift
+          grep -q 'PrivilegedHelperAuthorizationManifest' PrivilegedHelper/HelperProtocol.swift
+          grep -q 'authorizationManifestPath' PrivilegedHelper/HelperProtocol.swift
+          grep -q 'isSecureManifestFile' PrivilegedHelper/HelperMain.swift
           grep -q 'SMAppService.daemon' Services/PrivilegedHelperService.swift
           grep -q 'Contents/Library/HelperTools' MemWatch.xcodeproj/project.pbxproj
           grep -q 'Contents/Library/LaunchDaemons' MemWatch.xcodeproj/project.pbxproj

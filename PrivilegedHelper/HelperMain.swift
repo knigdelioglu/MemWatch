@@ -108,16 +108,36 @@ private struct PrivilegedClientValidator {
     func isAuthorized(_ connection: NSXPCConnection) -> Bool {
         guard let code = guestCode(for: connection) else { return false }
 
-        // A root helper must not fall back to bundle identifier or path checks
-        // for ad-hoc/local builds. Those values can be forged by an unrelated
-        // executable, so require a stable signing identity on both sides.
         guard let helperCode = selfCode(),
               let helperInfo = signingInformation(for: helperCode),
-              let helperTeam = helperInfo[kSecCodeInfoTeamIdentifier as String] as? String,
-              !helperTeam.isEmpty else {
+              helperInfo[kSecCodeInfoIdentifier as String] as? String == MemWatchPrivilegedHelperConstants.helperCodeIdentifier,
+              let clientInfo = signingInformation(for: code),
+              clientInfo[kSecCodeInfoIdentifier as String] as? String == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier else {
             return false
         }
 
+        let helperTeam = teamIdentifier(in: helperInfo)
+        if let helperTeam, !helperTeam.isEmpty {
+            return isTeamAuthorized(
+                code: code,
+                clientInfo: clientInfo,
+                helperTeam: helperTeam
+            )
+        }
+
+        // Ad-hoc signatures do not contain a Team ID. They are supported for
+        // local/private builds only through an administrator-installed,
+        // root-owned manifest that pins the exact client executable and its
+        // live code hash. A bundle identifier or a path by itself is not
+        // sufficient for a root XPC service.
+        return isAdHocAuthorized(code: code, clientInfo: clientInfo)
+    }
+
+    private func isTeamAuthorized(
+        code: SecCode,
+        clientInfo: [String: Any],
+        helperTeam: String
+    ) -> Bool {
         var requirement: SecRequirement?
         let requirementString = "identifier \"\(MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier)\" and certificate leaf[subject.OU] = \"\(helperTeam)\""
         guard SecRequirementCreateWithString(
@@ -130,16 +150,117 @@ private struct PrivilegedClientValidator {
             return false
         }
 
-        guard let clientInfo = signingInformation(for: code) else { return false }
-        let clientIdentifier = clientInfo[kSecCodeInfoIdentifier as String] as? String
-        guard clientIdentifier == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier else {
-            return false
-        }
-
-        let clientTeam = clientInfo[kSecCodeInfoTeamIdentifier as String] as? String
+        let clientTeam = teamIdentifier(in: clientInfo)
         guard clientTeam == helperTeam else { return false }
 
         return true
+    }
+
+    private func isAdHocAuthorized(
+        code: SecCode,
+        clientInfo: [String: Any]
+    ) -> Bool {
+        guard teamIdentifier(in: clientInfo) == nil,
+              isValidMainAppIdentifier(code),
+              let executableURL = codePath(code),
+              let manifest = loadAuthorizationManifest(),
+              manifest.bundleIdentifier == MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier,
+              canonicalPath(executableURL.path) == canonicalPath(manifest.executablePath),
+              !manifest.codeHashes.isEmpty else {
+            return false
+        }
+
+        let expectedHashes = Set(manifest.codeHashes.map { $0.lowercased() })
+        let clientHashes = codeHashes(in: clientInfo)
+        return !expectedHashes.isDisjoint(with: clientHashes)
+    }
+
+    private func isValidMainAppIdentifier(_ code: SecCode) -> Bool {
+        var requirement: SecRequirement?
+        let requirementString = "identifier \"\(MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier)\""
+        guard SecRequirementCreateWithString(
+            requirementString as CFString,
+            [],
+            &requirement
+        ) == errSecSuccess,
+        let requirement else {
+            return false
+        }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
+
+    private func teamIdentifier(in information: [String: Any]) -> String? {
+        guard let value = information[kSecCodeInfoTeamIdentifier as String] as? String else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func codeHashes(in information: [String: Any]) -> Set<String> {
+        guard let values = information[kSecCodeInfoCdHashes as String] as? [Any] else {
+            return []
+        }
+        return Set(values.compactMap { value in
+            guard let data = value as? Data else { return nil }
+            return data.map { String(format: "%02x", $0) }.joined()
+        })
+    }
+
+    private func loadAuthorizationManifest() -> PrivilegedHelperAuthorizationManifest? {
+        let url = URL(fileURLWithPath: MemWatchPrivilegedHelperConstants.authorizationManifestPath)
+        guard isSecureManifestFile(at: url),
+              let data = try? Data(contentsOf: url),
+              let manifest = try? PropertyListDecoder().decode(
+                PrivilegedHelperAuthorizationManifest.self,
+                from: data
+              ),
+              manifest.version == PrivilegedHelperAuthorizationManifest.currentVersion,
+              manifest.executablePath.hasPrefix("/"),
+              manifest.executablePath.count <= 4_096,
+              manifest.codeHashes.count <= 8,
+              manifest.codeHashes.allSatisfy(isValidHash) else {
+            return nil
+        }
+        return manifest
+    }
+
+    private func isValidHash(_ hash: String) -> Bool {
+        hash.count == 40 && hash.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 48...57, 65...70, 97...102:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private func isSecureManifestFile(at url: URL) -> Bool {
+        var fileInfo = stat()
+        guard lstat(url.path, &fileInfo) == 0,
+              (UInt32(fileInfo.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFREG),
+              fileInfo.st_uid == 0,
+              (UInt32(fileInfo.st_mode) & 0o022) == 0 else {
+            return false
+        }
+
+        var directoryInfo = stat()
+        let directory = url.deletingLastPathComponent().path
+        guard lstat(directory, &directoryInfo) == 0,
+              (UInt32(directoryInfo.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFDIR),
+              directoryInfo.st_uid == 0,
+              (UInt32(directoryInfo.st_mode) & 0o022) == 0 else {
+            return false
+        }
+        return true
+    }
+
+    private func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
     }
 
     private func guestCode(for connection: NSXPCConnection) -> SecCode? {
@@ -197,6 +318,12 @@ private struct PrivilegedClientValidator {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess else { return nil }
         return code
+    }
+
+    private func codePath(_ code: SecCode) -> URL? {
+        var url: CFURL?
+        guard SecCodeCopyPath(code, [], &url) == errSecSuccess, let url else { return nil }
+        return url as URL
     }
 
 }
