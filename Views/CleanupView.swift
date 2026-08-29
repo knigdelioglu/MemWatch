@@ -992,6 +992,7 @@ struct CleanupView: View {
         case "xcode-cleanup": return "Xcode"
         case "developer-cache": return "Geliştirici araçları"
         case "project-artifact": return "Proje artıkları"
+        case "developer-build-artifact": return "Cargo derleme artıkları"
         case "ai-artifact": return "Yapay zekâ verileri"
         case "application-leftover": return "Uygulama artıkları"
         case "launch-item": return "Başlangıç öğeleri"
@@ -1026,6 +1027,9 @@ struct CleanupView: View {
         case .developer:
             return "Geliştirici aracının yeniden oluşturabileceği veya yeniden indirebileceği önbellek."
         case .projectArtifacts:
+            if item.ruleID.rawValue == "project.rust.target.verified" {
+                return "Cargo metadata ile workspace'e ait olduğu doğrulanan, yeniden üretilebilir Rust derleme çıktısı."
+            }
             return "Projede yeniden oluşturulabilen bağımlılık, derleme çıktısı veya geçici dosya."
         case .aiArtifacts:
             if item.safety == .protected {
@@ -1081,6 +1085,8 @@ struct CleanupView: View {
             return "Yetkili yardımcı gerekli."
         case "Target is not owned by the current user":
             return "Hedef dosyanın sahibi mevcut kullanıcı değil."
+        case "Cargo target verification is missing":
+            return "Cargo workspace doğrulaması bulunamadı; hedef korunuyor."
         case "Scanner category does not match cleanup rule":
             return "Tarayıcı kategorisi temizleme kuralıyla eşleşmiyor."
         case "Cleanup path was rejected":

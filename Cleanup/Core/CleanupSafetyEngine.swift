@@ -149,13 +149,16 @@ struct CleanupActivityGuard: @unchecked Sendable {
 struct CleanupSafetyEngine: Sendable {
     private let pathValidator: CleanupPathValidator
     private let activityGuard: CleanupActivityGuard
+    private let buildActivityGuard: DeveloperBuildActivityGuard
 
     init(
         pathValidator: CleanupPathValidator = CleanupPathValidator(),
-        activityGuard: CleanupActivityGuard = CleanupActivityGuard()
+        activityGuard: CleanupActivityGuard = CleanupActivityGuard(),
+        buildActivityGuard: DeveloperBuildActivityGuard = DeveloperBuildActivityGuard()
     ) {
         self.pathValidator = pathValidator
         self.activityGuard = activityGuard
+        self.buildActivityGuard = buildActivityGuard
     }
 
     func assess(
@@ -209,6 +212,25 @@ struct CleanupSafetyEngine: Sendable {
                 requirements.insert(.explicitConfirmation)
                 notes.append("The owning application state could not be verified; review this item before cleanup")
                 notes.append("Application: \(name)")
+            }
+        }
+
+        if requirements.contains(.buildInactive) {
+            if let verification = candidate.cargoTargetVerification {
+                switch buildActivityGuard.state(for: verification) {
+                case .inactive:
+                    break
+                case .active(let name):
+                    safety = .protected
+                    blockers.append("Active developer build detected: \(name)")
+                case .unknown(let message):
+                    safety = .protected
+                    blockers.append("Developer build activity could not be verified: \(message)")
+                }
+            } else {
+                safety = .protected
+                blockers.append("Cargo target verification is missing")
+                notes.append("The Cargo target could not be tied to verified workspace metadata")
             }
         }
 

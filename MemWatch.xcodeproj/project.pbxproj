@@ -34,6 +34,10 @@
 		B10000000000000000000006 /* CleanupScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* CleanupScanEngine.swift */; };
 		B10000000000000000000007 /* CleanupFileSizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* CleanupFileSizer.swift */; };
 		B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
+		B10000000000000000000009 /* DeveloperProjectDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* DeveloperProjectDiscovery.swift */; };
+		B10000000000000000000010 /* CargoMetadataResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* CargoMetadataResolver.swift */; };
+		B10000000000000000000011 /* DeveloperBuildActivityGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */; };
+		B10000000000000000000012 /* DeveloperBuildArtifactScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */; };
 		D10000000000000000000001 /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
 		D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PrivilegedHelperService.swift */; };
 		D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* PrivilegedSystemScanner.swift */; };
@@ -114,6 +118,10 @@
 		B20000000000000000000006 /* CleanupScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanEngine.swift; sourceTree = "<group>"; };
 		B20000000000000000000007 /* CleanupFileSizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupFileSizer.swift; sourceTree = "<group>"; };
 		B20000000000000000000008 /* CleanupSecureRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSecureRemoval.swift; sourceTree = "<group>"; };
+		B20000000000000000000009 /* DeveloperProjectDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperProjectDiscovery.swift; sourceTree = "<group>"; };
+		B20000000000000000000010 /* CargoMetadataResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CargoMetadataResolver.swift; sourceTree = "<group>"; };
+		B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperBuildActivityGuard.swift; sourceTree = "<group>"; };
+		B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperBuildArtifactScanner.swift; sourceTree = "<group>"; };
 		D20000000000000000000001 /* HelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperProtocol.swift; sourceTree = "<group>"; };
 		D20000000000000000000002 /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* PrivilegedHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperService.swift; sourceTree = "<group>"; };
@@ -234,6 +242,10 @@
 			isa = PBXGroup;
 			children = (
 				B20000000000000000000002 /* CleanupScanner.swift */,
+				B20000000000000000000009 /* DeveloperProjectDiscovery.swift */,
+				B20000000000000000000010 /* CargoMetadataResolver.swift */,
+				B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */,
+				B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */,
 				B20000000000000000000003 /* CleanupRuleCatalog.swift */,
 				B20000000000000000000004 /* CleanupPathValidator.swift */,
 				B20000000000000000000005 /* CleanupSafetyEngine.swift */,
@@ -382,6 +394,10 @@
 				B10000000000000000000006 /* CleanupScanEngine.swift in Sources */,
 				B10000000000000000000007 /* CleanupFileSizer.swift in Sources */,
 				B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */,
+				B10000000000000000000009 /* DeveloperProjectDiscovery.swift in Sources */,
+				B10000000000000000000010 /* CargoMetadataResolver.swift in Sources */,
+				B10000000000000000000011 /* DeveloperBuildActivityGuard.swift in Sources */,
+				B10000000000000000000012 /* DeveloperBuildArtifactScanner.swift in Sources */,
 				D10000000000000000000001 /* HelperProtocol.swift in Sources */,
 				D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */,
 				D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */,

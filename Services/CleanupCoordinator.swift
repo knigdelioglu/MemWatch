@@ -325,6 +325,7 @@ final class CleanupCoordinator: ObservableObject {
 
     func registerHelper() {
         guard preferences.cleanupEnabled, preferences.privilegedOperationsEnabled else { return }
+        helperRefreshTask?.cancel()
         Task { [weak self] in
             guard let self else { return }
             let ok = await helperService.register()
@@ -336,6 +337,7 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func unregisterHelper() {
+        helperRefreshTask?.cancel()
         helperService.unregister()
         startScan()
     }

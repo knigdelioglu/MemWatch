@@ -26,13 +26,14 @@ Hard boundaries remain:
 - Safety engine that can only make scanner output more restrictive.
 - Allocated/logical size accounting.
 - Cancellable scan engine.
+- Cargo-verified Rust target cleanup requires explicit confirmation and a fail-closed inactive-build check.
 
 ### 8B — User-space and developer scanners
 
 - User caches and logs, including sandbox/container caches.
 - Xcode: DerivedData, module/documentation caches, Device Support, simulator-related candidates, SwiftPM and preview/test artifacts.
 - Homebrew, npm, Yarn, pnpm, pip, Poetry, uv, Cargo, Go, CocoaPods, Docker, VS Code, JetBrains, Maven, Gradle, Bun, Deno and mise.
-- Project artifact discovery for node_modules, build outputs, target, .build, virtual environments, Pods, vendor, CMake/Gradle/Flutter artifacts and related regenerable directories.
+- Project artifact discovery for generic dependency/build outputs, plus Cargo project discovery through `Cargo.toml` and `cargo metadata --no-deps`; Cargo `target_directory` paths are classified from verified workspace metadata rather than by folder name.
 - Trash and download/installer intelligence.
 - iOS/iPadOS device backups.
 - AI cache/temp/model classification for local-model tools.

@@ -29,7 +29,7 @@ struct CleanupDeletionTests {
         )
         let engine = CleanupDeletionEngine()
 
-        let dryTarget = projects.appendingPathComponent("dry-project/target", isDirectory: true)
+        let dryTarget = projects.appendingPathComponent("dry-project/.build", isDirectory: true)
         try fm.createDirectory(at: dryTarget, withIntermediateDirectories: true)
         try Data("fixture".utf8).write(to: dryTarget.appendingPathComponent("payload"))
         let dryCandidate = projectCandidate(dryTarget)
@@ -85,7 +85,7 @@ struct CleanupDeletionTests {
         precondition(unknownAppReport.results[0].message.contains("could not safely verify"), "Unknown application failure must explain the safety block")
         precondition(fm.fileExists(atPath: activeCache.path), "Unknown application state must preserve the cache")
 
-        let applyTarget = projects.appendingPathComponent("apply-project/target", isDirectory: true)
+        let applyTarget = projects.appendingPathComponent("apply-project/.build", isDirectory: true)
         try fm.createDirectory(at: applyTarget, withIntermediateDirectories: true)
         try Data(repeating: 0x42, count: 4096).write(to: applyTarget.appendingPathComponent("artifact.bin"))
         let applyCandidate = projectCandidate(applyTarget)
@@ -98,7 +98,7 @@ struct CleanupDeletionTests {
         precondition(applyReport.results[0].status == .removed, "Confirmed project artifact should be removed")
         precondition(!fm.fileExists(atPath: applyTarget.path), "Applied deletion must remove the original path")
 
-        let raceTarget = projects.appendingPathComponent("race-project/target", isDirectory: true)
+        let raceTarget = projects.appendingPathComponent("race-project/.build", isDirectory: true)
         try fm.createDirectory(at: raceTarget, withIntermediateDirectories: true)
         try Data("first".utf8).write(to: raceTarget.appendingPathComponent("payload"))
         let staleCandidate = projectCandidate(raceTarget)
@@ -115,7 +115,7 @@ struct CleanupDeletionTests {
         precondition(raceReport.results[0].message.contains("changed after scanning"), "Failure should explain stale identity")
         precondition(fm.fileExists(atPath: raceTarget.path), "Replacement object must survive stale-candidate deletion")
 
-        let inPlaceTarget = projects.appendingPathComponent("in-place-project/target", isDirectory: false)
+        let inPlaceTarget = projects.appendingPathComponent("in-place-project/.build", isDirectory: false)
         try fm.createDirectory(at: inPlaceTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("before".utf8).write(to: inPlaceTarget)
         let staleContentCandidate = projectCandidate(inPlaceTarget)
@@ -163,7 +163,7 @@ struct CleanupDeletionTests {
         let trashEntries = try fm.contentsOfDirectory(at: home.appendingPathComponent(".Trash", isDirectory: true), includingPropertiesForKeys: nil)
         precondition(trashEntries.contains { $0.lastPathComponent.hasPrefix("trash-target.zip.memwatch-") }, "Secure Trash move must create a unique destination")
 
-        let cancelledTarget = projects.appendingPathComponent("cancelled-project/target", isDirectory: true)
+        let cancelledTarget = projects.appendingPathComponent("cancelled-project/.build", isDirectory: true)
         try fm.createDirectory(at: cancelledTarget, withIntermediateDirectories: true)
         try Data("cancel me".utf8).write(to: cancelledTarget.appendingPathComponent("payload"))
         let cancelledCandidate = projectCandidate(cancelledTarget)

@@ -79,15 +79,17 @@ struct CleanupScannerSupport: Sendable {
         deletionMode: CleanupDeletionMode,
         requirements: CleanupRequirements = [],
         reason: String,
-        regenerationHint: String? = nil
+        regenerationHint: String? = nil,
+        measureSize: Bool = true,
+        cargoTargetVerification: CargoTargetVerification? = nil
     ) -> CleanupCandidate? {
         let standardized = url.standardizedFileURL
         guard let identity = CleanupPathValidator.identity(for: standardized), !identity.isSymbolicLink else { return nil }
         let keys: Set<URLResourceKey> = [.creationDateKey, .contentModificationDateKey, .contentAccessDateKey, .isSymbolicLinkKey]
         let values = try? standardized.resourceValues(forKeys: keys)
         if values?.isSymbolicLink == true { return nil }
-        let size = try? sizer.measureStrict(standardized)
-        let metadataUnavailable = values == nil || size == nil
+        let size = measureSize ? try? sizer.measureStrict(standardized) : nil
+        let metadataUnavailable = values == nil || (measureSize && size == nil)
         return CleanupCandidate(
             scannerID: scannerID,
             ruleID: ruleID,
@@ -105,7 +107,8 @@ struct CleanupScannerSupport: Sendable {
             reason: reason,
             regenerationHint: regenerationHint,
             identity: identity,
-            policyNotes: metadataUnavailable ? ["Cleanup metadata or complete size could not be read; the item is protected until a later rescan."] : []
+            policyNotes: metadataUnavailable ? ["Cleanup metadata or complete size could not be read; the item is protected until a later rescan."] : [],
+            cargoTargetVerification: cargoTargetVerification
         )
     }
 
@@ -345,13 +348,18 @@ struct ProjectArtifactScanner: CleanupScanner {
     let id: CleanupScannerID = "project-artifact"
     let category: CleanupCategory = .projectArtifacts
     private let support = CleanupScannerSupport()
-    private let exactArtifactNames: Set<String> = ["node_modules", ".next", ".nuxt", ".turbo", "dist", "build", "target", ".build", ".venv", "venv", "__pycache__", "Pods", "vendor", ".gradle", ".dart_tool"]
-    private let excludedTraversalNames: Set<String> = [".git", ".hg", ".svn"]
+    private let exactArtifactNames: Set<String> = ["node_modules", ".next", ".nuxt", ".turbo", "dist", "build", ".build", ".venv", "venv", "__pycache__", "Pods", "vendor", ".gradle", ".dart_tool"]
+    private let excludedTraversalNames: Set<String> = [
+        ".git", ".hg", ".svn", "target", "node_modules", ".next", ".nuxt", ".turbo",
+        "dist", "build", ".build", ".venv", "venv", "__pycache__", "Pods", "vendor",
+        ".gradle", ".dart_tool"
+    ]
 
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         var results: [CleanupCandidate] = []
         for root in context.projectRoots {
             try Task.checkCancellation()
+            guard !excludedTraversalNames.contains(root.lastPathComponent) else { continue }
             guard !context.isIgnored(root) else { continue }
             let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
             try support.enumerateDescendants(of: root, includingPropertiesForKeys: keys) { url, skipDescendants in
@@ -364,7 +372,10 @@ struct ProjectArtifactScanner: CleanupScanner {
                 guard values.isDirectory == true else { return }
                 if values.isSymbolicLink == true { skipDescendants = true; return }
                 let name = url.lastPathComponent
-                if excludedTraversalNames.contains(name) { skipDescendants = true; return }
+                if excludedTraversalNames.contains(name) && !exactArtifactNames.contains(name) {
+                    skipDescendants = true
+                    return
+                }
                 guard exactArtifactNames.contains(name) || name.hasPrefix("cmake-build-") else { return }
                 skipDescendants = true
                 guard !context.isIgnored(url) else { return }
@@ -389,7 +400,6 @@ struct ProjectArtifactScanner: CleanupScanner {
         case "node_modules": return "Restore with the project's npm/Yarn/pnpm install command."
         case "Pods": return "Restore with CocoaPods."
         case ".venv", "venv": return "Recreate the Python virtual environment and dependencies."
-        case "target": return "Rust/Cargo or another build system can regenerate this directory."
         case ".build": return "SwiftPM or the project's build system can regenerate this directory."
         default: return "The project's build/dependency tool can regenerate this directory."
         }
@@ -529,6 +539,6 @@ struct IOSBackupScanner: CleanupScanner {
 
 enum CleanupScannerRegistry {
     static var userSpaceScanners: [any CleanupScanner] {
-        [UserCacheScanner(), UserLogScanner(), XcodeCleanupScanner(), DeveloperCacheScanner(), ProjectArtifactScanner(), AIArtifactScanner(), DownloadsScanner(), TrashScanner(), IOSBackupScanner()]
+        [UserCacheScanner(), UserLogScanner(), XcodeCleanupScanner(), DeveloperCacheScanner(), ProjectArtifactScanner(), DeveloperBuildArtifactScanner(), AIArtifactScanner(), DownloadsScanner(), TrashScanner(), IOSBackupScanner()]
     }
 }

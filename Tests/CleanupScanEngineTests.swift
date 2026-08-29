@@ -32,7 +32,7 @@ struct CleanupScanEngineTests {
         let home = root.appendingPathComponent("home", isDirectory: true)
         let projectRoot = home.appendingPathComponent("Projects/fixture", isDirectory: true)
         let duplicatePath = projectRoot.appendingPathComponent(".build", isDirectory: true)
-        let nestedPath = duplicatePath.appendingPathComponent("target", isDirectory: true)
+        let nestedPath = duplicatePath.appendingPathComponent("node_modules", isDirectory: true)
         try fileManager.createDirectory(at: nestedPath, withIntermediateDirectories: true)
         try Data(repeating: 0x42, count: 4096).write(to: duplicatePath.appendingPathComponent("payload"))
         try Data(repeating: 0x24, count: 1024).write(to: nestedPath.appendingPathComponent("payload"))

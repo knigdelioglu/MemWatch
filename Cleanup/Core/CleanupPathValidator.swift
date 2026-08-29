@@ -45,7 +45,7 @@ struct CleanupPathValidator: Sendable {
             return denied(standardized, "Cleanup path is not absolute")
         }
 
-        if Self.protectedRoots.contains(where: { Self.path(path, isEqualToOrDescendantOf: $0) }) {
+        if Self.isProtectedOperatingSystemPath(path) {
             return denied(standardized, "Path is inside a protected operating-system root")
         }
 
@@ -53,7 +53,7 @@ struct CleanupPathValidator: Sendable {
             return denied(standardized, "Path is covered by a cleanup ignore rule")
         }
 
-        guard isInsideAllowedRoot(path: path, rule: rule, context: context) else {
+        guard isInsideAllowedRoot(path: path, candidate: candidate, rule: rule, context: context) else {
             return denied(standardized, "Path is outside the roots allowed by cleanup rule \(rule.id.rawValue)")
         }
 
@@ -77,7 +77,7 @@ struct CleanupPathValidator: Sendable {
             )
         }
 
-        if Self.protectedRoots.contains(where: { Self.path(canonicalURL.path, isEqualToOrDescendantOf: $0) }) {
+        if Self.isProtectedOperatingSystemPath(canonicalURL.path) {
             return CleanupPathValidation(
                 canonicalURL: canonicalURL,
                 identity: fileIdentity,
@@ -102,6 +102,10 @@ struct CleanupPathValidator: Sendable {
         return normalizedCandidate == normalizedRoot || normalizedCandidate.hasPrefix(normalizedRoot + "/")
     }
 
+    static func isProtectedOperatingSystemPath(_ path: String) -> Bool {
+        protectedRoots.contains { Self.path(path, isEqualToOrDescendantOf: $0) }
+    }
+
     static func identity(for url: URL) -> FileIdentity? {
         var info = stat()
         guard lstat(url.path, &info) == 0 else { return nil }
@@ -118,6 +122,7 @@ struct CleanupPathValidator: Sendable {
 
     private func isInsideAllowedRoot(
         path: String,
+        candidate: CleanupCandidate,
         rule: CleanupRule,
         context: CleanupScanContext
     ) -> Bool {
@@ -143,16 +148,21 @@ struct CleanupPathValidator: Sendable {
             broadlyAllowed = Self.allowedPrivateVarRoots.contains { Self.strictlyInside(path, root: $0) }
 
         case .projectRoots:
-            broadlyAllowed = context.projectRoots.contains { Self.strictlyInside(path, root: $0.path) }
+            if rule.id.rawValue == "project.rust.target.verified" {
+                broadlyAllowed = Self.isVerifiedCargoTargetAllowed(path: path, candidate: candidate, context: context)
+            } else {
+                broadlyAllowed = context.projectRoots.contains { Self.strictlyInside(path, root: $0.path) }
+            }
 
         case .requestedRoots:
             broadlyAllowed = context.requestedRoots.contains { Self.strictlyInside(path, root: $0.path) }
         }
-        return broadlyAllowed && Self.isApprovedRuleTarget(path: path, rule: rule, context: context)
+        return broadlyAllowed && Self.isApprovedRuleTarget(path: path, candidate: candidate, rule: rule, context: context)
     }
 
     private static func isApprovedRuleTarget(
         path: String,
+        candidate: CleanupCandidate,
         rule: CleanupRule,
         context: CleanupScanContext
     ) -> Bool {
@@ -243,9 +253,12 @@ struct CleanupPathValidator: Sendable {
             return roots.contains { Self.isExact(path, $0) }
 
         case "project.artifact":
-            let names: Set<String> = ["node_modules", ".next", ".nuxt", ".turbo", "dist", "build", "target", ".build", ".venv", "venv", "__pycache__", "Pods", "vendor", ".gradle", ".dart_tool"]
+            let names: Set<String> = ["node_modules", ".next", ".nuxt", ".turbo", "dist", "build", ".build", ".venv", "venv", "__pycache__", "Pods", "vendor", ".gradle", ".dart_tool"]
             let name = URL(fileURLWithPath: path).lastPathComponent
             return names.contains(name) || name.hasPrefix("cmake-build-")
+
+        case "project.rust.target.verified":
+            return Self.isVerifiedCargoTargetAllowed(path: path, candidate: candidate, context: context)
 
         case "ai.cache":
             return Self.isExact(path, context.homeDirectory.appendingPathComponent(".cache/huggingface/hub/.locks", isDirectory: true).path)
@@ -282,6 +295,62 @@ struct CleanupPathValidator: Sendable {
         default:
             return true
         }
+    }
+
+    private static func isVerifiedCargoTargetAllowed(
+        path: String,
+        candidate: CleanupCandidate,
+        context: CleanupScanContext
+    ) -> Bool {
+        guard let verification = candidate.cargoTargetVerification,
+              normalizedPath(path) == normalizedPath(verification.targetDirectory.path),
+              !verification.manifestURLs.isEmpty,
+              !verification.workspaceRoots.isEmpty else {
+            return false
+        }
+
+        let discoveredUnderConfiguredRoot = verification.manifestURLs.allSatisfy { manifest in
+            guard manifest.lastPathComponent == "Cargo.toml" else { return false }
+            let manifestDirectory = manifest.deletingLastPathComponent().path
+            return context.projectRoots.contains { projectRoot in
+                Self.path(manifestDirectory, isEqualToOrDescendantOf: projectRoot.path)
+            }
+        }
+        guard discoveredUnderConfiguredRoot else { return false }
+
+        let manifestsBelongToWorkspace = verification.manifestURLs.allSatisfy { manifest in
+            let manifestDirectory = manifest.deletingLastPathComponent().path
+            return verification.workspaceRoots.contains { workspaceRoot in
+                Self.path(manifestDirectory, isEqualToOrDescendantOf: workspaceRoot.path)
+            }
+        }
+        guard manifestsBelongToWorkspace else { return false }
+        guard !isStructuralCargoTarget(path, verification: verification, context: context) else { return false }
+
+        return true
+    }
+
+    private static func isStructuralCargoTarget(
+        _ path: String,
+        verification: CargoTargetVerification,
+        context: CleanupScanContext
+    ) -> Bool {
+        let normalized = normalizedPath(path)
+        if normalized == "/" || normalized == normalizedPath(context.homeDirectory.path) {
+            return true
+        }
+
+        let configuredRoots = context.projectRoots.map { $0.path }
+        let workspaceRoots = verification.workspaceRoots.map { $0.path }
+        if (configuredRoots + workspaceRoots).contains(where: { normalized == normalizedPath($0) }) {
+            return true
+        }
+
+        let mountedVolumes = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: nil,
+            options: []
+        ) ?? []
+        return mountedVolumes.contains { normalized == normalizedPath($0.path) }
     }
 
     private static func isNamedContainerTarget(

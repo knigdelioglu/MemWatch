@@ -77,6 +77,39 @@ struct CleanupRequirements: OptionSet, Codable, Sendable {
     static let privilegedHelper = CleanupRequirements(rawValue: 1 << 1)
     static let applicationInactive = CleanupRequirements(rawValue: 1 << 2)
     static let explicitConfirmation = CleanupRequirements(rawValue: 1 << 3)
+    static let buildInactive = CleanupRequirements(rawValue: 1 << 4)
+}
+
+struct CargoTargetVerification: Equatable, Sendable {
+    let manifestURLs: [URL]
+    let workspaceRoots: [URL]
+    let targetDirectory: URL
+
+    init(manifestURLs: [URL], workspaceRoots: [URL], targetDirectory: URL) {
+        self.manifestURLs = Self.uniqueStandardizedURLs(manifestURLs)
+        self.workspaceRoots = Self.uniqueStandardizedURLs(workspaceRoots)
+        self.targetDirectory = targetDirectory.standardizedFileURL
+    }
+
+    var isSharedTarget: Bool {
+        workspaceRoots.count > 1
+    }
+
+    var isInsideWorkspace: Bool {
+        workspaceRoots.contains { workspaceRoot in
+            let workspacePath = workspaceRoot.path
+            let targetPath = targetDirectory.path
+            return targetPath != workspacePath && CleanupPathValidator.path(targetPath, isEqualToOrDescendantOf: workspacePath)
+        }
+    }
+
+    private static func uniqueStandardizedURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return urls
+            .map { $0.standardizedFileURL }
+            .sorted { $0.path < $1.path }
+            .filter { seen.insert($0.path).inserted }
+    }
 }
 
 struct FileIdentity: Equatable, Codable, Sendable {
@@ -127,6 +160,7 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
     let regenerationHint: String?
     let identity: FileIdentity?
     let policyNotes: [String]
+    let cargoTargetVerification: CargoTargetVerification?
 
     init(
         id: UUID = UUID(),
@@ -146,7 +180,8 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
         reason: String,
         regenerationHint: String? = nil,
         identity: FileIdentity? = nil,
-        policyNotes: [String] = []
+        policyNotes: [String] = [],
+        cargoTargetVerification: CargoTargetVerification? = nil
     ) {
         self.id = id
         self.scannerID = scannerID
@@ -166,6 +201,7 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
         self.regenerationHint = regenerationHint
         self.identity = identity
         self.policyNotes = policyNotes
+        self.cargoTargetVerification = cargoTargetVerification
     }
 
     var isPotentiallyDeletable: Bool {
@@ -177,7 +213,8 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
         deletionMode: CleanupDeletionMode? = nil,
         requirements: CleanupRequirements? = nil,
         identity: FileIdentity? = nil,
-        policyNotes: [String]? = nil
+        policyNotes: [String]? = nil,
+        cargoTargetVerification: CargoTargetVerification? = nil
     ) -> CleanupCandidate {
         CleanupCandidate(
             id: id,
@@ -197,7 +234,8 @@ struct CleanupCandidate: Identifiable, Equatable, Sendable {
             reason: reason,
             regenerationHint: regenerationHint,
             identity: identity ?? self.identity,
-            policyNotes: policyNotes ?? self.policyNotes
+            policyNotes: policyNotes ?? self.policyNotes,
+            cargoTargetVerification: cargoTargetVerification ?? self.cargoTargetVerification
         )
     }
 }

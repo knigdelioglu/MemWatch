@@ -65,6 +65,7 @@ struct CleanupRuleCatalog: Sendable {
         CleanupRule(id: "developer.cache", category: .developer, rootPolicy: .userHome, defaultSafety: .safe, deletionMode: .permanent, description: "Regenerable developer-tool cache"),
         CleanupRule(id: "developer.store", category: .developer, rootPolicy: .userHome, defaultSafety: .review, deletionMode: .permanent, requirements: [.explicitConfirmation], description: "Regenerable package/dependency store whose deletion can require a substantial re-download"),
         CleanupRule(id: "project.artifact", category: .projectArtifacts, rootPolicy: .projectRoots, defaultSafety: .review, deletionMode: .permanent, requirements: [.explicitConfirmation], description: "Regenerable project dependency or build artifact"),
+        CleanupRule(id: "project.rust.target.verified", category: .projectArtifacts, rootPolicy: .projectRoots, defaultSafety: .safe, deletionMode: .permanent, requirements: [.explicitConfirmation, .buildInactive], description: "Cargo-verified regenerable Rust build artifacts"),
 
         CleanupRule(id: "ai.cache", category: .aiArtifacts, rootPolicy: .userHome, defaultSafety: .safe, deletionMode: .permanent, description: "AI tool cache that is not a model weight or user data"),
         CleanupRule(id: "ai.temp", category: .aiArtifacts, rootPolicy: .userHome, defaultSafety: .review, deletionMode: .permanent, requirements: [.explicitConfirmation], description: "Incomplete or temporary AI-tool download/generation data"),

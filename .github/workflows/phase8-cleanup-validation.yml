@@ -25,6 +25,10 @@ jobs:
             Cleanup/Core/CleanupRuleCatalog.swift \
             Cleanup/Core/CleanupPathValidator.swift \
             Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
             Cleanup/Core/CleanupFileSizer.swift \
             Tests/CleanupScannerFixtureTests.swift \
             -framework AppKit \
@@ -33,6 +37,28 @@ jobs:
             -framework CoreGraphics \
             -o /tmp/memwatch-cleanup-fixture-tests
           /tmp/memwatch-cleanup-fixture-tests
+
+      - name: Run Cargo build artifact verification tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Tests/DeveloperBuildArtifactTests.swift \
+            -framework AppKit \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Vision \
+            -o /tmp/memwatch-cargo-artifact-tests
+          /tmp/memwatch-cargo-artifact-tests
 
       - name: Run cleanup cancellation tests
         run: |
@@ -43,6 +69,10 @@ jobs:
             Cleanup/Core/CleanupPathValidator.swift \
             Cleanup/Core/CleanupSafetyEngine.swift \
             Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
             Cleanup/Core/CleanupFileSizer.swift \
             Cleanup/Core/CleanupScanEngine.swift \
             Tests/CleanupCancellationTests.swift \
