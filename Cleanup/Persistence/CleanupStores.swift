@@ -70,10 +70,12 @@ struct CleanupScanPolicy: Sendable {
         }
 
         if let identifier = Self.applicationIdentifier(for: candidate) {
+            let normalizedIdentifier = identifier.lowercased()
             return ignoredApplicationIdentifiers.contains { ignored in
-                identifier == ignored ||
-                    identifier.hasPrefix(ignored + ".") ||
-                    ignored.hasPrefix(identifier + ".")
+                let normalizedIgnored = ignored.lowercased()
+                return normalizedIdentifier == normalizedIgnored ||
+                    normalizedIdentifier.hasPrefix(normalizedIgnored + ".") ||
+                    normalizedIgnored.hasPrefix(normalizedIdentifier + ".")
             }
         }
         return false
@@ -82,10 +84,17 @@ struct CleanupScanPolicy: Sendable {
     static func applicationIdentifier(for candidate: CleanupCandidate) -> String? {
         for prefix in ["System orphan: ", "Orphan: "] where candidate.displayName.hasPrefix(prefix) {
             let value = String(candidate.displayName.dropFirst(prefix.count))
-            if looksLikeBundleIdentifier(value) { return normalizedIdentifier(value) }
+            if looksLikeBundleIdentifier(value) { return normalizedIdentifier(value).lowercased() }
         }
 
         let components = candidate.url.standardizedFileURL.pathComponents
+        let path = candidate.url.standardizedFileURL.path
+        if path.contains("/Library/Application Support/Code/") {
+            return "com.microsoft.vscode"
+        }
+        if path.contains("/Library/Caches/JetBrains") {
+            return "com.jetbrains"
+        }
         let markers: [[String]] = [
             ["Library", "Caches"],
             ["Library", "Containers"],
@@ -104,7 +113,7 @@ struct CleanupScanPolicy: Sendable {
                 value.removeLast(suffix.count)
             }
             value = normalizedIdentifier(value)
-            if looksLikeBundleIdentifier(value) { return value }
+            if looksLikeBundleIdentifier(value) { return value.lowercased() }
         }
         return nil
     }
@@ -131,7 +140,22 @@ struct CleanupScanPolicy: Sendable {
 
 struct CleanupIgnoreSnapshot: Sendable {
     let pathValues: Set<String>
+    let exactPathValues: Set<String>
     let policy: CleanupScanPolicy
+}
+
+enum CleanupPersistenceError: LocalizedError, Equatable {
+    case unreadable(URL)
+    case malformed(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadable(let url):
+            return "Cleanup state could not be read safely: \(url.path)"
+        case .malformed(let url):
+            return "Cleanup state is malformed and was not applied: \(url.path)"
+        }
+    }
 }
 
 actor CleanupIgnoreStore {
@@ -141,13 +165,14 @@ actor CleanupIgnoreStore {
         self.fileURL = fileURL
     }
 
-    func load() -> [CleanupIgnoreRule] {
-        Self.read([CleanupIgnoreRule].self, from: fileURL) ?? []
+    func load() throws -> [CleanupIgnoreRule] {
+        try Self.read([CleanupIgnoreRule].self, from: fileURL)
     }
 
-    func snapshot() -> CleanupIgnoreSnapshot {
-        let rules = load()
+    func snapshot() throws -> CleanupIgnoreSnapshot {
+        let rules = try load()
         var paths = Set<String>()
+        var exactPaths = Set<String>()
         var projects = Set<String>()
         var applications = Set<String>()
         var ruleIDs = Set<CleanupRuleID>()
@@ -155,25 +180,41 @@ actor CleanupIgnoreStore {
         var scanners = Set<CleanupScannerID>()
 
         for rule in rules {
+            guard !rule.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CleanupPersistenceError.malformed(fileURL)
+            }
             switch rule.kind {
             case .path:
-                paths.insert(URL(fileURLWithPath: rule.value).standardizedFileURL.path)
-            case .project:
+                guard rule.value.hasPrefix("/") else { throw CleanupPersistenceError.malformed(fileURL) }
                 let path = URL(fileURLWithPath: rule.value).standardizedFileURL.path
-                paths.insert(path)
+                guard path.hasPrefix("/") else { throw CleanupPersistenceError.malformed(fileURL) }
+                if rule.recursive { paths.insert(path) }
+                else { exactPaths.insert(path) }
+            case .project:
+                guard rule.value.hasPrefix("/") else { throw CleanupPersistenceError.malformed(fileURL) }
+                let path = URL(fileURLWithPath: rule.value).standardizedFileURL.path
+                guard path.hasPrefix("/") else { throw CleanupPersistenceError.malformed(fileURL) }
                 projects.insert(path)
             case .application:
-                applications.insert(rule.value)
+                let identifier = rule.value.lowercased()
+                guard Self.looksLikeBundleIdentifier(identifier) else {
+                    throw CleanupPersistenceError.malformed(fileURL)
+                }
+                applications.insert(identifier)
             case .rule:
                 ruleIDs.insert(CleanupRuleID(rawValue: rule.value))
             case .category:
-                if let category = CleanupCategory(rawValue: rule.value) { categories.insert(category) }
+                guard let category = CleanupCategory(rawValue: rule.value) else {
+                    throw CleanupPersistenceError.malformed(fileURL)
+                }
+                categories.insert(category)
             case .scanner:
                 scanners.insert(CleanupScannerID(rawValue: rule.value))
             }
         }
         return CleanupIgnoreSnapshot(
             pathValues: paths,
+            exactPathValues: exactPaths,
             policy: CleanupScanPolicy(
                 ignoredRuleIDs: ruleIDs,
                 ignoredCategories: categories,
@@ -184,9 +225,16 @@ actor CleanupIgnoreStore {
         )
     }
 
+    private static func looksLikeBundleIdentifier(_ value: String) -> Bool {
+        let components = value.split(separator: ".")
+        return components.count >= 2 && components.allSatisfy {
+            !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        }
+    }
+
     @discardableResult
     func add(_ rule: CleanupIgnoreRule) throws -> [CleanupIgnoreRule] {
-        var rules = load()
+        var rules = try load()
         if !rules.contains(where: { $0.kind == rule.kind && $0.value == rule.value }) {
             rules.append(rule)
         }
@@ -196,7 +244,7 @@ actor CleanupIgnoreStore {
 
     @discardableResult
     func remove(id: UUID) throws -> [CleanupIgnoreRule] {
-        var rules = load()
+        var rules = try load()
         rules.removeAll { $0.id == id }
         try save(rules)
         return rules
@@ -206,9 +254,21 @@ actor CleanupIgnoreStore {
         try Self.write(rules, to: fileURL)
     }
 
-    private static func read<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder.memWatchCleanup.decode(type, from: data)
+    private static func read<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return try JSONDecoder.memWatchCleanup.decode(type, from: Data("[]".utf8))
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw CleanupPersistenceError.unreadable(url)
+        }
+        do {
+            return try JSONDecoder.memWatchCleanup.decode(type, from: data)
+        } catch {
+            throw CleanupPersistenceError.malformed(url)
+        }
     }
 
     private static func write<T: Encodable>(_ value: T, to url: URL) throws {
@@ -222,24 +282,28 @@ struct CleanupHistoryEntry: Identifiable, Codable, Sendable {
     let id: UUID
     let timestamp: Date
     let mode: CleanupExecutionMode
+    let outcome: CleanupExecutionOutcome
     let requestedCount: Int
     let successfulCount: Int
     let failedCount: Int
     let reclaimedBytes: UInt64
     let movedToTrashBytes: UInt64
     let observedFreeSpaceDeltaBytes: UInt64?
+    let reclaimVerification: CleanupReclaimVerification
     let results: [CleanupExecutionItemResult]
 
     private enum CodingKeys: String, CodingKey {
         case id
         case timestamp
         case mode
+        case outcome
         case requestedCount
         case successfulCount
         case failedCount
         case reclaimedBytes
         case movedToTrashBytes
         case observedFreeSpaceDeltaBytes
+        case reclaimVerification
         case results
     }
 
@@ -258,12 +322,14 @@ struct CleanupHistoryEntry: Identifiable, Codable, Sendable {
         id = report.id
         timestamp = report.finishedAt
         mode = report.mode
-        requestedCount = report.results.count
+        outcome = report.outcome
+        requestedCount = report.requestedCount
         successfulCount = report.successfulCount
         failedCount = report.failureCount
         reclaimedBytes = report.reclaimedBytes
         movedToTrashBytes = report.movedToTrashBytes
         observedFreeSpaceDeltaBytes = report.observedFreeSpaceDeltaBytes
+        reclaimVerification = report.reclaimVerification
         results = report.results
     }
 
@@ -272,6 +338,7 @@ struct CleanupHistoryEntry: Identifiable, Codable, Sendable {
         id = try container.decode(UUID.self, forKey: .id)
         timestamp = try container.decode(Date.self, forKey: .timestamp)
         mode = try container.decode(CleanupExecutionMode.self, forKey: .mode)
+        outcome = try container.decodeIfPresent(CleanupExecutionOutcome.self, forKey: .outcome) ?? .completed
         requestedCount = try container.decode(Int.self, forKey: .requestedCount)
         successfulCount = try container.decode(Int.self, forKey: .successfulCount)
         failedCount = try container.decode(Int.self, forKey: .failedCount)
@@ -310,6 +377,8 @@ struct CleanupHistoryEntry: Identifiable, Codable, Sendable {
                 return overflow ? UInt64.max : value
             }
         observedFreeSpaceDeltaBytes = try container.decodeIfPresent(UInt64.self, forKey: .observedFreeSpaceDeltaBytes)
+        reclaimVerification = try container.decodeIfPresent(CleanupReclaimVerification.self, forKey: .reclaimVerification)
+            ?? (mode == .apply ? .unavailable : .notMeasured)
     }
 }
 
@@ -322,17 +391,27 @@ actor CleanupHistoryStore {
         self.limit = max(1, limit)
     }
 
-    func load() -> [CleanupHistoryEntry] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let entries = try? JSONDecoder.memWatchCleanup.decode([CleanupHistoryEntry].self, from: data) else {
+    func load() throws -> [CleanupHistoryEntry] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return []
         }
-        return entries.sorted { $0.timestamp > $1.timestamp }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw CleanupPersistenceError.unreadable(fileURL)
+        }
+        do {
+            let entries = try JSONDecoder.memWatchCleanup.decode([CleanupHistoryEntry].self, from: data)
+            return entries.sorted { $0.timestamp > $1.timestamp }
+        } catch {
+            throw CleanupPersistenceError.malformed(fileURL)
+        }
     }
 
     @discardableResult
     func append(report: CleanupExecutionReport) throws -> [CleanupHistoryEntry] {
-        var entries = load()
+        var entries = try load()
         entries.insert(CleanupHistoryEntry(report: report), at: 0)
         if entries.count > limit {
             entries.removeLast(entries.count - limit)
@@ -378,6 +457,16 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
         )
     }
 
+    static func disabled() -> CleanupPreferences {
+        CleanupPreferences(
+            requestedRootPaths: [],
+            projectRootPaths: [],
+            cleanupEnabled: false,
+            privilegedOperationsEnabled: false,
+            privateBackendEnabled: false
+        )
+    }
+
     init(
         requestedRootPaths: [String],
         projectRootPaths: [String],
@@ -395,11 +484,23 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = CleanupPreferences.defaults()
-        requestedRootPaths = try container.decodeIfPresent([String].self, forKey: .requestedRootPaths) ?? defaults.requestedRootPaths
-        projectRootPaths = try container.decodeIfPresent([String].self, forKey: .projectRootPaths) ?? defaults.projectRootPaths
-        cleanupEnabled = try container.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? true
-        privilegedOperationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .privilegedOperationsEnabled) ?? true
-        privateBackendEnabled = try container.decodeIfPresent(Bool.self, forKey: .privateBackendEnabled) ?? true
+        let requested = try container.decodeIfPresent([String].self, forKey: .requestedRootPaths)
+        let projects = try container.decodeIfPresent([String].self, forKey: .projectRootPaths)
+        let cleanup = try container.decodeIfPresent(Bool.self, forKey: .cleanupEnabled)
+        let privileged = try container.decodeIfPresent(Bool.self, forKey: .privilegedOperationsEnabled)
+        let privateBackend = try container.decodeIfPresent(Bool.self, forKey: .privateBackendEnabled)
+        guard requested != nil && projects != nil else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .cleanupEnabled,
+                in: container,
+                debugDescription: "Cleanup preferences do not contain both configured root lists"
+            )
+        }
+        requestedRootPaths = requested ?? defaults.requestedRootPaths
+        projectRootPaths = projects ?? defaults.projectRootPaths
+        cleanupEnabled = cleanup ?? true
+        privilegedOperationsEnabled = privileged ?? true
+        privateBackendEnabled = privateBackend ?? true
     }
 }
 
@@ -410,18 +511,41 @@ actor CleanupPreferencesStore {
         self.fileURL = fileURL
     }
 
-    func load() -> CleanupPreferences {
-        guard let data = try? Data(contentsOf: fileURL),
-              let value = try? JSONDecoder.memWatchCleanup.decode(CleanupPreferences.self, from: data) else {
+    func load() throws -> CleanupPreferences {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return .defaults()
         }
-        return value
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw CleanupPersistenceError.unreadable(fileURL)
+        }
+        do {
+            let value = try JSONDecoder.memWatchCleanup.decode(CleanupPreferences.self, from: data)
+            guard value.requestedRootPaths.allSatisfy(Self.isAbsolutePath),
+                  value.projectRootPaths.allSatisfy(Self.isAbsolutePath) else {
+                throw CleanupPersistenceError.malformed(fileURL)
+            }
+            return value
+        } catch {
+            if let error = error as? CleanupPersistenceError { throw error }
+            throw CleanupPersistenceError.malformed(fileURL)
+        }
     }
 
     func save(_ preferences: CleanupPreferences) throws {
+        guard preferences.requestedRootPaths.allSatisfy(Self.isAbsolutePath),
+              preferences.projectRootPaths.allSatisfy(Self.isAbsolutePath) else {
+            throw CleanupPersistenceError.malformed(fileURL)
+        }
         try CleanupPersistencePaths.ensureDirectory()
         let data = try JSONEncoder.memWatchCleanup.encode(preferences)
         try data.write(to: fileURL, options: [.atomic])
+    }
+
+    private static func isAbsolutePath(_ path: String) -> Bool {
+        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && path.hasPrefix("/")
     }
 }
 

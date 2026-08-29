@@ -20,26 +20,12 @@ func SecCodeCopySigningInformation(
     return Security.SecCodeCopySigningInformation(staticCode, flags, information)
 }
 
-@inline(__always)
-func SecCodeCopyPath(
-    _ code: SecCode,
-    _ flags: SecCSFlags,
-    _ path: UnsafeMutablePointer<CFURL?>
-) -> OSStatus {
-    var staticCode: SecStaticCode?
-    let conversionStatus = Security.SecCodeCopyStaticCode(code, [], &staticCode)
-    guard conversionStatus == errSecSuccess, let staticCode else {
-        return conversionStatus
-    }
-    return Security.SecCodeCopyPath(staticCode, flags, path)
-}
-
 enum MemWatchPrivilegedHelperConstants {
     static let daemonPlistName = "com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
     static let daemonLabel = "com.knigdelioglu.MemWatch.PrivilegedHelper"
     static let machServiceName = "com.knigdelioglu.MemWatch.PrivilegedHelper"
     static let mainAppBundleIdentifier = "com.knigdelioglu.MemWatch"
-    static let protocolVersion = 1
+    static let protocolVersion = 2
 }
 
 enum PrivilegedOperationKind: String, Codable, Sendable {
@@ -52,6 +38,24 @@ struct PrivilegedFileIdentity: Codable, Equatable, Sendable {
     let inode: UInt64
     let ownerUID: UInt32
     let mode: UInt32
+    let sizeBytes: UInt64?
+    let modificationTimeNanoseconds: Int64?
+
+    init(
+        deviceID: UInt64,
+        inode: UInt64,
+        ownerUID: UInt32,
+        mode: UInt32,
+        sizeBytes: UInt64? = nil,
+        modificationTimeNanoseconds: Int64? = nil
+    ) {
+        self.deviceID = deviceID
+        self.inode = inode
+        self.ownerUID = ownerUID
+        self.mode = mode
+        self.sizeBytes = sizeBytes
+        self.modificationTimeNanoseconds = modificationTimeNanoseconds
+    }
 }
 
 struct PrivilegedOperationRequest: Codable, Sendable {
@@ -107,10 +111,12 @@ struct PrivilegedOperationResponse: Codable, Sendable {
 
 struct PrivilegedScanRequest: Codable, Sendable {
     let protocolVersion: Int
+    let requestID: UUID
     let ruleIDs: [String]
 
-    init(ruleIDs: [String]) {
+    init(requestID: UUID = UUID(), ruleIDs: [String]) {
         self.protocolVersion = MemWatchPrivilegedHelperConstants.protocolVersion
+        self.requestID = requestID
         self.ruleIDs = ruleIDs
     }
 }
@@ -131,11 +137,13 @@ struct PrivilegedScannedItem: Codable, Sendable {
 
 struct PrivilegedScanResponse: Codable, Sendable {
     let protocolVersion: Int
+    let requestID: UUID
     let items: [PrivilegedScannedItem]
     let issues: [String]
 
-    init(items: [PrivilegedScannedItem], issues: [String] = []) {
+    init(requestID: UUID, items: [PrivilegedScannedItem], issues: [String] = []) {
         self.protocolVersion = MemWatchPrivilegedHelperConstants.protocolVersion
+        self.requestID = requestID
         self.items = items
         self.issues = issues
     }

@@ -24,6 +24,7 @@ final class CleanupCoordinator: ObservableObject {
     @Published private(set) var storageSpaceIntelligence: StorageSpaceIntelligence? = .startupVolume()
     @Published private(set) var backendCapabilities: [CleanupBackendCapability] = CleanupBackendCatalog.current(privateBackendsEnabled: true)
     @Published private(set) var applicationActionFeedback: String?
+    @Published private(set) var snapshotError: String?
     @Published private(set) var excludedApplicationIDs = Set<String>()
     @Published var selectedIDs = Set<UUID>()
 
@@ -42,6 +43,7 @@ final class CleanupCoordinator: ObservableObject {
     private var applicationActionTask: Task<Void, Never>?
     private var lastContext: CleanupScanContext?
     private let activityGuard = CleanupActivityGuard()
+    private var operationGeneration = 0
 
     init() {
         Task { [weak self] in
@@ -61,6 +63,8 @@ final class CleanupCoordinator: ObservableObject {
         case .idle, .ready, .failed: return false
         }
     }
+
+    var isReady: Bool { phase == .ready }
 
     var safeItems: [CleanupCandidate] {
         scanResult?.items.filter { $0.safety == .safe && $0.isPotentiallyDeletable } ?? []
@@ -111,10 +115,14 @@ final class CleanupCoordinator: ObservableObject {
 
     func startScan() {
         scanTask?.cancel()
+        executionTask?.cancel()
         applicationActionTask?.cancel()
         excludedApplicationIDs.removeAll()
+        operationGeneration &+= 1
+        let generation = operationGeneration
+        phase = .scanning
         scanTask = Task { [weak self] in
-            await self?.runScan()
+            await self?.runScan(generation: generation)
         }
     }
 
@@ -122,10 +130,12 @@ final class CleanupCoordinator: ObservableObject {
         scanTask?.cancel()
         executionTask?.cancel()
         applicationActionTask?.cancel()
+        phase = scanResult == nil ? .idle : .ready
     }
 
     func toggleSelection(_ candidate: CleanupCandidate) {
         guard preferences.cleanupEnabled,
+              isReady,
               candidate.safety != .protected,
               candidate.isPotentiallyDeletable,
               !isExcludedFromAutomaticCleanup(candidate) else { return }
@@ -137,11 +147,12 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func selectAllReviewItems() {
-        guard preferences.cleanupEnabled else { return }
-        selectedIDs.formUnion(reviewItems.map(\.id))
+        guard preferences.cleanupEnabled, isReady else { return }
+        selectedIDs.formUnion(reviewItems.filter { !isExcludedFromAutomaticCleanup($0) }.map(\.id))
     }
 
     func clearSelection() {
+        guard !isBusy else { return }
         selectedIDs.removeAll()
     }
 
@@ -155,7 +166,7 @@ final class CleanupCoordinator: ObservableObject {
         var grouped: [String: Accumulator] = [:]
         for item in automaticSafeCandidates {
             guard let name = activityGuard.activeApplicationName(for: item) else { continue }
-            let id = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let id = applicationCleanupIdentifier(for: item) ?? name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard !id.isEmpty else { continue }
 
             var accumulator = grouped[id] ?? Accumulator(name: name)
@@ -190,8 +201,7 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func isExcludedFromAutomaticCleanup(_ candidate: CleanupCandidate) -> Bool {
-        guard let name = activityGuard.activeApplicationName(for: candidate) else { return false }
-        let id = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let id = applicationCleanupIdentifier(for: candidate) else { return false }
         return excludedApplicationIDs.contains(id)
     }
 
@@ -204,12 +214,17 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func closeApplication(for candidate: CleanupCandidate) {
-        guard canRequestApplicationClose(for: candidate) else { return }
+        guard isReady, canRequestApplicationClose(for: candidate) else { return }
 
         switch activityGuard.requestTermination(for: candidate) {
         case .terminationRequested(let name):
             applicationActionFeedback = "\(name) için kapatma isteği gönderildi. Kaydedilmemiş değişiklikler varsa macOS onay isteyebilir."
+            operationGeneration &+= 1
+            let generation = operationGeneration
+            scanTask?.cancel()
+            executionTask?.cancel()
             applicationActionTask?.cancel()
+            phase = .scanning
             applicationActionTask = Task { [weak self] in
                 do {
                     try await Task.sleep(nanoseconds: 700_000_000)
@@ -217,7 +232,7 @@ final class CleanupCoordinator: ObservableObject {
                     return
                 }
                 guard !Task.isCancelled, let self else { return }
-                await self.runScan()
+                await self.runScan(generation: generation)
             }
         case .terminationRejected(let name):
             applicationActionFeedback = "\(name) kapatılamadı. Uygulamayı kendiniz kapatıp Yeniden Tara'yı seçin."
@@ -228,28 +243,28 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func dryRunSelected() {
-        guard preferences.cleanupEnabled else { return }
+        guard preferences.cleanupEnabled, isReady else { return }
         let items = selectedItems
         guard !items.isEmpty else { return }
         execute(items: items, mode: .dryRun, confirmedIDs: Set(items.map(\.id)))
     }
 
     func cleanSelectedConfirmed() {
-        guard preferences.cleanupEnabled else { return }
+        guard preferences.cleanupEnabled, isReady else { return }
         let items = selectedItems
         guard !items.isEmpty else { return }
         execute(items: items, mode: .apply, confirmedIDs: Set(items.map(\.id)))
     }
 
     func cleanSafeItemsConfirmed() {
-        guard preferences.cleanupEnabled else { return }
+        guard preferences.cleanupEnabled, isReady else { return }
         let items = automaticSafeItems
         guard !items.isEmpty else { return }
         execute(items: items, mode: .apply, confirmedIDs: [])
     }
 
     func dryRunSafeItems() {
-        guard preferences.cleanupEnabled else { return }
+        guard preferences.cleanupEnabled, isReady else { return }
         let items = automaticSafeItems
         guard !items.isEmpty else { return }
         execute(items: items, mode: .dryRun, confirmedIDs: [])
@@ -286,13 +301,21 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     func removeIgnore(_ rule: CleanupIgnoreRule) {
+        guard !isBusy else { return }
+        operationGeneration &+= 1
+        let generation = operationGeneration
+        scanTask?.cancel()
+        executionTask?.cancel()
+        applicationActionTask?.cancel()
         Task { [weak self] in
             guard let self else { return }
             do {
                 let updated = try await ignoreStore.remove(id: rule.id)
+                guard self.operationGeneration == generation else { return }
                 self.ignoreRules = updated
-                await self.runScan()
+                await self.runScan(generation: generation)
             } catch {
+                guard self.operationGeneration == generation else { return }
                 self.phase = .failed(error.localizedDescription)
             }
         }
@@ -306,7 +329,7 @@ final class CleanupCoordinator: ObservableObject {
             if ok || helperService.state != .requiresApproval {
                 NSApp.activate(ignoringOtherApps: true)
             }
-            if ok { await runScan() }
+            if ok { startScan() }
         }
     }
 
@@ -329,17 +352,56 @@ final class CleanupCoordinator: ObservableObject {
         guard preferences.cleanupEnabled,
               preferences.privilegedOperationsEnabled,
               helperService.isAvailableForCleanup,
+              isReady,
               targetBytes > 0 else { return }
+        scanTask?.cancel()
+        applicationActionTask?.cancel()
+        operationGeneration &+= 1
+        let generation = operationGeneration
         executionTask?.cancel()
         executionTask = Task { [weak self] in
             guard let self else { return }
             self.phase = .executing(.apply)
             do {
-                _ = try await self.timeMachineBackend.thinSnapshots(targetBytes: targetBytes)
+                let before = self.startupVolumeAvailableBytes()
+                let startedAt = Date()
+                let response = try await self.timeMachineBackend.thinSnapshots(targetBytes: targetBytes)
+                guard !Task.isCancelled, self.operationGeneration == generation else { return }
+                let after = self.startupVolumeAvailableBytes()
+                let verification: CleanupReclaimVerification
+                if let before, let after {
+                    verification = after > before ? .verified : .noNetIncrease
+                } else {
+                    verification = .unavailable
+                }
+                let result = CleanupExecutionItemResult(
+                    candidateID: UUID(),
+                    ruleID: "timemachine.snapshot",
+                    path: "tmutil://local-snapshots",
+                    displayName: "Time Machine local snapshots",
+                    status: .maintenanceCompleted,
+                    affectedBytes: targetBytes,
+                    reclaimedBytes: response.reclaimedBytes,
+                    message: response.message
+                )
+                let report = CleanupExecutionReport(
+                    startedAt: startedAt,
+                    finishedAt: Date(),
+                    mode: .apply,
+                    results: [result],
+                    requestedCount: 1,
+                    availableBytesBefore: before,
+                    availableBytesAfter: after,
+                    reclaimVerification: verification
+                )
+                self.lastExecution = report
+                self.history = try await self.historyStore.append(report: report)
                 await self.refreshSnapshotsIfAvailable()
                 self.storageSpaceIntelligence = .startupVolume()
-                await self.runScan()
+                guard self.operationGeneration == generation else { return }
+                await self.runScan(generation: generation)
             } catch {
+                guard self.operationGeneration == generation else { return }
                 self.phase = .failed(error.localizedDescription)
             }
         }
@@ -399,29 +461,51 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     private func loadPersistentState() async {
-        let loadedHistory = await historyStore.load()
-        let loadedIgnores = await ignoreStore.load()
-        let loadedPreferences = await preferencesStore.load()
-        history = loadedHistory
-        ignoreRules = loadedIgnores
-        preferences = loadedPreferences
-        backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: loadedPreferences.privateBackendEnabled)
-        storageSpaceIntelligence = .startupVolume()
-        helperService.refreshStatus()
-        if loadedPreferences.privilegedOperationsEnabled {
-            _ = await helperService.verifyConnection()
+        do {
+            let loadedHistory = try await historyStore.load()
+            let loadedIgnores = try await ignoreStore.load()
+            let loadedPreferences = try await preferencesStore.load()
+            history = loadedHistory
+            ignoreRules = loadedIgnores
+            preferences = loadedPreferences
+            backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: loadedPreferences.privateBackendEnabled)
+            storageSpaceIntelligence = .startupVolume()
+            helperService.refreshStatus()
+            if loadedPreferences.privilegedOperationsEnabled {
+                _ = await helperService.verifyConnection()
+            }
+        } catch {
+            preferences = .disabled()
+            scanResult = nil
+            snapshots = []
+            lastContext = nil
+            phase = .failed(error.localizedDescription)
         }
         fullDiskAccessService.refresh()
     }
 
-    private func runScan() async {
+    private func runScan(generation requestedGeneration: Int? = nil) async {
+        let generation = requestedGeneration ?? operationGeneration
+        guard generation == operationGeneration else { return }
         selectedIDs.removeAll()
         storageSpaceIntelligence = .startupVolume()
         fullDiskAccessService.refresh()
         helperService.refreshStatus()
 
-        let ignoreSnapshot = await ignoreStore.snapshot()
-        let currentPreferences = await preferencesStore.load()
+        let ignoreSnapshot: CleanupIgnoreSnapshot
+        let currentPreferences: CleanupPreferences
+        do {
+            ignoreSnapshot = try await ignoreStore.snapshot()
+            currentPreferences = try await preferencesStore.load()
+        } catch {
+            preferences = .disabled()
+            scanResult = nil
+            snapshots = []
+            lastContext = nil
+            phase = .failed(error.localizedDescription)
+            return
+        }
+        guard generation == operationGeneration, !Task.isCancelled else { return }
         preferences = currentPreferences
         backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: currentPreferences.privateBackendEnabled)
 
@@ -438,6 +522,7 @@ final class CleanupCoordinator: ObservableObject {
         if currentPreferences.privilegedOperationsEnabled {
             helperAvailable = await helperService.verifyConnection()
         }
+        guard generation == operationGeneration, !Task.isCancelled else { return }
 
         let effectivePolicy: CleanupScanPolicy
         if currentPreferences.privilegedOperationsEnabled {
@@ -458,6 +543,7 @@ final class CleanupCoordinator: ObservableObject {
             requestedRoots: requestedRoots,
             projectRoots: projectRoots,
             ignoredPaths: ignoreSnapshot.pathValues,
+            ignoredExactPaths: ignoreSnapshot.exactPathValues,
             fullDiskAccessAvailable: fullDiskAccessService.isAvailable,
             privilegedHelperAvailable: helperAvailable
         )
@@ -465,21 +551,24 @@ final class CleanupCoordinator: ObservableObject {
 
         do {
             let result = try await scanEngine.scan(context: context, policy: effectivePolicy) { [weak self] progress in
-                await self?.receiveScanProgress(progress)
+                await self?.receiveScanProgress(progress, generation: generation)
             }
-            if Task.isCancelled { return }
+            guard generation == operationGeneration, !Task.isCancelled else { return }
             scanResult = result
             storageSpaceIntelligence = .startupVolume()
             phase = .ready
             await refreshSnapshotsIfAvailable()
         } catch is CancellationError {
+            guard generation == operationGeneration else { return }
             phase = scanResult == nil ? .idle : .ready
         } catch {
+            guard generation == operationGeneration else { return }
             phase = .failed(error.localizedDescription)
         }
     }
 
-    private func receiveScanProgress(_ progress: CleanupScanProgress) {
+    private func receiveScanProgress(_ progress: CleanupScanProgress, generation: Int) {
+        guard generation == operationGeneration else { return }
         scanProgress = progress
     }
 
@@ -488,19 +577,26 @@ final class CleanupCoordinator: ObservableObject {
         mode: CleanupExecutionMode,
         confirmedIDs: Set<UUID>
     ) {
-        guard preferences.cleanupEnabled, let context = lastContext else { return }
+        guard preferences.cleanupEnabled, isReady, let context = lastContext else { return }
+        scanTask?.cancel()
+        applicationActionTask?.cancel()
+        operationGeneration &+= 1
+        let generation = operationGeneration
         executionTask?.cancel()
         executionTask = Task { [weak self] in
             guard let self else { return }
+            guard self.operationGeneration == generation else { return }
             self.phase = .executing(mode)
             if mode == .apply {
                 await self.prepareApplicationsForCleanup(items)
             }
+            guard !Task.isCancelled, self.operationGeneration == generation else { return }
             await self.performExecution(
                 candidates: items,
                 context: context,
                 mode: mode,
-                explicitlyConfirmedIDs: confirmedIDs
+                explicitlyConfirmedIDs: confirmedIDs,
+                generation: generation
             )
         }
     }
@@ -546,7 +642,8 @@ final class CleanupCoordinator: ObservableObject {
         candidates: [CleanupCandidate],
         context: CleanupScanContext,
         mode: CleanupExecutionMode,
-        explicitlyConfirmedIDs: Set<UUID>
+        explicitlyConfirmedIDs: Set<UUID>,
+        generation: Int
     ) async {
         let report = await deletionEngine.execute(
             candidates: candidates,
@@ -554,6 +651,8 @@ final class CleanupCoordinator: ObservableObject {
             mode: mode,
             explicitlyConfirmedIDs: explicitlyConfirmedIDs
         )
+        guard generation == operationGeneration else { return }
+        guard !Task.isCancelled || report.isCancelled else { return }
         self.lastExecution = report
         do {
             self.history = try await self.historyStore.append(report: report)
@@ -563,7 +662,7 @@ final class CleanupCoordinator: ObservableObject {
         }
 
         self.storageSpaceIntelligence = .startupVolume()
-        if mode == .apply { await self.runScan() }
+        if mode == .apply, !report.isCancelled { await self.runScan(generation: generation) }
         else { self.phase = .ready }
     }
 
@@ -572,37 +671,60 @@ final class CleanupCoordinator: ObservableObject {
               preferences.privilegedOperationsEnabled,
               helperService.isAvailableForCleanup else {
             snapshots = []
+            snapshotError = nil
             return
         }
+        snapshotError = nil
         do { snapshots = try await timeMachineBackend.listSnapshots() }
-        catch { snapshots = [] }
+        catch {
+            snapshots = []
+            snapshotError = error.localizedDescription
+        }
     }
 
     private func addIgnoreAndRescan(_ ignore: CleanupIgnoreRule, removing candidateID: UUID? = nil) {
+        guard !isBusy else { return }
+        operationGeneration &+= 1
+        let generation = operationGeneration
+        scanTask?.cancel()
+        executionTask?.cancel()
+        applicationActionTask?.cancel()
         Task { [weak self] in
             guard let self else { return }
             do {
                 let updated = try await ignoreStore.add(ignore)
+                guard self.operationGeneration == generation else { return }
                 self.ignoreRules = updated
                 if let candidateID { self.selectedIDs.remove(candidateID) }
-                await self.runScan()
+                await self.runScan(generation: generation)
             } catch {
+                guard self.operationGeneration == generation else { return }
                 self.phase = .failed(error.localizedDescription)
             }
         }
     }
 
     private func updatePreferences(_ mutation: (inout CleanupPreferences) -> Void) {
+        let previous = preferences
         var updated = preferences
         mutation(&updated)
         preferences = updated
         backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: updated.privateBackendEnabled)
+        operationGeneration &+= 1
+        let generation = operationGeneration
+        scanTask?.cancel()
+        executionTask?.cancel()
+        applicationActionTask?.cancel()
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await preferencesStore.save(updated)
-                await self.runScan()
+                guard self.operationGeneration == generation else { return }
+                await self.runScan(generation: generation)
             } catch {
+                guard self.operationGeneration == generation else { return }
+                self.preferences = previous
+                self.backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: previous.privateBackendEnabled)
                 self.phase = .failed(error.localizedDescription)
             }
         }
@@ -615,6 +737,24 @@ final class CleanupCoordinator: ObservableObject {
             .max(by: { $0.count < $1.count })
     }
 
+    private func applicationCleanupIdentifier(for candidate: CleanupCandidate) -> String? {
+        if candidate.category == .xcode {
+            return "com.apple.dt.xcode"
+        }
+
+        let path = candidate.url.standardizedFileURL.path
+        if path.contains("/Library/Application Support/Code/") {
+            return "com.microsoft.vscode"
+        }
+        if path.contains("/Library/Caches/JetBrains") {
+            return "com.jetbrains"
+        }
+        if path.contains("/Library/Caches/com.docker.docker") {
+            return "com.docker.docker"
+        }
+        return CleanupScanPolicy.applicationIdentifier(for: candidate)?.lowercased()
+    }
+
     private func existingDirectories(_ paths: [String]) -> [URL] {
         paths.compactMap { path in
             let url = URL(fileURLWithPath: path).standardizedFileURL
@@ -622,6 +762,10 @@ final class CleanupCoordinator: ObservableObject {
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
             return url
         }
+    }
+
+    private func startupVolumeAvailableBytes() -> UInt64? {
+        StorageSpaceIntelligence.startupVolume()?.immediateAvailableBytes
     }
 }
 

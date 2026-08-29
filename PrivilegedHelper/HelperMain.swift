@@ -3,6 +3,19 @@ import Dispatch
 import Foundation
 import Security
 
+private extension CleanupSecureNodeIdentity {
+    init(_ identity: PrivilegedFileIdentity) {
+        self.init(
+            deviceID: identity.deviceID,
+            inode: identity.inode,
+            ownerUID: identity.ownerUID,
+            mode: identity.mode,
+            sizeBytes: identity.sizeBytes,
+            modificationTimeNanoseconds: identity.modificationTimeNanoseconds
+        )
+    }
+}
+
 @main
 struct MemWatchPrivilegedHelperMain {
     static func main() {
@@ -59,10 +72,11 @@ private final class PrivilegedHelperService: NSObject, MemWatchPrivilegedHelperX
             guard request.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion else {
                 throw PrivilegedHelperFailure.protocolMismatch
             }
-            let response = try engine.scan(ruleIDs: request.ruleIDs)
+            let response = try engine.scan(requestID: request.requestID, ruleIDs: request.ruleIDs)
             reply(try JSONEncoder().encode(response))
         } catch {
-            let response = PrivilegedScanResponse(items: [], issues: [error.localizedDescription])
+            let requestID = (try? JSONDecoder().decode(PrivilegedScanRequest.self, from: requestData).requestID) ?? UUID()
+            let response = PrivilegedScanResponse(requestID: requestID, items: [], issues: [error.localizedDescription])
             reply((try? JSONEncoder().encode(response)) ?? Data())
         }
     }
@@ -94,8 +108,18 @@ private struct PrivilegedClientValidator {
     func isAuthorized(_ connection: NSXPCConnection) -> Bool {
         guard let code = guestCode(for: connection) else { return false }
 
+        // A root helper must not fall back to bundle identifier or path checks
+        // for ad-hoc/local builds. Those values can be forged by an unrelated
+        // executable, so require a stable signing identity on both sides.
+        guard let helperCode = selfCode(),
+              let helperInfo = signingInformation(for: helperCode),
+              let helperTeam = helperInfo[kSecCodeInfoTeamIdentifier as String] as? String,
+              !helperTeam.isEmpty else {
+            return false
+        }
+
         var requirement: SecRequirement?
-        let requirementString = "identifier \"\(MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier)\""
+        let requirementString = "identifier \"\(MemWatchPrivilegedHelperConstants.mainAppBundleIdentifier)\" and certificate leaf[subject.OU] = \"\(helperTeam)\""
         guard SecRequirementCreateWithString(
             requirementString as CFString,
             [],
@@ -112,19 +136,8 @@ private struct PrivilegedClientValidator {
             return false
         }
 
-        if let helperCode = selfCode(),
-           let helperInfo = signingInformation(for: helperCode),
-           let helperTeam = helperInfo[kSecCodeInfoTeamIdentifier as String] as? String,
-           !helperTeam.isEmpty {
-            let clientTeam = clientInfo[kSecCodeInfoTeamIdentifier as String] as? String
-            guard clientTeam == helperTeam else { return false }
-        } else {
-            // Local/ad-hoc builds have no Team ID. Keep a second invariant in addition
-            // to the code identifier so a bare PID race is not sufficient.
-            guard let executableURL = codePath(code) else { return false }
-            let suffix = "/MemWatch.app/Contents/MacOS/MemWatch"
-            guard executableURL.path.hasSuffix(suffix) else { return false }
-        }
+        let clientTeam = clientInfo[kSecCodeInfoTeamIdentifier as String] as? String
+        guard clientTeam == helperTeam else { return false }
 
         return true
     }
@@ -186,11 +199,6 @@ private struct PrivilegedClientValidator {
         return code
     }
 
-    private func codePath(_ code: SecCode) -> URL? {
-        var url: CFURL?
-        guard SecCodeCopyPath(code, [], &url) == errSecSuccess, let url else { return nil }
-        return url as URL
-    }
 }
 
 // MARK: - Typed privileged operations
@@ -204,6 +212,7 @@ private enum PrivilegedHelperFailure: LocalizedError {
     case targetTooNew
     case protectedTarget(String)
     case commandFailed(String)
+    case scanFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -223,6 +232,8 @@ private enum PrivilegedHelperFailure: LocalizedError {
             return "Protected target: \(message)"
         case .commandFailed(let message):
             return message
+        case .scanFailed(let message):
+            return "Privileged cleanup scan failed: \(message)"
         }
     }
 }
@@ -233,6 +244,9 @@ private struct PrivilegedRulePolicy {
     let requiresMissingLaunchExecutable: Bool
     let blockAppleNamedItems: Bool
     let privateVarCacheOnly: Bool
+    let requiresDirectChild: Bool
+    let requiresBundleIdentifier: Bool
+    let rejectsDiagnosticReportsDirectory: Bool
 }
 
 private final class PrivilegedOperationEngine {
@@ -244,42 +258,60 @@ private final class PrivilegedOperationEngine {
             minimumAge: nil,
             requiresMissingLaunchExecutable: false,
             blockAppleNamedItems: true,
-            privateVarCacheOnly: false
+            privateVarCacheOnly: false,
+            requiresDirectChild: true,
+            requiresBundleIdentifier: false,
+            rejectsDiagnosticReportsDirectory: false
         ),
         "system.log.old": PrivilegedRulePolicy(
             roots: ["/Library/Logs"],
             minimumAge: 30 * 24 * 60 * 60,
             requiresMissingLaunchExecutable: false,
             blockAppleNamedItems: false,
-            privateVarCacheOnly: false
+            privateVarCacheOnly: false,
+            requiresDirectChild: true,
+            requiresBundleIdentifier: false,
+            rejectsDiagnosticReportsDirectory: true
         ),
         "diagnostic.system.old": PrivilegedRulePolicy(
             roots: ["/Library/Logs/DiagnosticReports"],
             minimumAge: 30 * 24 * 60 * 60,
             requiresMissingLaunchExecutable: false,
             blockAppleNamedItems: false,
-            privateVarCacheOnly: false
+            privateVarCacheOnly: false,
+            requiresDirectChild: true,
+            requiresBundleIdentifier: false,
+            rejectsDiagnosticReportsDirectory: false
         ),
         "application.leftover.system": PrivilegedRulePolicy(
             roots: ["/Library/Application Support", "/Library/Caches", "/Library/Preferences"],
             minimumAge: nil,
             requiresMissingLaunchExecutable: false,
             blockAppleNamedItems: true,
-            privateVarCacheOnly: false
+            privateVarCacheOnly: false,
+            requiresDirectChild: true,
+            requiresBundleIdentifier: true,
+            rejectsDiagnosticReportsDirectory: false
         ),
         "launchitem.orphan.system": PrivilegedRulePolicy(
             roots: ["/Library/LaunchAgents", "/Library/LaunchDaemons"],
             minimumAge: nil,
             requiresMissingLaunchExecutable: true,
             blockAppleNamedItems: true,
-            privateVarCacheOnly: false
+            privateVarCacheOnly: false,
+            requiresDirectChild: true,
+            requiresBundleIdentifier: false,
+            rejectsDiagnosticReportsDirectory: false
         ),
         "privatevar.temp.old": PrivilegedRulePolicy(
             roots: ["/private/var/tmp", "/private/var/folders"],
             minimumAge: 7 * 24 * 60 * 60,
             requiresMissingLaunchExecutable: false,
             blockAppleNamedItems: false,
-            privateVarCacheOnly: true
+            privateVarCacheOnly: true,
+            requiresDirectChild: false,
+            requiresBundleIdentifier: false,
+            rejectsDiagnosticReportsDirectory: false
         )
     ]
 
@@ -292,15 +324,15 @@ private final class PrivilegedOperationEngine {
         }
     }
 
-    func scan(ruleIDs: [String]) throws -> PrivilegedScanResponse {
+    func scan(requestID: UUID, ruleIDs: [String]) throws -> PrivilegedScanResponse {
         var items: [PrivilegedScannedItem] = []
         var issues: [String] = []
 
-        for ruleID in Set(ruleIDs) {
+        for ruleID in Set(ruleIDs).sorted() {
             do {
                 switch ruleID {
                 case "system.cache":
-                    items.append(contentsOf: scanImmediateChildren(
+                    items.append(contentsOf: try scanImmediateChildren(
                         root: "/Library/Caches",
                         ruleID: ruleID,
                         minimumAge: nil,
@@ -308,7 +340,7 @@ private final class PrivilegedOperationEngine {
                         reason: "Third-party system-wide cache"
                     ))
                 case "system.log.old":
-                    items.append(contentsOf: scanImmediateChildren(
+                    items.append(contentsOf: try scanImmediateChildren(
                         root: "/Library/Logs",
                         ruleID: ruleID,
                         minimumAge: 30 * 24 * 60 * 60,
@@ -316,7 +348,7 @@ private final class PrivilegedOperationEngine {
                         reason: "Old system-wide log"
                     ).filter { $0.displayName != "DiagnosticReports" })
                 case "diagnostic.system.old":
-                    items.append(contentsOf: scanImmediateChildren(
+                    items.append(contentsOf: try scanImmediateChildren(
                         root: "/Library/Logs/DiagnosticReports",
                         ruleID: ruleID,
                         minimumAge: 30 * 24 * 60 * 60,
@@ -324,9 +356,9 @@ private final class PrivilegedOperationEngine {
                         reason: "Old system diagnostic report"
                     ))
                 case "launchitem.orphan.system":
-                    items.append(contentsOf: scanOrphanLaunchItems())
+                    items.append(contentsOf: try scanOrphanLaunchItems())
                 case "privatevar.temp.old":
-                    items.append(contentsOf: scanPrivateTemporaryData())
+                    items.append(contentsOf: try scanPrivateTemporaryData())
                 case "timemachine.snapshot":
                     items.append(contentsOf: try scanTimeMachineSnapshots())
                 case "application.leftover.system":
@@ -340,7 +372,7 @@ private final class PrivilegedOperationEngine {
             }
         }
 
-        return PrivilegedScanResponse(items: items, issues: issues)
+        return PrivilegedScanResponse(requestID: requestID, items: items, issues: issues)
     }
 
     private func removeApprovedPath(
@@ -369,14 +401,17 @@ private final class PrivilegedOperationEngine {
             try rejectAppleNamedItem(at: path)
         }
         if let minimumAge = policy.minimumAge {
-            let latest = latestModificationDate(at: path) ?? Date()
+            let latest = try latestModificationDate(at: path) ?? Date()
             guard Date().timeIntervalSince(latest) >= minimumAge else {
                 throw PrivilegedHelperFailure.targetTooNew
             }
         }
 
-        let before = allocatedSize(at: path)
-        try fileManager.removeItem(atPath: path)
+        let before = try allocatedSize(at: path)
+        try CleanupSecureFileOperations.remove(
+            atPath: path,
+            expectedIdentity: CleanupSecureNodeIdentity(currentIdentity)
+        )
         let reclaimed = fileManager.fileExists(atPath: path) ? 0 : before
 
         return PrivilegedOperationResponse(
@@ -420,39 +455,55 @@ private final class PrivilegedOperationEngine {
         minimumAge: TimeInterval?,
         skipAppleNamedItems: Bool,
         reason: String
-    ) -> [PrivilegedScannedItem] {
+    ) throws -> [PrivilegedScannedItem] {
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
-        guard let children = try? fileManager.contentsOfDirectory(
-            at: rootURL,
-            includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .contentAccessDateKey],
-            options: []
-        ) else {
+        guard try directoryExistsOrMissing(at: rootURL) else {
             return []
         }
+        let children: [URL]
+        do {
+            children = try fileManager.contentsOfDirectory(
+                at: rootURL,
+                includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .contentAccessDateKey],
+                options: []
+            )
+        } catch {
+            throw PrivilegedHelperFailure.scanFailed("\(root): \(error.localizedDescription)")
+        }
 
-        return children.compactMap { url in
+        var results: [PrivilegedScannedItem] = []
+        for url in children {
             if skipAppleNamedItems && isAppleNamed(url.lastPathComponent) {
-                return nil
+                continue
             }
             if let minimumAge {
-                let timestamp = latestModificationDate(at: url.path) ?? Date()
-                guard Date().timeIntervalSince(timestamp) >= minimumAge else { return nil }
+                let timestamp = try latestModificationDate(at: url.path) ?? Date()
+                guard Date().timeIntervalSince(timestamp) >= minimumAge else { continue }
             }
-            return scannedItem(url: url, ruleID: ruleID, reason: reason)
+            if let item = try scannedItem(url: url, ruleID: ruleID, reason: reason) {
+                results.append(item)
+            }
         }
+        return results
     }
 
-    private func scanOrphanLaunchItems() -> [PrivilegedScannedItem] {
+    private func scanOrphanLaunchItems() throws -> [PrivilegedScannedItem] {
         var results: [PrivilegedScannedItem] = []
         for root in ["/Library/LaunchAgents", "/Library/LaunchDaemons"] {
             let rootURL = URL(fileURLWithPath: root, isDirectory: true)
-            guard let files = try? fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil) else {
+            guard try directoryExistsOrMissing(at: rootURL) else {
                 continue
             }
+            let files: [URL]
+            do {
+                files = try fileManager.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil)
+            } catch {
+                throw PrivilegedHelperFailure.scanFailed("\(root): \(error.localizedDescription)")
+            }
             for url in files where url.pathExtension.lowercased() == "plist" {
-                if isAppleNamed(url.deletingPathExtension().lastPathComponent) { continue }
+                if isAppleNamed(url.deletingPathExtension().lastPathComponent) || launchItemHasAppleLabel(url.path) { continue }
                 guard launchItemPointsToMissingExecutable(url.path) else { continue }
-                if let item = scannedItem(
+                if let item = try scannedItem(
                     url: url,
                     ruleID: "launchitem.orphan.system",
                     reason: "Launch item points to an executable that no longer exists"
@@ -464,10 +515,10 @@ private final class PrivilegedOperationEngine {
         return results
     }
 
-    private func scanPrivateTemporaryData() -> [PrivilegedScannedItem] {
+    private func scanPrivateTemporaryData() throws -> [PrivilegedScannedItem] {
         var results: [PrivilegedScannedItem] = []
 
-        results.append(contentsOf: scanImmediateChildren(
+        results.append(contentsOf: try scanImmediateChildren(
             root: "/private/var/tmp",
             ruleID: "privatevar.temp.old",
             minimumAge: 7 * 24 * 60 * 60,
@@ -477,42 +528,62 @@ private final class PrivilegedOperationEngine {
 
         let foldersRoot = URL(fileURLWithPath: "/private/var/folders", isDirectory: true)
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
-        if let enumerator = fileManager.enumerator(
+        guard try directoryExistsOrMissing(at: foldersRoot) else {
+            return results
+        }
+        var enumerationError: Error?
+        guard let enumerator = fileManager.enumerator(
             at: foldersRoot,
             includingPropertiesForKeys: keys,
             options: [],
-            errorHandler: { _, _ in true }
-        ) {
-            for case let url as URL in enumerator {
-                let relativeDepth = url.pathComponents.count - foldersRoot.pathComponents.count
-                if relativeDepth > 4 {
-                    enumerator.skipDescendants()
-                    continue
-                }
-                guard let values = try? url.resourceValues(forKeys: Set(keys)),
-                      values.isDirectory == true,
-                      values.isSymbolicLink != true else {
-                    continue
-                }
-                guard url.lastPathComponent == "T" || url.lastPathComponent == "C" else {
-                    continue
-                }
-
-                if let children = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                    for child in children {
-                        let timestamp = latestModificationDate(at: child.path) ?? Date()
-                        guard Date().timeIntervalSince(timestamp) >= 7 * 24 * 60 * 60 else { continue }
-                        if let item = scannedItem(
-                            url: child,
-                            ruleID: "privatevar.temp.old",
-                            reason: "Old per-user cache/temporary data under /private/var/folders"
-                        ) {
-                            results.append(item)
-                        }
-                    }
-                }
-                enumerator.skipDescendants()
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
             }
+        ) else {
+            throw PrivilegedHelperFailure.scanFailed(foldersRoot.path)
+        }
+        for case let url as URL in enumerator {
+            let relativeDepth = url.pathComponents.count - foldersRoot.pathComponents.count
+            if relativeDepth > 4 {
+                enumerator.skipDescendants()
+                continue
+            }
+            let values: URLResourceValues
+            do {
+                values = try url.resourceValues(forKeys: Set(keys))
+            } catch {
+                throw PrivilegedHelperFailure.scanFailed("\(url.path): \(error.localizedDescription)")
+            }
+            guard values.isDirectory == true,
+                  values.isSymbolicLink != true else {
+                continue
+            }
+            guard url.lastPathComponent == "T" || url.lastPathComponent == "C" else {
+                continue
+            }
+
+            let children: [URL]
+            do {
+                children = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            } catch {
+                throw PrivilegedHelperFailure.scanFailed("\(url.path): \(error.localizedDescription)")
+            }
+            for child in children {
+                let timestamp = try latestModificationDate(at: child.path) ?? Date()
+                guard Date().timeIntervalSince(timestamp) >= 7 * 24 * 60 * 60 else { continue }
+                if let item = try scannedItem(
+                    url: child,
+                    ruleID: "privatevar.temp.old",
+                    reason: "Old per-user cache/temporary data under /private/var/folders"
+                ) {
+                    results.append(item)
+                }
+            }
+            enumerator.skipDescendants()
+        }
+        if enumerationError != nil {
+            throw PrivilegedHelperFailure.scanFailed(foldersRoot.path)
         }
 
         return results
@@ -576,6 +647,19 @@ private final class PrivilegedOperationEngine {
             throw PrivilegedHelperFailure.rejectedPath(standardized)
         }
 
+        if policy.requiresDirectChild,
+           !isDirectChild(standardized, of: matchedRoot) {
+            throw PrivilegedHelperFailure.rejectedPath(standardized)
+        }
+        if policy.requiresBundleIdentifier,
+           !isBundleIdentifier(URL(fileURLWithPath: standardized).lastPathComponent) {
+            throw PrivilegedHelperFailure.rejectedPath(standardized)
+        }
+        if policy.rejectsDiagnosticReportsDirectory,
+           URL(fileURLWithPath: standardized).lastPathComponent == "DiagnosticReports" {
+            throw PrivilegedHelperFailure.rejectedPath(standardized)
+        }
+
         let resolved = URL(fileURLWithPath: standardized)
             .resolvingSymlinksInPath()
             .standardizedFileURL
@@ -619,11 +703,22 @@ private final class PrivilegedOperationEngine {
 
     private func rejectAppleNamedItem(at path: String) throws {
         let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-        if isAppleNamed(name) {
+        if isAppleNamed(name) || launchItemHasAppleLabel(path) {
             throw PrivilegedHelperFailure.protectedTarget(
                 "Apple-owned identifiers are not removable by MemWatch."
             )
         }
+    }
+
+    private func launchItemHasAppleLabel(_ path: String) -> Bool {
+        guard path.hasSuffix(".plist"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let plist = object as? [String: Any],
+              let label = plist["Label"] as? String else {
+            return false
+        }
+        return isAppleNamed(label)
     }
 
     private func isAppleNamed(_ name: String) -> Bool {
@@ -632,6 +727,25 @@ private final class PrivilegedOperationEngine {
             lower.hasPrefix("group.com.apple.") ||
             lower == "apple" ||
             lower.hasPrefix("apple.")
+    }
+
+    private func isDirectChild(_ path: String, of root: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: normalized(path)).pathComponents
+        let rootComponents = URL(fileURLWithPath: normalized(root)).pathComponents
+        return pathComponents.count == rootComponents.count + 1 &&
+            Array(pathComponents.dropLast()) == rootComponents
+    }
+
+    private func isBundleIdentifier(_ value: String) -> Bool {
+        var identifier = value
+        for suffix in [".savedState", ".plist"] where identifier.hasSuffix(suffix) {
+            identifier.removeLast(suffix.count)
+        }
+        let components = identifier.split(separator: ".")
+        return identifier.count >= 5 &&
+            components.count >= 2 &&
+            !isAppleNamed(identifier) &&
+            components.allSatisfy { !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" } }
     }
 
     private func identity(at path: String) throws -> PrivilegedFileIdentity {
@@ -643,8 +757,22 @@ private final class PrivilegedOperationEngine {
             deviceID: UInt64(info.st_dev),
             inode: UInt64(info.st_ino),
             ownerUID: UInt32(info.st_uid),
-            mode: UInt32(info.st_mode)
+            mode: UInt32(info.st_mode),
+            sizeBytes: UInt64(max(0, info.st_size)),
+            modificationTimeNanoseconds: Int64(info.st_mtimespec.tv_sec) * 1_000_000_000 + Int64(info.st_mtimespec.tv_nsec)
         )
+    }
+
+    private func directoryExistsOrMissing(at url: URL) throws -> Bool {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else {
+            if errno == ENOENT { return false }
+            throw PrivilegedHelperFailure.scanFailed(url.path)
+        }
+        guard (UInt32(info.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFDIR) else {
+            throw PrivilegedHelperFailure.scanFailed(url.path)
+        }
+        return true
     }
 
     // MARK: Metadata
@@ -653,16 +781,21 @@ private final class PrivilegedOperationEngine {
         url: URL,
         ruleID: String,
         reason: String
-    ) -> PrivilegedScannedItem? {
+    ) throws -> PrivilegedScannedItem? {
         guard let fileIdentity = try? identity(at: url.path) else { return nil }
         guard (fileIdentity.mode & UInt32(S_IFMT)) != UInt32(S_IFLNK) else { return nil }
 
-        let values = try? url.resourceValues(forKeys: [
-            .creationDateKey,
-            .contentModificationDateKey,
-            .contentAccessDateKey
-        ])
-        let size = sizes(at: url.path)
+        let values: URLResourceValues
+        do {
+            values = try url.resourceValues(forKeys: [
+                .creationDateKey,
+                .contentModificationDateKey,
+                .contentAccessDateKey
+            ])
+        } catch {
+            throw PrivilegedHelperFailure.scanFailed("\(url.path): \(error.localizedDescription)")
+        }
+        let size = try sizes(at: url.path)
 
         return PrivilegedScannedItem(
             ruleID: ruleID,
@@ -671,26 +804,31 @@ private final class PrivilegedOperationEngine {
             displayName: url.lastPathComponent,
             logicalBytes: size.logical,
             allocatedBytes: size.allocated,
-            createdAt: values?.creationDate,
-            modifiedAt: values?.contentModificationDate,
-            lastAccessedAt: values?.contentAccessDate,
+            createdAt: values.creationDate,
+            modifiedAt: values.contentModificationDate,
+            lastAccessedAt: values.contentAccessDate,
             identity: fileIdentity,
             reason: reason
         )
     }
 
-    private func allocatedSize(at path: String) -> UInt64 {
-        sizes(at: path).allocated
+    private func allocatedSize(at path: String) throws -> UInt64 {
+        try sizes(at: path).allocated
     }
 
-    private func sizes(at path: String) -> (logical: UInt64, allocated: UInt64) {
+    private func sizes(at path: String) throws -> (logical: UInt64, allocated: UInt64) {
         let root = URL(fileURLWithPath: path)
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
             .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey
         ]
 
-        guard let values = try? root.resourceValues(forKeys: keys) else { return (0, 0) }
+        let values: URLResourceValues
+        do {
+            values = try root.resourceValues(forKeys: keys)
+        } catch {
+            throw PrivilegedHelperFailure.scanFailed("\(path): \(error.localizedDescription)")
+        }
         if values.isSymbolicLink == true { return (0, 0) }
         if values.isDirectory != true {
             let logical = UInt64(max(values.fileSize ?? 0, 0))
@@ -698,17 +836,28 @@ private final class PrivilegedOperationEngine {
             return (logical, UInt64(max(rawAllocated, 0)))
         }
 
+        var enumerationError: Error?
         guard let enumerator = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: Array(keys),
             options: [],
-            errorHandler: { _, _ in true }
-        ) else { return (0, 0) }
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
+        ) else {
+            throw PrivilegedHelperFailure.scanFailed(path)
+        }
 
         var logical: UInt64 = 0
         var allocated: UInt64 = 0
         for case let url as URL in enumerator {
-            guard let child = try? url.resourceValues(forKeys: keys) else { continue }
+            let child: URLResourceValues
+            do {
+                child = try url.resourceValues(forKeys: keys)
+            } catch {
+                throw PrivilegedHelperFailure.scanFailed("\(url.path): \(error.localizedDescription)")
+            }
             if child.isSymbolicLink == true {
                 if child.isDirectory == true { enumerator.skipDescendants() }
                 continue
@@ -718,30 +867,49 @@ private final class PrivilegedOperationEngine {
             let rawAllocated = child.totalFileAllocatedSize ?? child.fileAllocatedSize ?? child.fileSize ?? 0
             allocated = adding(allocated, UInt64(max(rawAllocated, 0)))
         }
+        if enumerationError != nil {
+            throw PrivilegedHelperFailure.scanFailed(path)
+        }
         return (logical, allocated)
     }
 
-    private func latestModificationDate(at path: String) -> Date? {
+    private func latestModificationDate(at path: String) throws -> Date? {
         let root = URL(fileURLWithPath: path)
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey
         ]
-        guard let rootValues = try? root.resourceValues(forKeys: keys) else { return nil }
+        let rootValues: URLResourceValues
+        do {
+            rootValues = try root.resourceValues(forKeys: keys)
+        } catch {
+            throw PrivilegedHelperFailure.scanFailed("\(path): \(error.localizedDescription)")
+        }
 
         var latest = rootValues.contentModificationDate
         guard rootValues.isDirectory == true, rootValues.isSymbolicLink != true else {
             return latest
         }
 
+        var enumerationError: Error?
         guard let enumerator = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: Array(keys),
             options: [],
-            errorHandler: { _, _ in true }
-        ) else { return latest }
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
+        ) else {
+            throw PrivilegedHelperFailure.scanFailed(path)
+        }
 
         for case let url as URL in enumerator {
-            guard let values = try? url.resourceValues(forKeys: keys) else { continue }
+            let values: URLResourceValues
+            do {
+                values = try url.resourceValues(forKeys: keys)
+            } catch {
+                throw PrivilegedHelperFailure.scanFailed("\(url.path): \(error.localizedDescription)")
+            }
             if values.isSymbolicLink == true {
                 if values.isDirectory == true { enumerator.skipDescendants() }
                 continue
@@ -750,6 +918,9 @@ private final class PrivilegedOperationEngine {
                latest == nil || date > latest! {
                 latest = date
             }
+        }
+        if enumerationError != nil {
+            throw PrivilegedHelperFailure.scanFailed(path)
         }
         return latest
     }

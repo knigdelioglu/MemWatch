@@ -15,6 +15,7 @@ enum PrivilegedHelperClientError: LocalizedError {
     case invalidResponse
     case remote(String)
     case protocolMismatch
+    case timedOut
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +23,7 @@ enum PrivilegedHelperClientError: LocalizedError {
         case .invalidResponse: return "Privileged helper returned an invalid response."
         case .remote(let message): return message
         case .protocolMismatch: return "Privileged helper protocol version does not match MemWatch."
+        case .timedOut: return "Privileged helper did not respond within the safety deadline."
         }
     }
 }
@@ -38,11 +40,15 @@ struct PrivilegedHelperClient: Sendable {
     func scan(ruleIDs: [CleanupRuleID]) async throws -> PrivilegedScanResponse {
         let request = PrivilegedScanRequest(ruleIDs: ruleIDs.map(\.rawValue))
         let data = try JSONEncoder().encode(request)
-        return try await withConnection { proxy, finish in
+        let response: PrivilegedScanResponse = try await withConnection { proxy, finish in
             proxy.scan(data) { responseData in
                 finish(Self.decode(PrivilegedScanResponse.self, from: responseData))
             }
         }
+        guard response.requestID == request.requestID else {
+            throw PrivilegedHelperClientError.invalidResponse
+        }
+        return response
     }
 
     func execute(_ request: PrivilegedOperationRequest) async throws -> PrivilegedOperationResponse {
@@ -55,6 +61,9 @@ struct PrivilegedHelperClient: Sendable {
         guard response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion else {
             throw PrivilegedHelperClientError.protocolMismatch
         }
+        guard response.requestID == request.requestID else {
+            throw PrivilegedHelperClientError.invalidResponse
+        }
         guard response.success else {
             throw PrivilegedHelperClientError.remote(response.message)
         }
@@ -64,7 +73,9 @@ struct PrivilegedHelperClient: Sendable {
     private func withConnection<T: Sendable>(
         _ body: @escaping (MemWatchPrivilegedHelperXPC, @escaping (Result<T, Error>) -> Void) -> Void
     ) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
+        let cancellationBox = PrivilegedXPCRequestCancellationBox()
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
             let connection = NSXPCConnection(
                 machServiceName: MemWatchPrivilegedHelperConstants.machServiceName,
                 options: .privileged
@@ -73,14 +84,22 @@ struct PrivilegedHelperClient: Sendable {
 
             let lock = NSLock()
             var completed = false
+            var timeoutWorkItem: DispatchWorkItem?
             func finish(_ result: Result<T, Error>) {
                 lock.lock()
-                defer { lock.unlock() }
-                guard !completed else { return }
+                guard !completed else {
+                    lock.unlock()
+                    return
+                }
                 completed = true
+                timeoutWorkItem?.cancel()
+                lock.unlock()
                 connection.invalidate()
                 continuation.resume(with: result)
             }
+
+            cancellationBox.set { finish(.failure(CancellationError())) }
+            guard !cancellationBox.isCancelled else { return }
 
             connection.interruptionHandler = {
                 finish(.failure(PrivilegedHelperClientError.unavailable))
@@ -101,8 +120,21 @@ struct PrivilegedHelperClient: Sendable {
                 finish(.failure(PrivilegedHelperClientError.unavailable))
                 return
             }
+
+            timeoutWorkItem = DispatchWorkItem {
+                finish(.failure(PrivilegedHelperClientError.timedOut))
+            }
+            if let timeoutWorkItem {
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + .seconds(30),
+                    execute: timeoutWorkItem
+                )
+            }
             body(proxy, finish)
-        }
+            }
+        }, onCancel: {
+            cancellationBox.cancel()
+        })
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data) -> Result<T, Error> {
@@ -120,6 +152,31 @@ struct PrivilegedHelperClient: Sendable {
         } catch {
             return .failure(PrivilegedHelperClientError.invalidResponse)
         }
+    }
+}
+
+private final class PrivilegedXPCRequestCancellationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (() -> Void)?
+    private(set) var isCancelled = false
+
+    func set(_ handler: @escaping () -> Void) {
+        lock.lock()
+        if isCancelled {
+            lock.unlock()
+            handler()
+            return
+        }
+        self.handler = handler
+        lock.unlock()
+    }
+
+    func cancel() {
+        lock.lock()
+        isCancelled = true
+        let handler = self.handler
+        lock.unlock()
+        handler?()
     }
 }
 
@@ -311,9 +368,20 @@ private enum PrivateCompatibilityPolicy {
     static var isEnabled: Bool {
         guard let data = try? Data(contentsOf: CleanupPersistencePaths.preferencesFile),
               let preferences = try? JSONDecoder().decode(CleanupPreferences.self, from: data) else {
-            return CleanupPreferences.defaults().privateBackendEnabled
+            // A missing/corrupt policy must never enable a private privileged
+            // backend implicitly. The app can explicitly persist an opt-in
+            // value after the user enables it.
+            return false
+        }
+        guard preferences.requestedRootPaths.allSatisfy(Self.isAbsolutePath),
+              preferences.projectRootPaths.allSatisfy(Self.isAbsolutePath) else {
+            return false
         }
         return preferences.privateBackendEnabled
+    }
+
+    private static func isAbsolutePath(_ path: String) -> Bool {
+        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && path.hasPrefix("/")
     }
 }
 

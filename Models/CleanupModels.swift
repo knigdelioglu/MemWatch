@@ -84,6 +84,24 @@ struct FileIdentity: Equatable, Codable, Sendable {
     let inode: UInt64
     let ownerUID: UInt32
     let mode: UInt32
+    let sizeBytes: UInt64?
+    let modificationTimeNanoseconds: Int64?
+
+    init(
+        deviceID: UInt64,
+        inode: UInt64,
+        ownerUID: UInt32,
+        mode: UInt32,
+        sizeBytes: UInt64? = nil,
+        modificationTimeNanoseconds: Int64? = nil
+    ) {
+        self.deviceID = deviceID
+        self.inode = inode
+        self.ownerUID = ownerUID
+        self.mode = mode
+        self.sizeBytes = sizeBytes
+        self.modificationTimeNanoseconds = modificationTimeNanoseconds
+    }
 
     var isSymbolicLink: Bool {
         (mode & UInt32(S_IFMT)) == UInt32(S_IFLNK)

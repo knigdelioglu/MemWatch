@@ -21,15 +21,23 @@ struct CleanupView: View {
                     progressCard
                 }
 
+                if case .failed(let message) = coordinator.phase {
+                    failureCard(message)
+                }
+
                 if let result = coordinator.scanResult {
                     summaryCard(result)
+                    if !result.issues.isEmpty {
+                        scanIssuesCard(result.issues)
+                    }
                     if !coordinator.applicationCleanupPlans.isEmpty {
                         applicationCleanupCard
                     }
                     deletionScopeCard
                     primaryActions
                     categoryList(result)
-                } else if coordinator.phase != .scanning {
+                } else if coordinator.phase != .scanning,
+                          !isFailedPhase {
                     emptyState
                 }
 
@@ -85,6 +93,11 @@ struct CleanupView: View {
 
     private func isAutomaticSafe(_ item: CleanupCandidate) -> Bool {
         coordinator.automaticSafeItems.contains { $0.id == item.id }
+    }
+
+    private var isFailedPhase: Bool {
+        if case .failed = coordinator.phase { return true }
+        return false
     }
 
     private var header: some View {
@@ -372,6 +385,61 @@ struct CleanupView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private func scanIssuesCard(_ issues: [CleanupScanIssue]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Tarama uyarıları", systemImage: "exclamationmark.triangle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            ForEach(issues.prefix(4)) { issue in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(issue.message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let path = issue.path {
+                        Text(abbreviated(path))
+                            .font(.system(size: 9).monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            if issues.count > 4 {
+                Text("ve \(issues.count - 4) başka uyarı…")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func failureCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Temizleme kullanılamıyor", systemImage: "xmark.octagon")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.red)
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Güvenlik için bu durumda hiçbir dosya otomatik olarak silinmez.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Button("Yeniden dene") { coordinator.startScan() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(coordinator.isBusy)
+            }
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
     private func summaryPill(_ title: String, bytes value: UInt64, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -471,7 +539,7 @@ struct CleanupView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .disabled(coordinator.automaticSafeBytes == 0 || coordinator.isBusy)
+                .disabled(coordinator.automaticSafeBytes == 0 || !coordinator.isReady)
 
                 Button {
                     showSafeConfirmation = true
@@ -480,7 +548,7 @@ struct CleanupView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(coordinator.automaticSafeBytes == 0 || coordinator.isBusy)
+                .disabled(coordinator.automaticSafeBytes == 0 || !coordinator.isReady)
             }
 
             if !coordinator.selectedIDs.isEmpty {
@@ -488,9 +556,11 @@ struct CleanupView: View {
                     Button("Seçilenleri Silmeden Kontrol Et") { coordinator.dryRunSelected() }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
+                        .disabled(!coordinator.isReady)
                     Button("Seçilenleri Temizle") { showSelectedConfirmation = true }
                         .buttonStyle(.borderedProminent)
                         .frame(maxWidth: .infinity)
+                        .disabled(!coordinator.isReady)
                 }
                 .controlSize(.small)
 
@@ -507,7 +577,7 @@ struct CleanupView: View {
                     Spacer()
                 }
                 .font(.caption2)
-                .foregroundStyle(report.failureCount == 0 ? Color.green : Color.orange)
+                .foregroundStyle(report.failureCount == 0 && !report.isCancelled ? Color.green : Color.orange)
 
                 if let failure = report.results.first(where: { $0.status == .failed }) {
                     Text(localizedExecutionFailure(failure.message))
@@ -644,7 +714,14 @@ struct CleanupView: View {
                     }
                     Divider()
                     Button("Bu yolu yok say") { coordinator.ignorePath(for: item) }
+                    if coordinator.canIgnoreProject(item) {
+                        Button("Bu projeyi yok say") { coordinator.ignoreProject(for: item) }
+                    }
+                    if coordinator.canIgnoreApplication(item) {
+                        Button("Bu uygulamayı yok say") { coordinator.ignoreApplication(for: item) }
+                    }
                     Button("Bu kuralı yok say") { coordinator.ignoreRule(item) }
+                    Button("Bu kategoriyi yok say") { coordinator.ignoreCategory(item.category) }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -675,6 +752,11 @@ struct CleanupView: View {
                 Text("Yetkili sistem işlemleri kapalı. Anlık görüntü inceleme ve inceltme kapsam dışında.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            } else if let error = coordinator.snapshotError {
+                Text("Anlık görüntüler alınamadı: \(error)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if coordinator.snapshots.isEmpty {
                 Text(coordinator.helperService.isAvailableForCleanup ? "Yerel anlık görüntü bildirilmedi." : "Yerel anlık görüntüleri incelemek için yetkili yardımcıyı etkinleştir.")
                     .font(.caption2)
@@ -691,6 +773,7 @@ struct CleanupView: View {
                 Button("Anlık görüntüleri incelt…") { showSnapshotConfirmation = true }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(!coordinator.isReady)
             }
         }
         .padding(13)
@@ -798,16 +881,16 @@ struct CleanupView: View {
                 ForEach(coordinator.history.prefix(4)) { entry in
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(entry.mode == .dryRun ? "Silmeden kontrol" : "Temizleme")
+                            Text(entry.mode == .dryRun ? "Silmeden kontrol" : (entry.outcome == .cancelled ? "İptal edilen temizleme" : "Temizleme"))
                                 .font(.caption.weight(.medium))
                             Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(entry.mode == .dryRun ? "\(entry.requestedCount) öğe denetlendi" : bytes(entry.reclaimedBytes))
+                        Text(entry.mode == .dryRun ? "\(entry.requestedCount) öğe denetlendi" : "tahmini \(bytes(entry.reclaimedBytes))")
                             .font(.caption2.monospacedDigit())
-                            .foregroundStyle(entry.failedCount == 0 ? Color.secondary : Color.orange)
+                            .foregroundStyle(entry.failedCount == 0 && entry.outcome != .cancelled ? Color.secondary : Color.orange)
                     }
                 }
             }
@@ -866,15 +949,29 @@ struct CleanupView: View {
             return "Silmeden kontrol: \(report.results.filter { $0.status == .wouldRemove }.count) doğrulandı, \(report.failureCount) engellendi"
         }
 
-        var parts = ["\(report.successfulCount) öğe başarıyla kaldırıldı"]
+        var parts = ["\(report.successfulCount)/\(report.requestedCount) öğe kaldırıldı"]
         if report.reclaimedBytes > 0 {
-            parts.append("yaklaşık \(bytes(report.reclaimedBytes)) dosya alanı")
+            parts.append("tahmini \(bytes(report.reclaimedBytes)) dosya alanı")
         }
-        if let observedDelta = report.observedFreeSpaceDeltaBytes {
-            parts.append("depolama +\(bytes(observedDelta))")
+        switch report.reclaimVerification {
+        case .verified:
+            if let observedDelta = report.verifiedReclaimedBytes {
+                parts.append("doğrulanan boş alan +\(bytes(observedDelta))")
+            }
+        case .noNetIncrease:
+            parts.append("net boş alan artışı doğrulanamadı")
+        case .unavailable:
+            parts.append("boş alan doğrulaması kullanılamadı")
+        case .cancelled:
+            parts.append("doğrulama iptal edildi")
+        case .notMeasured, .notApplicable:
+            break
         }
         if report.movedToTrashBytes > 0 {
             parts.append("Çöp Kutusu boşaltılınca geri kazanılır: \(bytes(report.movedToTrashBytes))")
+        }
+        if report.isCancelled {
+            parts.append("iptal edildi")
         }
         if report.failureCount > 0 {
             parts.append("\(report.failureCount) başarısız")
@@ -888,17 +985,17 @@ struct CleanupView: View {
         case "user-log": return "Günlükler"
         case "xcode-cleanup": return "Xcode"
         case "developer-cache": return "Geliştirici araçları"
-        case "project-artifacts": return "Proje artıkları"
-        case "ai-artifacts": return "Yapay zekâ verileri"
-        case "application-leftovers": return "Uygulama artıkları"
-        case "launch-items": return "Başlangıç öğeleri"
-        case "ios-backups": return "iPhone / iPad yedekleri"
+        case "project-artifact": return "Proje artıkları"
+        case "ai-artifact": return "Yapay zekâ verileri"
+        case "application-leftover": return "Uygulama artıkları"
+        case "launch-item": return "Başlangıç öğeleri"
+        case "ios-backup": return "iPhone / iPad yedekleri"
         case "downloads": return "İndirilenler"
         case "trash": return "Çöp Kutusu"
-        case "large-old-files": return "Büyük / eski dosyalar"
-        case "duplicates": return "Yinelenen dosyalar"
-        case "similar-images": return "Benzer görseller"
-        case "mail-attachments": return "Posta ekleri"
+        case "large-old-file": return "Büyük / eski dosyalar"
+        case "duplicate-exact": return "Yinelenen dosyalar"
+        case "image-similar": return "Benzer görseller"
+        case "mail-attachment": return "Posta ekleri"
         case "privileged-system": return "Yetkili sistem taraması"
         default: return id.rawValue
         }

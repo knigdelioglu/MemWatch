@@ -43,6 +43,87 @@ struct CleanupSafetyTests {
         precondition(cacheAssessment.canDelete, "Known user cache should pass filesystem safety policy")
         precondition(cacheAssessment.candidate.safety == .safe, "Known user cache should remain Safe")
 
+        let cacheRootCandidate = candidate(
+            url: caches,
+            ruleID: "user.cache",
+            category: .userCaches,
+            safety: .safe,
+            deletionMode: .permanent
+        )
+        let cacheRootAssessment = engine.assess(
+            candidate: cacheRootCandidate,
+            rule: requireRule("user.cache", catalog: catalog),
+            context: context
+        )
+        precondition(cacheRootAssessment.candidate.safety == .protected, "A cleanup root itself must never be a deletion target")
+
+        let nestedCacheRoot = caches.appendingPathComponent("org.example.nested-cache", isDirectory: true)
+        try fileManager.createDirectory(at: nestedCacheRoot, withIntermediateDirectories: true)
+        let nestedCacheTarget = nestedCacheRoot.appendingPathComponent("private-data")
+        try Data("nested cache data".utf8).write(to: nestedCacheTarget)
+        let nestedCacheAssessment = engine.assess(
+            candidate: candidate(
+                url: nestedCacheTarget,
+                ruleID: "user.cache",
+                category: .userCaches,
+                safety: .safe,
+                deletionMode: .permanent,
+                requirements: [.applicationInactive]
+            ),
+            rule: requireRule("user.cache", catalog: catalog),
+            context: context
+        )
+        precondition(nestedCacheAssessment.candidate.safety == .protected, "User cache rules must not delete nested paths inside a cache target")
+
+        let systemCacheRootAssessment = engine.assess(
+            candidate: candidate(
+                url: URL(fileURLWithPath: "/Library/Caches", isDirectory: true),
+                ruleID: "system.cache",
+                category: .systemCaches,
+                safety: .review,
+                deletionMode: .privileged,
+                requirements: [.privilegedHelper]
+            ),
+            rule: requireRule("system.cache", catalog: catalog),
+            context: fullyPermissiveContext(home: home)
+        )
+        precondition(systemCacheRootAssessment.candidate.safety == .protected, "System cleanup rules must not target their structural root")
+
+        let lookalikeCache = home.appendingPathComponent("Library/Caches.evil", isDirectory: true)
+        try fileManager.createDirectory(at: lookalikeCache, withIntermediateDirectories: true)
+        let lookalikeFile = lookalikeCache.appendingPathComponent("payload")
+        try Data("not a cache root".utf8).write(to: lookalikeFile)
+        let lookalikeAssessment = engine.assess(
+            candidate: candidate(
+                url: lookalikeFile,
+                ruleID: "user.cache",
+                category: .userCaches,
+                safety: .safe,
+                deletionMode: .permanent,
+                requirements: [.applicationInactive]
+            ),
+            rule: requireRule("user.cache", catalog: catalog),
+            context: context
+        )
+        precondition(lookalikeAssessment.candidate.safety == .protected, "Cache rules must reject lookalike paths")
+
+        let unrelatedHomeFile = home.appendingPathComponent("Documents/installer.dmg")
+        try fileManager.createDirectory(at: unrelatedHomeFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("personal file".utf8).write(to: unrelatedHomeFile)
+        let unrelatedHomeAssessment = engine.assess(
+            candidate: candidate(
+                url: unrelatedHomeFile,
+                ruleID: "downloads.review",
+                category: .downloads,
+                safety: .review,
+                deletionMode: .trash,
+                requirements: [.explicitConfirmation]
+            ),
+            rule: requireRule("downloads.review", catalog: catalog),
+            context: context
+        )
+        precondition(unrelatedHomeAssessment.candidate.safety == .protected, "Download rules must stay inside ~/Downloads")
+
         let activeApplicationEngine = CleanupSafetyEngine(
             activityGuard: CleanupActivityGuard { _ in .active("Fixture App") }
         )
@@ -192,6 +273,15 @@ struct CleanupSafetyTests {
             now: Date()
         )
         precondition(ignoredContext.isIgnored(ignoredRoot.appendingPathComponent("nested/file")), "Path ignore must cover descendants")
+        let exactIgnoredContext = CleanupScanContext(
+            homeDirectory: home,
+            requestedRoots: [requested],
+            projectRoots: [requested],
+            ignoredExactPaths: [ignoredRoot.path],
+            now: Date()
+        )
+        precondition(exactIgnoredContext.isIgnored(ignoredRoot), "Exact path ignore must cover the exact target")
+        precondition(!exactIgnoredContext.isIgnored(ignoredRoot.appendingPathComponent("nested/file")), "Exact path ignore must not cover descendants")
 
         print("PASS Cleanup safety policy")
     }
@@ -226,6 +316,17 @@ struct CleanupSafetyTests {
             requirements: requirements,
             reason: "test",
             identity: CleanupPathValidator.identity(for: url)
+        )
+    }
+
+    private static func fullyPermissiveContext(home: URL) -> CleanupScanContext {
+        CleanupScanContext(
+            homeDirectory: home,
+            requestedRoots: [URL(fileURLWithPath: "/")],
+            projectRoots: [],
+            now: Date(),
+            fullDiskAccessAvailable: true,
+            privilegedHelperAvailable: true
         )
     }
 }

@@ -193,6 +193,60 @@ jobs:
             -o /tmp/memwatch-cleanup-scanner-tests
           /tmp/memwatch-cleanup-scanner-tests
 
+      - name: Run cleanup scanner fixture tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Tests/CleanupScannerFixtureTests.swift \
+            -framework AppKit \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Vision \
+            -o /tmp/memwatch-cleanup-scanner-fixture-tests
+          /tmp/memwatch-cleanup-scanner-fixture-tests
+
+      - name: Run cleanup scan cancellation tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Cleanup/Core/CleanupScanEngine.swift \
+            Tests/CleanupCancellationTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -o /tmp/memwatch-cleanup-cancellation-tests
+          /tmp/memwatch-cleanup-cancellation-tests
+
+      - name: Run cleanup scan coalescing tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Cleanup/Core/CleanupScanEngine.swift \
+            Tests/CleanupScanEngineTests.swift \
+            -framework AppKit \
+            -framework Vision \
+            -framework ImageIO \
+            -o /tmp/memwatch-cleanup-scan-engine-tests
+          /tmp/memwatch-cleanup-scan-engine-tests
+
       - name: Run cleanup deletion and TOCTOU tests
         run: |
           xcrun swiftc \
@@ -204,6 +258,7 @@ jobs:
             Cleanup/Core/CleanupScanner.swift \
             Cleanup/Core/CleanupFileSizer.swift \
             PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupSecureRemoval.swift \
             Cleanup/Core/CleanupDeletionEngine.swift \
             Tests/CleanupDeletionTests.swift \
             -framework AppKit \
@@ -224,6 +279,7 @@ jobs:
             Cleanup/Core/CleanupScanner.swift \
             Cleanup/Core/CleanupFileSizer.swift \
             PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupSecureRemoval.swift \
             Cleanup/Core/CleanupDeletionEngine.swift \
             Cleanup/Persistence/CleanupStores.swift \
             Tests/CleanupPersistenceMigrationTests.swift \

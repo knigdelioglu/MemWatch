@@ -17,8 +17,17 @@ struct CleanupFileSizer: @unchecked Sendable {
     }
 
     func measure(_ url: URL) -> CleanupFileSize {
+        (try? measureStrict(url)) ?? CleanupFileSize(logicalBytes: 0, allocatedBytes: 0)
+    }
+
+    func measureStrict(_ url: URL) throws -> CleanupFileSize {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]
-        guard let rootValues = try? url.resourceValues(forKeys: keys) else { return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0) }
+        let rootValues: URLResourceValues
+        do {
+            rootValues = try url.resourceValues(forKeys: keys)
+        } catch {
+            throw CleanupScannerError.malformedMetadata(url.path)
+        }
         if rootValues.isSymbolicLink == true { return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0) }
         if rootValues.isDirectory != true {
             let measured = size(from: rootValues)
@@ -27,8 +36,12 @@ struct CleanupFileSizer: @unchecked Sendable {
             }
             return measured
         }
-        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }) else {
-            return CleanupFileSize(logicalBytes: 0, allocatedBytes: 0)
+        var enumerationError: Error?
+        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, error in
+            enumerationError = error
+            return false
+        }) else {
+            throw CleanupScannerError.inaccessibleRoot(url.path)
         }
 
         var logical: UInt64 = 0
@@ -36,7 +49,12 @@ struct CleanupFileSizer: @unchecked Sendable {
         var hardlinks: [HardlinkKey: HardlinkAggregate] = [:]
 
         while let childURL = enumerator.nextObject() as? URL {
-            guard let values = try? childURL.resourceValues(forKeys: keys) else { continue }
+            let values: URLResourceValues
+            do {
+                values = try childURL.resourceValues(forKeys: keys)
+            } catch {
+                throw CleanupScannerError.malformedMetadata(childURL.path)
+            }
             if values.isSymbolicLink == true {
                 if values.isDirectory == true { enumerator.skipDescendants() }
                 continue
@@ -66,6 +84,10 @@ struct CleanupFileSizer: @unchecked Sendable {
             if aggregate.observedLinks >= aggregate.totalLinks {
                 allocated = addingWithoutOverflow(allocated, aggregate.allocatedBytes)
             }
+        }
+
+        if enumerationError != nil {
+            throw CleanupScannerError.inaccessibleRoot(url.path)
         }
 
         return CleanupFileSize(logicalBytes: logical, allocatedBytes: allocated)
@@ -117,20 +139,38 @@ struct CleanupFileSizer: @unchecked Sendable {
 private struct InstalledApplicationIndex {
     let bundleIdentifiers: Set<String>
 
-    static func build(homeDirectory: URL) -> InstalledApplicationIndex {
+    static func build(homeDirectory: URL) throws -> InstalledApplicationIndex {
         let roots = [
             URL(fileURLWithPath: "/Applications", isDirectory: true),
             URL(fileURLWithPath: "/System/Applications", isDirectory: true),
             homeDirectory.appendingPathComponent("Applications", isDirectory: true)
         ]
         var identifiers = Set<String>()
-        for root in roots where FileManager.default.fileExists(atPath: root.path) {
+        for root in roots {
+            var rootInfo = stat()
+            guard lstat(root.path, &rootInfo) == 0 else {
+                if errno == ENOENT { continue }
+                throw CleanupScannerError.inaccessibleRoot(root.path)
+            }
+            guard (UInt32(rootInfo.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFDIR) else {
+                throw CleanupScannerError.inaccessibleRoot(root.path)
+            }
             let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, _ in true }) else { continue }
+            var enumerationError: Error?
+            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }) else {
+                throw CleanupScannerError.inaccessibleRoot(root.path)
+            }
             for case let url as URL in enumerator {
+                try Task.checkCancellation()
                 guard url.pathExtension.lowercased() == "app" else { continue }
-                collectBundleIDs(from: url, into: &identifiers)
+                try collectBundleIDs(from: url, into: &identifiers)
                 enumerator.skipDescendants()
+            }
+            if enumerationError != nil {
+                throw CleanupScannerError.inaccessibleRoot(root.path)
             }
         }
         return InstalledApplicationIndex(bundleIdentifiers: identifiers)
@@ -143,15 +183,26 @@ private struct InstalledApplicationIndex {
         }
     }
 
-    private static func collectBundleIDs(from appURL: URL, into identifiers: inout Set<String>) {
+    private static func collectBundleIDs(from appURL: URL, into identifiers: inout Set<String>) throws {
         if let identifier = Bundle(url: appURL)?.bundleIdentifier { identifiers.insert(identifier) }
         let contents = appURL.appendingPathComponent("Contents", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: contents.path) else { return }
         let keys: [URLResourceKey] = [.isDirectoryKey]
-        guard let enumerator = FileManager.default.enumerator(at: contents, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, _ in true }) else { return }
+        var enumerationError: Error?
+        guard let enumerator = FileManager.default.enumerator(at: contents, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles], errorHandler: { _, error in
+            enumerationError = error
+            return false
+        }) else {
+            throw CleanupScannerError.inaccessibleRoot(contents.path)
+        }
         let bundleExtensions: Set<String> = ["app", "appex", "xpc"]
         for case let url as URL in enumerator where bundleExtensions.contains(url.pathExtension.lowercased()) {
+            try Task.checkCancellation()
             if let identifier = Bundle(url: url)?.bundleIdentifier { identifiers.insert(identifier) }
             enumerator.skipDescendants()
+        }
+        if enumerationError != nil {
+            throw CleanupScannerError.inaccessibleRoot(contents.path)
         }
     }
 }
@@ -164,7 +215,7 @@ struct ApplicationLeftoverScanner: CleanupScanner {
     private let support = CleanupScannerSupport()
 
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
-        let index = InstalledApplicationIndex.build(homeDirectory: context.homeDirectory)
+        let index = try InstalledApplicationIndex.build(homeDirectory: context.homeDirectory)
         let library = context.homeDirectory.appendingPathComponent("Library", isDirectory: true)
         var results: [CleanupCandidate] = []
 
@@ -173,7 +224,7 @@ struct ApplicationLeftoverScanner: CleanupScanner {
         }
         for root in userRoots {
             try Task.checkCancellation()
-            for url in support.immediateChildren(of: root) {
+            for url in try support.immediateChildren(of: root) {
                 try Task.checkCancellation()
                 guard !context.isIgnored(url), let identifier = identifierCandidate(for: url), isHighConfidenceOrphan(identifier, index: index) else { continue }
                 if let item = support.candidate(url: url, scannerID: id, ruleID: "application.leftover.user", category: category, displayName: "Orphan: \(identifier)", safety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], reason: "Exact bundle-style identifier is not related to any installed application", regenerationHint: "Review before removal; application leftovers are never auto-selected as safe."), item.allocatedBytes > 0 {
@@ -187,9 +238,9 @@ struct ApplicationLeftoverScanner: CleanupScanner {
             URL(fileURLWithPath: "/Library/Caches", isDirectory: true),
             URL(fileURLWithPath: "/Library/Application Support", isDirectory: true)
         ]
-        for root in systemRoots where FileManager.default.fileExists(atPath: root.path) {
+        for root in systemRoots {
             try Task.checkCancellation()
-            for url in support.immediateChildren(of: root) {
+            for url in try support.immediateChildren(of: root) {
                 try Task.checkCancellation()
                 guard let identifier = identifierCandidate(for: url), isHighConfidenceOrphan(identifier, index: index) else { continue }
                 if let item = support.candidate(url: url, scannerID: id, ruleID: "application.leftover.system", category: category, displayName: "System orphan: \(identifier)", safety: .review, deletionMode: .privileged, requirements: [.privilegedHelper, .explicitConfirmation], reason: "Exact bundle-style identifier is not related to any installed application", regenerationHint: "A privileged review is required before removal."), item.allocatedBytes > 0 {
@@ -241,9 +292,9 @@ struct LaunchItemScanner: CleanupScanner {
             (URL(fileURLWithPath: "/Library/LaunchDaemons", isDirectory: true), "launchitem.orphan.system", .privileged, [.privilegedHelper, .explicitConfirmation])
         ]
         var results: [CleanupCandidate] = []
-        for (root, ruleID, mode, requirements) in roots where FileManager.default.fileExists(atPath: root.path) {
+        for (root, ruleID, mode, requirements) in roots {
             try Task.checkCancellation()
-            for plistURL in support.immediateChildren(of: root) where plistURL.pathExtension.lowercased() == "plist" {
+            for plistURL in try support.immediateChildren(of: root) where plistURL.pathExtension.lowercased() == "plist" {
                 try Task.checkCancellation()
                 guard let data = try? Data(contentsOf: plistURL), let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil), let plist = object as? [String: Any] else { continue }
                 let label = (plist["Label"] as? String) ?? plistURL.deletingPathExtension().lastPathComponent
@@ -271,15 +322,13 @@ struct DiagnosticReportScanner: CleanupScanner {
         let userRoot = context.homeDirectory.appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
         let systemRoot = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports", isDirectory: true)
         var results: [CleanupCandidate] = []
-        for url in support.immediateChildren(of: userRoot) {
+        for url in try support.immediateChildren(of: userRoot) {
             try Task.checkCancellation()
             if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.user.old", category: category, safety: .safe, deletionMode: .permanent, reason: "Crash/hang diagnostic report") { results.append(item) }
         }
-        if FileManager.default.fileExists(atPath: systemRoot.path) {
-            for url in support.immediateChildren(of: systemRoot) {
-                try Task.checkCancellation()
-                if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.system.old", category: category, safety: .review, deletionMode: .privileged, requirements: [.privilegedHelper], reason: "System crash/hang diagnostic report") { results.append(item) }
-            }
+        for url in try support.immediateChildren(of: systemRoot) {
+            try Task.checkCancellation()
+            if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.system.old", category: category, safety: .review, deletionMode: .privileged, requirements: [.privilegedHelper], reason: "System crash/hang diagnostic report") { results.append(item) }
         }
         return results
     }
@@ -301,14 +350,19 @@ struct LargeOldFileScanner: CleanupScanner {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
         for root in context.requestedRoots where seen.insert(root.path).inserted {
             try Task.checkCancellation()
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
-            while let url = enumerator.nextObject() as? URL {
-                try Task.checkCancellation()
-                guard !context.isIgnored(url), let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            try CleanupScannerSupport().enumerateDescendants(of: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants]) { url, _ in
+                guard !context.isIgnored(url) else { return }
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(forKeys: keys)
+                } catch {
+                    throw CleanupScannerError.inaccessibleRoot(url.path)
+                }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return }
                 let size = UInt64(max(values.fileSize ?? 0, 0))
                 let isLarge = size >= largeThreshold
                 let isOldAndMeaningful = size >= oldSizeThreshold && values.contentModificationDate.map { context.now.timeIntervalSince($0) >= oldAge } == true
-                guard isLarge || isOldAndMeaningful else { continue }
+                guard isLarge || isOldAndMeaningful else { return }
                 if let item = support.candidate(url: url, scannerID: id, ruleID: "largeold.file", category: category, safety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], reason: isLarge ? "Large personal file" : "Large file not modified for at least 180 days", regenerationHint: "Personal files are never part of automatic safe cleanup.") {
                     results.append(item)
                 }
@@ -385,12 +439,17 @@ struct ExactDuplicateScanner: CleanupScanner {
         var visited = Set<String>()
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
         for root in context.requestedRoots where visited.insert(root.path).inserted {
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
-            for case let url as URL in enumerator {
-                try Task.checkCancellation()
-                guard !context.isIgnored(url), let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            try CleanupScannerSupport().enumerateDescendants(of: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants]) { url, _ in
+                guard !context.isIgnored(url) else { return }
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(forKeys: keys)
+                } catch {
+                    throw CleanupScannerError.inaccessibleRoot(url.path)
+                }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return }
                 let size = UInt64(max(values.fileSize ?? 0, 0))
-                guard size >= minimumSize else { continue }
+                guard size >= minimumSize else { return }
                 records.append(DuplicateFileRecord(url: url, size: size, identity: CleanupPathValidator.identity(for: url)))
             }
         }
@@ -441,10 +500,15 @@ struct SimilarImageScanner: CleanupScanner {
         for root in context.requestedRoots {
             try Task.checkCancellation()
             let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants], errorHandler: { _, _ in true }) else { continue }
-            while let url = enumerator.nextObject() as? URL {
-                try Task.checkCancellation()
-                guard supportedExtensions.contains(url.pathExtension.lowercased()), !context.isIgnored(url), let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            try support.enumerateDescendants(of: root, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants]) { url, _ in
+                guard supportedExtensions.contains(url.pathExtension.lowercased()), !context.isIgnored(url) else { return }
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(forKeys: keys)
+                } catch {
+                    throw CleanupScannerError.inaccessibleRoot(url.path)
+                }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return }
                 if let record = featureRecord(for: url) { buckets[record.aspectBucket, default: []].append(record) }
             }
         }
@@ -502,10 +566,10 @@ struct MailAttachmentScanner: CleanupScanner {
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let root = context.homeDirectory.appendingPathComponent("Library/Containers/com.apple.mail/Data/Library/Mail Downloads", isDirectory: true)
         var results: [CleanupCandidate] = []
-        for url in support.immediateChildren(of: root) {
+        for url in try support.immediateChildren(of: root) {
             try Task.checkCancellation()
             guard !context.isIgnored(url) else { continue }
-            if let item = support.candidate(url: url, scannerID: id, ruleID: "mail.attachment.cache", category: category, safety: .review, deletionMode: .permanent, requirements: [.fullDiskAccess, .explicitConfirmation], reason: "Local Mail attachment download cache", regenerationHint: "Mail databases and message stores are never cleanup targets; only the Mail Downloads cache is considered.") {
+            if let item = support.candidate(url: url, scannerID: id, ruleID: "mail.attachment.cache", category: category, safety: .review, deletionMode: .permanent, requirements: [.fullDiskAccess, .explicitConfirmation, .applicationInactive], reason: "Local Mail attachment download cache", regenerationHint: "Mail databases and message stores are never cleanup targets; only the Mail Downloads cache is considered.") {
                 results.append(item)
             }
         }

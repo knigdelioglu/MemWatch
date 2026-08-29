@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 protocol CleanupScanner: Sendable {
@@ -11,6 +12,7 @@ struct CleanupScanContext: Sendable {
     let requestedRoots: [URL]
     let projectRoots: [URL]
     let ignoredPaths: Set<String>
+    let ignoredExactPaths: Set<String>
     let now: Date
     let fullDiskAccessAvailable: Bool
     let privilegedHelperAvailable: Bool
@@ -20,15 +22,17 @@ struct CleanupScanContext: Sendable {
         requestedRoots: [URL] = [],
         projectRoots: [URL]? = nil,
         ignoredPaths: Set<String> = [],
+        ignoredExactPaths: Set<String> = [],
         now: Date = Date(),
         fullDiskAccessAvailable: Bool = false,
         privilegedHelperAvailable: Bool = false
     ) {
         let standardizedHome = homeDirectory.standardizedFileURL
         self.homeDirectory = standardizedHome
-        self.requestedRoots = requestedRoots.map(\.standardizedFileURL)
-        self.projectRoots = (projectRoots ?? Self.defaultProjectRoots(homeDirectory: standardizedHome)).map(\.standardizedFileURL)
+        self.requestedRoots = requestedRoots.map { $0.resolvingSymlinksInPath().standardizedFileURL }
+        self.projectRoots = (projectRoots ?? Self.defaultProjectRoots(homeDirectory: standardizedHome)).map { $0.resolvingSymlinksInPath().standardizedFileURL }
         self.ignoredPaths = Set(ignoredPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+        self.ignoredExactPaths = Set(ignoredExactPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
         self.now = now
         self.fullDiskAccessAvailable = fullDiskAccessAvailable
         self.privilegedHelperAvailable = privilegedHelperAvailable
@@ -36,7 +40,7 @@ struct CleanupScanContext: Sendable {
 
     func isIgnored(_ url: URL) -> Bool {
         let candidate = url.standardizedFileURL.path
-        return ignoredPaths.contains { ignored in
+        return ignoredExactPaths.contains(candidate) || ignoredPaths.contains { ignored in
             CleanupPathValidator.path(candidate, isEqualToOrDescendantOf: ignored)
         }
     }
@@ -63,6 +67,8 @@ enum CleanupScannerError: LocalizedError {
 struct CleanupScannerSupport: Sendable {
     private let sizer = CleanupFileSizer()
 
+    typealias DescendantVisitor = (URL, inout Bool) throws -> Void
+
     func candidate(
         url: URL,
         scannerID: CleanupScannerID,
@@ -76,37 +82,89 @@ struct CleanupScannerSupport: Sendable {
         regenerationHint: String? = nil
     ) -> CleanupCandidate? {
         let standardized = url.standardizedFileURL
-        guard FileManager.default.fileExists(atPath: standardized.path) else { return nil }
+        guard let identity = CleanupPathValidator.identity(for: standardized), !identity.isSymbolicLink else { return nil }
         let keys: Set<URLResourceKey> = [.creationDateKey, .contentModificationDateKey, .contentAccessDateKey, .isSymbolicLinkKey]
         let values = try? standardized.resourceValues(forKeys: keys)
         if values?.isSymbolicLink == true { return nil }
-        let size = sizer.measure(standardized)
+        let size = try? sizer.measureStrict(standardized)
+        let metadataUnavailable = values == nil || size == nil
         return CleanupCandidate(
             scannerID: scannerID,
             ruleID: ruleID,
             category: category,
             url: standardized,
             displayName: displayName ?? standardized.lastPathComponent,
-            logicalBytes: size.logicalBytes,
-            allocatedBytes: size.allocatedBytes,
+            logicalBytes: size?.logicalBytes ?? 0,
+            allocatedBytes: size?.allocatedBytes ?? 0,
             createdAt: values?.creationDate,
             modifiedAt: values?.contentModificationDate,
             lastAccessedAt: values?.contentAccessDate,
-            safety: safety,
-            deletionMode: deletionMode,
+            safety: metadataUnavailable ? .protected : safety,
+            deletionMode: metadataUnavailable ? .none : deletionMode,
             requirements: requirements,
             reason: reason,
             regenerationHint: regenerationHint,
-            identity: CleanupPathValidator.identity(for: standardized)
+            identity: identity,
+            policyNotes: metadataUnavailable ? ["Cleanup metadata or complete size could not be read; the item is protected until a later rescan."] : []
         )
     }
 
-    func immediateChildren(of root: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(
+    func immediateChildren(of root: URL) throws -> [URL] {
+        var info = stat()
+        guard lstat(root.path, &info) == 0 else {
+            if errno == ENOENT { return [] }
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+        guard (UInt32(info.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFDIR) else {
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+        do {
+            return try FileManager.default.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
+                options: []
+            )
+        } catch {
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+    }
+
+    func enumerateDescendants(
+        of root: URL,
+        includingPropertiesForKeys keys: [URLResourceKey],
+        options: FileManager.DirectoryEnumerationOptions = [],
+        visit: DescendantVisitor
+    ) throws {
+        var rootInfo = stat()
+        guard lstat(root.path, &rootInfo) == 0 else {
+            if errno == ENOENT { return }
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+        guard (UInt32(rootInfo.st_mode) & UInt32(S_IFMT)) == UInt32(S_IFDIR) else {
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+        var enumerationError: Error?
+        guard let enumerator = FileManager.default.enumerator(
             at: root,
-            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
-            options: []
-        )) ?? []
+            includingPropertiesForKeys: keys,
+            options: options,
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
+        ) else {
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
+
+        while let url = enumerator.nextObject() as? URL {
+            try Task.checkCancellation()
+            var skipDescendants = false
+            try visit(url, &skipDescendants)
+            if skipDescendants { enumerator.skipDescendants() }
+        }
+        if enumerationError != nil {
+            throw CleanupScannerError.inaccessibleRoot(root.path)
+        }
     }
 }
 
@@ -119,14 +177,14 @@ struct UserCacheScanner: CleanupScanner {
         var results: [CleanupCandidate] = []
         let library = context.homeDirectory.appendingPathComponent("Library", isDirectory: true)
         let primaryCache = library.appendingPathComponent("Caches", isDirectory: true)
-        for url in support.immediateChildren(of: primaryCache) where !context.isIgnored(url) {
+        for url in try support.immediateChildren(of: primaryCache) where !context.isIgnored(url) {
             try Task.checkCancellation()
             if let item = support.candidate(url: url, scannerID: id, ruleID: "user.cache", category: category, safety: .safe, deletionMode: .permanent, requirements: [.applicationInactive], reason: "Application cache under ~/Library/Caches", regenerationHint: "The owning application can recreate this cache.") {
                 results.append(item)
             }
         }
         let containers = library.appendingPathComponent("Containers", isDirectory: true)
-        for container in support.immediateChildren(of: containers) {
+        for container in try support.immediateChildren(of: containers) {
             try Task.checkCancellation()
             let cache = container.appendingPathComponent("Data/Library/Caches", isDirectory: true)
             guard !context.isIgnored(cache) else { continue }
@@ -135,7 +193,7 @@ struct UserCacheScanner: CleanupScanner {
             }
         }
         let groupContainers = library.appendingPathComponent("Group Containers", isDirectory: true)
-        for group in support.immediateChildren(of: groupContainers) {
+        for group in try support.immediateChildren(of: groupContainers) {
             try Task.checkCancellation()
             let cache = group.appendingPathComponent("Library/Caches", isDirectory: true)
             guard !context.isIgnored(cache) else { continue }
@@ -156,14 +214,15 @@ struct UserLogScanner: CleanupScanner {
         var results: [CleanupCandidate] = []
         let library = context.homeDirectory.appendingPathComponent("Library", isDirectory: true)
         let primaryLogs = library.appendingPathComponent("Logs", isDirectory: true)
-        for url in support.immediateChildren(of: primaryLogs) where !context.isIgnored(url) {
+        for url in try support.immediateChildren(of: primaryLogs)
+        where url.lastPathComponent != "DiagnosticReports" && !context.isIgnored(url) {
             try Task.checkCancellation()
             if let item = support.candidate(url: url, scannerID: id, ruleID: "user.log.old", category: category, safety: .safe, deletionMode: .permanent, reason: "User application log", regenerationHint: "Logs are diagnostic output and may be recreated.") {
                 results.append(item)
             }
         }
         let containers = library.appendingPathComponent("Containers", isDirectory: true)
-        for container in support.immediateChildren(of: containers) {
+        for container in try support.immediateChildren(of: containers) {
             try Task.checkCancellation()
             let logs = container.appendingPathComponent("Data/Library/Logs", isDirectory: true)
             guard !context.isIgnored(logs) else { continue }
@@ -185,13 +244,12 @@ struct XcodeCleanupScanner: CleanupScanner {
         let developer = library.appendingPathComponent("Developer", isDirectory: true)
         let xcode = developer.appendingPathComponent("Xcode", isDirectory: true)
         var results: [CleanupCandidate] = []
-        results.append(contentsOf: children(root: xcode.appendingPathComponent("DerivedData", isDirectory: true), ruleID: "xcode.deriveddata", safety: .safe, deletionMode: .permanent, reason: "Generated Xcode build/index data", context: context))
+        results.append(contentsOf: try children(root: xcode.appendingPathComponent("DerivedData", isDirectory: true), ruleID: "xcode.deriveddata", safety: .safe, deletionMode: .permanent, reason: "Generated Xcode build/index data", context: context))
         let simpleTargets: [(URL, CleanupRuleID, CleanupSafetyLevel, CleanupDeletionMode, String)] = [
             (xcode.appendingPathComponent("ModuleCache.noindex", isDirectory: true), "xcode.modulecache", .safe, .permanent, "Generated Xcode module cache"),
             (xcode.appendingPathComponent("DocumentationCache", isDirectory: true), "xcode.documentationcache", .safe, .permanent, "Downloaded/generated Xcode documentation cache"),
             (library.appendingPathComponent("Caches/org.swift.swiftpm", isDirectory: true), "xcode.swiftpmcache", .safe, .permanent, "Swift Package Manager cache"),
-            (xcode.appendingPathComponent("UserData/Previews", isDirectory: true), "xcode.previews", .safe, .permanent, "Generated SwiftUI/Xcode preview artifacts"),
-            (developer.appendingPathComponent("CoreSimulator/Caches", isDirectory: true), "xcode.simulatorcache", .review, .maintenance, "CoreSimulator cache; cleanup should use simulator-aware maintenance")
+            (xcode.appendingPathComponent("UserData/Previews", isDirectory: true), "xcode.previews", .safe, .permanent, "Generated SwiftUI/Xcode preview artifacts")
         ]
         for (url, ruleID, safety, deletionMode, reason) in simpleTargets {
             try Task.checkCancellation()
@@ -202,14 +260,15 @@ struct XcodeCleanupScanner: CleanupScanner {
         }
         for folderName in ["iOS DeviceSupport", "watchOS DeviceSupport", "tvOS DeviceSupport"] {
             try Task.checkCancellation()
-            results.append(contentsOf: children(root: xcode.appendingPathComponent(folderName, isDirectory: true), ruleID: "xcode.devicesupport", safety: .review, deletionMode: .permanent, reason: "\(folderName) version support files", context: context))
+            results.append(contentsOf: try children(root: xcode.appendingPathComponent(folderName, isDirectory: true), ruleID: "xcode.devicesupport", safety: .review, deletionMode: .permanent, reason: "\(folderName) version support files", context: context))
         }
-        results.append(contentsOf: children(root: developer.appendingPathComponent("XCTestDevices", isDirectory: true), ruleID: "xcode.simulatorcache", safety: .review, deletionMode: .maintenance, reason: "Generated XCTest device data", context: context))
+        results.append(contentsOf: try children(root: developer.appendingPathComponent("CoreSimulator/Caches", isDirectory: true), ruleID: "xcode.simulatorcache", safety: .review, deletionMode: .maintenance, reason: "CoreSimulator cache; cleanup should use simulator-aware maintenance", context: context))
+        results.append(contentsOf: try children(root: developer.appendingPathComponent("XCTestDevices", isDirectory: true), ruleID: "xcode.simulatorcache", safety: .review, deletionMode: .maintenance, reason: "Generated XCTest device data", context: context))
         return results
     }
 
-    private func children(root: URL, ruleID: CleanupRuleID, safety: CleanupSafetyLevel, deletionMode: CleanupDeletionMode, reason: String, context: CleanupScanContext) -> [CleanupCandidate] {
-        support.immediateChildren(of: root).compactMap { child in
+    private func children(root: URL, ruleID: CleanupRuleID, safety: CleanupSafetyLevel, deletionMode: CleanupDeletionMode, reason: String, context: CleanupScanContext) throws -> [CleanupCandidate] {
+        try support.immediateChildren(of: root).compactMap { child in
             guard !context.isIgnored(child) else { return nil }
             return support.candidate(url: child, scannerID: id, ruleID: ruleID, category: category, safety: safety, deletionMode: deletionMode, requirements: deletionMode == .maintenance ? [.explicitConfirmation, .applicationInactive] : [.applicationInactive], reason: reason, regenerationHint: "Xcode can recreate or redownload this data when it is needed again.")
         }
@@ -293,18 +352,22 @@ struct ProjectArtifactScanner: CleanupScanner {
         var results: [CleanupCandidate] = []
         for root in context.projectRoots {
             try Task.checkCancellation()
-            guard FileManager.default.fileExists(atPath: root.path), !context.isIgnored(root) else { continue }
+            guard !context.isIgnored(root) else { continue }
             let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true }) else { continue }
-            while let url = enumerator.nextObject() as? URL {
-                try Task.checkCancellation()
-                guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isDirectory == true else { continue }
-                if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            try support.enumerateDescendants(of: root, includingPropertiesForKeys: keys) { url, skipDescendants in
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(forKeys: Set(keys))
+                } catch {
+                    throw CleanupScannerError.inaccessibleRoot(url.path)
+                }
+                guard values.isDirectory == true else { return }
+                if values.isSymbolicLink == true { skipDescendants = true; return }
                 let name = url.lastPathComponent
-                if excludedTraversalNames.contains(name) { enumerator.skipDescendants(); continue }
-                guard exactArtifactNames.contains(name) || name.hasPrefix("cmake-build-") else { continue }
-                enumerator.skipDescendants()
-                guard !context.isIgnored(url) else { continue }
+                if excludedTraversalNames.contains(name) { skipDescendants = true; return }
+                guard exactArtifactNames.contains(name) || name.hasPrefix("cmake-build-") else { return }
+                skipDescendants = true
+                guard !context.isIgnored(url) else { return }
                 if let item = support.candidate(url: url, scannerID: id, ruleID: "project.artifact", category: category, displayName: url.path.replacingOccurrences(of: root.path + "/", with: ""), safety: .review, deletionMode: .permanent, requirements: [.explicitConfirmation], reason: artifactReason(name), regenerationHint: regenerationHint(name)), item.allocatedBytes > 0 {
                     results.append(item)
                 }
@@ -358,7 +421,7 @@ struct AIArtifactScanner: CleanupScanner {
             }
         }
         let hub = home.appendingPathComponent(".cache/huggingface/hub", isDirectory: true)
-        for child in support.immediateChildren(of: hub) {
+        for child in try support.immediateChildren(of: hub) {
             try Task.checkCancellation()
             guard !context.isIgnored(child) else { continue }
             let metadata = child.lastPathComponent == ".locks"
@@ -390,7 +453,7 @@ struct DownloadsScanner: CleanupScanner {
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let downloads = context.homeDirectory.appendingPathComponent("Downloads", isDirectory: true)
         var results: [CleanupCandidate] = []
-        for url in support.immediateChildren(of: downloads) {
+        for url in try support.immediateChildren(of: downloads) {
             try Task.checkCancellation()
             guard !context.isIgnored(url) else { continue }
             let ext = url.pathExtension.lowercased()
@@ -415,7 +478,7 @@ struct TrashScanner: CleanupScanner {
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let trash = context.homeDirectory.appendingPathComponent(".Trash", isDirectory: true)
         var results: [CleanupCandidate] = []
-        for url in support.immediateChildren(of: trash) {
+        for url in try support.immediateChildren(of: trash) {
             try Task.checkCancellation()
             guard !context.isIgnored(url) else { continue }
             if let item = support.candidate(url: url, scannerID: id, ruleID: "trash.user", category: category, safety: .review, deletionMode: .permanent, requirements: [.explicitConfirmation], reason: "Item is already in the user's Trash", regenerationHint: "Emptying Trash is permanent.") {
@@ -434,7 +497,7 @@ struct IOSBackupScanner: CleanupScanner {
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let backupRoot = context.homeDirectory.appendingPathComponent("Library/Application Support/MobileSync/Backup", isDirectory: true)
         var results: [CleanupCandidate] = []
-        for backup in support.immediateChildren(of: backupRoot) {
+        for backup in try support.immediateChildren(of: backupRoot) {
             try Task.checkCancellation()
             guard !context.isIgnored(backup) else { continue }
             let metadata = readMetadata(from: backup.appendingPathComponent("Info.plist"))

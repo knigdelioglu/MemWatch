@@ -22,6 +22,9 @@ struct PrivilegedSystemScanner: CleanupScanner {
         guard response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion else {
             throw PrivilegedHelperClientError.protocolMismatch
         }
+        guard response.issues.isEmpty else {
+            throw CleanupScannerError.inaccessibleRoot(response.issues.joined(separator: " | "))
+        }
 
         var results: [CleanupCandidate] = []
         for item in response.items {
@@ -39,7 +42,9 @@ struct PrivilegedSystemScanner: CleanupScanner {
                     deviceID: $0.deviceID,
                     inode: $0.inode,
                     ownerUID: $0.ownerUID,
-                    mode: $0.mode
+                    mode: $0.mode,
+                    sizeBytes: $0.sizeBytes,
+                    modificationTimeNanoseconds: $0.modificationTimeNanoseconds
                 )
             }
 
@@ -61,9 +66,7 @@ struct PrivilegedSystemScanner: CleanupScanner {
                     reason: item.reason,
                     regenerationHint: privilegedRegenerationHint(for: rule.id),
                     identity: identity,
-                    policyNotes: response.issues.isEmpty ? [] : [
-                        "Privileged scan also reported: \(response.issues.joined(separator: " | "))"
-                    ]
+                    policyNotes: []
                 )
             )
         }
@@ -93,6 +96,9 @@ struct TimeMachineSnapshotBackend: Sendable {
         let response = try await client.scan(ruleIDs: ["timemachine.snapshot"])
         guard response.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion else {
             throw PrivilegedHelperClientError.protocolMismatch
+        }
+        guard response.issues.isEmpty else {
+            throw CleanupScannerError.inaccessibleRoot(response.issues.joined(separator: " | "))
         }
         return response.items.filter { $0.ruleID == "timemachine.snapshot" }
     }

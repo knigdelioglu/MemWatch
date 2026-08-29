@@ -25,6 +25,7 @@ struct PrivilegedHelperProtocolTests {
         let encodedScan = try JSONEncoder().encode(scan)
         let decodedScan = try JSONDecoder().decode(PrivilegedScanRequest.self, from: encodedScan)
         precondition(decodedScan.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion)
+        precondition(decodedScan.requestID == scan.requestID)
         precondition(decodedScan.ruleIDs == ["system.cache", "timemachine.snapshot"])
 
         let response = PrivilegedOperationResponse(
@@ -38,6 +39,7 @@ struct PrivilegedHelperProtocolTests {
         let decodedResponse = try JSONDecoder().decode(PrivilegedOperationResponse.self, from: encodedResponse)
         precondition(decodedResponse.protocolVersion == MemWatchPrivilegedHelperConstants.protocolVersion)
         precondition(decodedResponse.success)
+        precondition(decodedResponse.requestID == request.requestID)
         precondition(decodedResponse.reclaimedBytes == 4096)
 
         print("PASS Privileged helper protocol")

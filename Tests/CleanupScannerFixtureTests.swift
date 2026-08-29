@@ -35,6 +35,13 @@ struct CleanupScannerFixtureTests {
         try writePayload(into: derived, fm: fm)
         assertContains(try await XcodeCleanupScanner().scan(context: context), path: derived.path, label: "Xcode DerivedData")
 
+        let simulatorCacheRoot = home.appendingPathComponent("Library/Developer/CoreSimulator/Caches", isDirectory: true)
+        let simulatorCacheChild = simulatorCacheRoot.appendingPathComponent("FixtureCache", isDirectory: true)
+        try writePayload(into: simulatorCacheChild, fm: fm)
+        let xcodeItems = try await XcodeCleanupScanner().scan(context: context)
+        assertContains(xcodeItems, path: simulatorCacheChild.path, label: "simulator cache child")
+        precondition(!xcodeItems.contains { $0.url.path == simulatorCacheRoot.path }, "The CoreSimulator cache root must never be an actionable target")
+
         let npmCache = home.appendingPathComponent(".npm/_cacache", isDirectory: true)
         try writePayload(into: npmCache, fm: fm)
         assertContains(try await DeveloperCacheScanner().scan(context: context), path: npmCache.path, label: "developer cache")

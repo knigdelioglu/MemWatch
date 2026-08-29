@@ -83,7 +83,7 @@ struct CleanupRuleCatalog: Sendable {
         CleanupRule(id: "largeold.file", category: .largeOldFiles, rootPolicy: .requestedRoots, defaultSafety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], description: "Large or old user file; never auto-selected as safe"),
         CleanupRule(id: "duplicate.exact", category: .duplicates, rootPolicy: .requestedRoots, defaultSafety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], description: "Byte-identical duplicate confirmed by full hashing"),
         CleanupRule(id: "image.similar", category: .similarImages, rootPolicy: .requestedRoots, defaultSafety: .review, deletionMode: .trash, requirements: [.explicitConfirmation], description: "Visually similar image; never automatically deleted"),
-        CleanupRule(id: "mail.attachment.cache", category: .mailAttachments, rootPolicy: .userLibrary, defaultSafety: .review, deletionMode: .permanent, requirements: [.fullDiskAccess, .explicitConfirmation], description: "Locally cached Mail attachment that can be downloaded again"),
+        CleanupRule(id: "mail.attachment.cache", category: .mailAttachments, rootPolicy: .userLibrary, defaultSafety: .review, deletionMode: .permanent, requirements: [.fullDiskAccess, .explicitConfirmation, .applicationInactive], description: "Locally cached Mail attachment that can be downloaded again"),
         CleanupRule(id: "timemachine.snapshot", category: .snapshots, rootPolicy: .userHome, defaultSafety: .review, deletionMode: .maintenance, requirements: [.privilegedHelper, .explicitConfirmation], description: "Time Machine local snapshot managed through the system tool, never by raw file deletion")
     ]
 }

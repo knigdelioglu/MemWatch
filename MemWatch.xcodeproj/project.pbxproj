@@ -33,11 +33,13 @@
 		B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* CleanupSafetyEngine.swift */; };
 		B10000000000000000000006 /* CleanupScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* CleanupScanEngine.swift */; };
 		B10000000000000000000007 /* CleanupFileSizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* CleanupFileSizer.swift */; };
+		B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
 		D10000000000000000000001 /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
 		D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PrivilegedHelperService.swift */; };
 		D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* PrivilegedSystemScanner.swift */; };
 		D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
 		D10000000000000000000005 /* HelperMain.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* HelperMain.swift */; };
+		D10000000000000000000008 /* CleanupSecureRemoval.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
 		D10000000000000000000006 /* MemWatchPrivilegedHelper in Copy Helper */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* MemWatchPrivilegedHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		D10000000000000000000007 /* Helper daemon plist in Copy LaunchDaemons */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */; };
 		E10000000000000000000001 /* CleanupDeletionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* CleanupDeletionEngine.swift */; };
@@ -110,6 +112,7 @@
 		B20000000000000000000005 /* CleanupSafetyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSafetyEngine.swift; sourceTree = "<group>"; };
 		B20000000000000000000006 /* CleanupScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanEngine.swift; sourceTree = "<group>"; };
 		B20000000000000000000007 /* CleanupFileSizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupFileSizer.swift; sourceTree = "<group>"; };
+		B20000000000000000000008 /* CleanupSecureRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSecureRemoval.swift; sourceTree = "<group>"; };
 		D20000000000000000000001 /* HelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperProtocol.swift; sourceTree = "<group>"; };
 		D20000000000000000000002 /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* PrivilegedHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperService.swift; sourceTree = "<group>"; };
@@ -233,6 +236,7 @@
 				B20000000000000000000005 /* CleanupSafetyEngine.swift */,
 				B20000000000000000000006 /* CleanupScanEngine.swift */,
 				B20000000000000000000007 /* CleanupFileSizer.swift */,
+				B20000000000000000000008 /* CleanupSecureRemoval.swift */,
 				D20000000000000000000004 /* PrivilegedSystemScanner.swift */,
 				E20000000000000000000001 /* CleanupDeletionEngine.swift */,
 			);
@@ -374,6 +378,7 @@
 				B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */,
 				B10000000000000000000006 /* CleanupScanEngine.swift in Sources */,
 				B10000000000000000000007 /* CleanupFileSizer.swift in Sources */,
+				B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */,
 				D10000000000000000000001 /* HelperProtocol.swift in Sources */,
 				D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */,
 				D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */,
@@ -390,6 +395,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */,
+				D10000000000000000000008 /* CleanupSecureRemoval.swift in Helper Sources */,
 				D10000000000000000000005 /* HelperMain.swift in Helper Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
