@@ -300,6 +300,15 @@ jobs:
             -o /tmp/memwatch-helper-protocol-tests
           /tmp/memwatch-helper-protocol-tests
 
+      - name: Run privileged helper installer script tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Services/PrivilegedHelperInstallerScript.swift \
+            Tests/PrivilegedHelperInstallerScriptTests.swift \
+            -o /tmp/memwatch-helper-installer-tests
+          /tmp/memwatch-helper-installer-tests
+
       - name: Verify cleanup architecture contracts
         run: |
           grep -q 'Deep Cleanup' MemWatchApp.swift
@@ -314,6 +323,12 @@ jobs:
           grep -q 'authorizationManifestPath' PrivilegedHelper/HelperProtocol.swift
           grep -q 'isSecureManifestFile' PrivilegedHelper/HelperMain.swift
           grep -q 'SMAppService.daemon' Services/PrivilegedHelperService.swift
+          grep -q 'case .adHoc' Services/PrivilegedHelperService.swift
+          grep -q 'case .smAppService' Services/PrivilegedHelperService.swift
+          grep -q 'set -e' Services/PrivilegedHelperInstallerScript.swift
+          grep -q "run_step 'launchctl bootstrap'" Services/PrivilegedHelperInstallerScript.swift
+          ! grep -q 'joined(separator: "; ")' Services/PrivilegedHelperService.swift
+          grep -q 'openSystemSettingsLoginItems' Services/PrivilegedHelperService.swift
           grep -q 'Contents/Library/HelperTools' MemWatch.xcodeproj/project.pbxproj
           grep -q 'Contents/Library/LaunchDaemons' MemWatch.xcodeproj/project.pbxproj
           grep -q 'coordinator.preferences.cleanupEnabled' Views/CleanupView.swift

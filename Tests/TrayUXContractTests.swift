@@ -42,6 +42,8 @@ struct TrayUXContractTests {
         expect(coordinatorSource.contains("if currentPreferences.privilegedOperationsEnabled"), "scan should rediscover an installed helper after relaunch")
         expect(coordinatorSource.contains("await helperService.verifyConnection()"), "startup should verify an installed helper before showing it as missing")
         expect(cleanupSource.contains("helperService.lastError"), "helper installation failures must remain visible in the cleanup UI")
+        expect(cleanupSource.contains("state == .requiresApproval"), "helper approval should have a dedicated UI state")
+        expect(cleanupSource.contains("openHelperApprovalSettings"), "approval UI should open System Settings directly")
         expect(!cleanupSource.contains("Label(\"Dry Run\""), "English dry-run label must not return to cleanup UI")
 
         print("Tray UX contract tests passed")

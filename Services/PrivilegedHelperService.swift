@@ -16,6 +16,7 @@ enum PrivilegedHelperClientError: LocalizedError {
     case invalidResponse
     case remote(String)
     case protocolMismatch
+    case registrationModeMismatch
     case timedOut
 
     var errorDescription: String? {
@@ -24,6 +25,7 @@ enum PrivilegedHelperClientError: LocalizedError {
         case .invalidResponse: return "Privileged helper returned an invalid response."
         case .remote(let message): return message
         case .protocolMismatch: return "Privileged helper protocol version does not match MemWatch."
+        case .registrationModeMismatch: return "Privileged helper registration mode does not match the current app signature."
         case .timedOut: return "Privileged helper did not respond within the safety deadline."
         }
     }
@@ -186,7 +188,6 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
     case bundledDaemonPlistMissing
     case malformedBundledDaemonPlist
     case clientAuthorizationManifestUnavailable
-    case launchServicesRepairFailed(String)
     case administratorAuthorizationFailed(String)
 
     var errorDescription: String? {
@@ -199,19 +200,14 @@ private enum PrivilegedHelperCompatibilityError: LocalizedError {
             return "MemWatch LaunchDaemon tanımı geçersiz veya helper yoluyla eşleşmiyor."
         case .clientAuthorizationManifestUnavailable:
             return "Yerel imzalı paket için yetkili yardımcı kimliği oluşturulamadı."
-        case .launchServicesRepairFailed(let message):
-            return "LaunchServices uyumluluk onarımı başarısız: \(message)"
         case .administratorAuthorizationFailed(let message):
             return "Yönetici yetkili yardımcı kurulumu başarısız: \(message)"
         }
     }
 }
 
-/// A deliberately narrow fallback for machines where SMAppService cannot locate
-/// the bundled LaunchDaemon. It can only repair MemWatch's LaunchServices entry
-/// or install MemWatch's own helper, plist and root-owned client identity pin at
-/// fixed locations. No arbitrary command/path interface is exposed to the rest
-/// of the application.
+/// The manual installer is exclusively for ad-hoc/local builds. Team-signed
+/// builds must use SMAppService and never enter this path.
 private struct PrivilegedHelperCompatibilityInstaller {
     private let fileManager = FileManager.default
     private let label = MemWatchPrivilegedHelperConstants.daemonLabel
@@ -263,33 +259,6 @@ private struct PrivilegedHelperCompatibilityInstaller {
         return (helper, plist)
     }
 
-    /// `lsregister` is an Apple-supplied but undocumented LaunchServices tool.
-    /// This is intentionally isolated behind the private compatibility switch.
-    /// It only refreshes registration for MemWatch's own bundle.
-    func repairLaunchServicesRegistration() throws {
-        let candidates = [
-            "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-            "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
-        ]
-        guard let executable = candidates.first(where: { fileManager.isExecutableFile(atPath: $0) }) else {
-            throw PrivilegedHelperCompatibilityError.launchServicesRepairFailed("lsregister bulunamadı")
-        }
-
-        let process = Process()
-        let stderr = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-f", Bundle.main.bundleURL.standardizedFileURL.path]
-        process.standardError = stderr
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let data = stderr.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? "çıkış kodu \(process.terminationStatus)"
-            throw PrivilegedHelperCompatibilityError.launchServicesRepairFailed(message)
-        }
-    }
-
     func install() throws {
         let resources = try bundledResources()
         let temporaryPlist = try makeStandaloneLaunchDaemonPlist()
@@ -297,29 +266,35 @@ private struct PrivilegedHelperCompatibilityInstaller {
         defer { try? fileManager.removeItem(at: temporaryPlist) }
         defer { try? fileManager.removeItem(at: temporaryAuthorizationManifest) }
 
-        let command = [
-            "/bin/mkdir -p /Library/PrivilegedHelperTools \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
-            "/bin/chmod 755 \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
-            "/usr/sbin/chown root:wheel \(shellQuote(MemWatchPrivilegedHelperConstants.authorizationDirectoryPath))",
-            "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
-            "/usr/bin/install -o root -g wheel -m 755 \(shellQuote(resources.helper.path)) \(shellQuote(installedHelperPath))",
-            "/usr/bin/install -o root -g wheel -m 644 \(shellQuote(temporaryPlist.path)) \(shellQuote(installedPlistPath))",
-            "/usr/bin/install -o root -g wheel -m 644 \(shellQuote(temporaryAuthorizationManifest.path)) \(shellQuote(installedAuthorizationManifestPath))",
-            "/bin/launchctl bootstrap system \(shellQuote(installedPlistPath))",
-            "/bin/launchctl enable system/\(label)"
-        ].joined(separator: "; ")
-
-        try runWithAdministratorPrivileges(command)
+        let paths = PrivilegedHelperInstallerPaths(
+            helperSourcePath: resources.helper.path,
+            plistSourcePath: temporaryPlist.path,
+            authorizationManifestSourcePath: temporaryAuthorizationManifest.path,
+            installedHelperPath: installedHelperPath,
+            installedPlistPath: installedPlistPath,
+            installedAuthorizationManifestPath: installedAuthorizationManifestPath,
+            authorizationDirectoryPath: MemWatchPrivilegedHelperConstants.authorizationDirectoryPath,
+            daemonLabel: label
+        )
+        try runWithAdministratorPrivileges(
+            PrivilegedHelperInstallerScript.installCommand(paths: paths)
+        )
     }
 
     func uninstall() throws {
-        let command = [
-            "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
-            "/bin/rm -f \(shellQuote(installedPlistPath))",
-            "/bin/rm -f \(shellQuote(installedHelperPath))",
-            "/bin/rm -f \(shellQuote(installedAuthorizationManifestPath))"
-        ].joined(separator: "; ")
-        try runWithAdministratorPrivileges(command)
+        let paths = PrivilegedHelperInstallerPaths(
+            helperSourcePath: "",
+            plistSourcePath: "",
+            authorizationManifestSourcePath: "",
+            installedHelperPath: installedHelperPath,
+            installedPlistPath: installedPlistPath,
+            installedAuthorizationManifestPath: installedAuthorizationManifestPath,
+            authorizationDirectoryPath: MemWatchPrivilegedHelperConstants.authorizationDirectoryPath,
+            daemonLabel: label
+        )
+        try runWithAdministratorPrivileges(
+            PrivilegedHelperInstallerScript.uninstallCommand(paths: paths)
+        )
     }
 
     private func makeAuthorizationManifest() throws -> URL {
@@ -406,17 +381,20 @@ private struct PrivilegedHelperCompatibilityInstaller {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-            let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? "Bilinmeyen hata"
+            let errorOutput = String(
+                data: stderr.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let standardOutput = String(
+                data: stdout.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let diagnostics = [standardOutput, errorOutput]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            let message = diagnostics.isEmpty ? "Bilinmeyen hata" : diagnostics
             throw PrivilegedHelperCompatibilityError.administratorAuthorizationFailed(message)
         }
-    }
-
-    private func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private func appleScriptQuoted(_ value: String) -> String {
@@ -427,25 +405,9 @@ private struct PrivilegedHelperCompatibilityInstaller {
     }
 }
 
-private enum PrivateCompatibilityPolicy {
-    static var isEnabled: Bool {
-        guard let data = try? Data(contentsOf: CleanupPersistencePaths.preferencesFile),
-              let preferences = try? JSONDecoder().decode(CleanupPreferences.self, from: data) else {
-            // A missing/corrupt policy must never enable a private privileged
-            // backend implicitly. The app can explicitly persist an opt-in
-            // value after the user enables it.
-            return false
-        }
-        guard preferences.requestedRootPaths.allSatisfy(Self.isAbsolutePath),
-              preferences.projectRootPaths.allSatisfy(Self.isAbsolutePath) else {
-            return false
-        }
-        return preferences.privateBackendEnabled
-    }
-
-    private static func isAbsolutePath(_ path: String) -> Bool {
-        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && path.hasPrefix("/")
-    }
+private enum PrivilegedHelperRegistrationBackend {
+    case adHoc
+    case smAppService
 }
 
 @MainActor
@@ -462,11 +424,11 @@ final class PrivilegedHelperService: ObservableObject {
     private let compatibilityInstaller = PrivilegedHelperCompatibilityInstaller()
     let client = PrivilegedHelperClient()
 
-    private static var requiresPinnedAuthorization: Bool {
+    private static var registrationBackend: PrivilegedHelperRegistrationBackend {
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess,
               let code else {
-            return true
+            return .adHoc
         }
 
         var information: CFDictionary?
@@ -477,13 +439,15 @@ final class PrivilegedHelperService: ObservableObject {
         ) == errSecSuccess,
         let information,
         let dictionary = information as? [String: Any] else {
-            return true
+            return .adHoc
         }
 
         guard let team = dictionary[kSecCodeInfoTeamIdentifier as String] as? String else {
-            return true
+            return .adHoc
         }
         return team.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? .adHoc
+            : .smAppService
     }
 
     init() {
@@ -518,14 +482,6 @@ final class PrivilegedHelperService: ObservableObject {
         connectionVerified = false
         compatibilityHelperActive = false
 
-        // A compatibility-installed daemon is not visible to SMAppService after
-        // relaunch. Reuse it if its real XPC endpoint is already alive instead of
-        // asking the user for administrator credentials again.
-        if await verifyConnection() {
-            return true
-        }
-        lastError = nil
-
         do {
             _ = try compatibilityInstaller.bundledResources()
         } catch {
@@ -534,30 +490,54 @@ final class PrivilegedHelperService: ObservableObject {
             return false
         }
 
-        // Ad-hoc builds have no stable Team ID. Install a root-owned code-hash
-        // pin before accepting their XPC connection; bundle identifiers and
-        // paths alone must never authorize a root helper.
-        if Self.requiresPinnedAuthorization {
-            // A previous ad-hoc build may have left an SMAppService submission
-            // under the same label. Remove that submission before installing
-            // the manifest-backed compatibility daemon.
-            try? await service.unregister()
-            state = .installing
-            if let errorMessage = await Self.compatibilityInstallError() {
-                compatibilityHelperActive = false
-                lastError = errorMessage
+        switch Self.registrationBackend {
+        case .adHoc:
+            return await registerAdHoc()
+        case .smAppService:
+            return await registerWithSMAppService()
+        }
+    }
+
+    private func registerAdHoc() async -> Bool {
+        // Never accept an endpoint while an SMAppService submission with the
+        // same label is still present. This keeps the two registration models
+        // mutually exclusive even when switching between local and release
+        // builds.
+        if service.status == .enabled || service.status == .requiresApproval {
+            do {
+                try await service.unregister()
+            } catch {
+                lastError = "Önceki SMAppService kaydı kaldırılamadı: \(error.localizedDescription)"
                 refreshStatus()
                 return false
             }
-
-            let verified = await verifyConnection()
-            if verified {
-                compatibilityHelperActive = true
-                refreshStatus()
-            }
-            return verified
+            refreshStatus()
         }
 
+        // A manually installed daemon is not visible to SMAppService after a
+        // relaunch. Reuse it when its authenticated XPC endpoint is alive.
+        if await verifyConnection() {
+            return true
+        }
+        lastError = nil
+        state = .installing
+
+        if let errorMessage = await Self.compatibilityInstallError() {
+            compatibilityHelperActive = false
+            lastError = errorMessage
+            refreshStatus()
+            return false
+        }
+
+        // The installed daemon is authoritative only after its XPC endpoint
+        // accepts a root ping. This also covers a short launchd startup delay.
+        return await verifyConnection()
+    }
+
+    private func registerWithSMAppService() async -> Bool {
+        // A registered SMAppService daemon must be the only source used by a
+        // team-signed build. In particular, do not fall back to the manual
+        // installer when registration fails or approval is pending.
         do {
             try service.register()
         } catch {
@@ -570,64 +550,15 @@ final class PrivilegedHelperService: ObservableObject {
         }
 
         if state == .requiresApproval {
-            SMAppService.openSystemSettingsLoginItems()
+            lastError = "Yetkili yardımcı için Sistem Ayarları > Genel > Giriş Öğeleri bölümünde onay gerekiyor."
+            openApprovalSettings()
             return false
         }
 
-        let compatibilityEnabled = PrivateCompatibilityPolicy.isEnabled
-        if state == .notFound && compatibilityEnabled {
-            if let errorMessage = await Self.compatibilityRepairError() {
-                lastError = errorMessage
-            } else {
-                do {
-                    try service.register()
-                } catch {
-                    lastError = error.localizedDescription
-                }
-                refreshStatus()
-            }
-
-            if state == .enabled {
-                return await verifyConnection()
-            }
-            if state == .requiresApproval {
-                SMAppService.openSystemSettingsLoginItems()
-                return false
-            }
+        if lastError == nil {
+            lastError = "SMAppService yetkili yardımcıyı kaydedemedi (durum: \(state.rawValue)). Manuel kurulum kullanılmadı."
         }
-
-        guard state == .notFound || state == .notRegistered || state == .unavailable else {
-            return false
-        }
-        guard compatibilityEnabled else {
-            if lastError == nil {
-                lastError = "SMAppService yardımcıyı bulamadı. Özel uyumluluk yöntemleri kapalı olduğu için alternatif kurulum kullanılmadı."
-            }
-            return false
-        }
-
-        state = .installing
-        if let errorMessage = await Self.compatibilityInstallError() {
-            compatibilityHelperActive = false
-            lastError = errorMessage
-            refreshStatus()
-            return false
-        }
-
-        // The installed daemon is authoritative only after its XPC endpoint
-        // accepts a ping. This also covers a short launchd startup delay.
-        return await verifyConnection()
-    }
-
-    nonisolated private static func compatibilityRepairError() async -> String? {
-        await Task.detached(priority: .userInitiated) {
-            do {
-                try PrivilegedHelperCompatibilityInstaller().repairLaunchServicesRegistration()
-                return nil
-            } catch {
-                return error.localizedDescription
-            }
-        }.value
+        return false
     }
 
     nonisolated private static func compatibilityInstallError() async -> String? {
@@ -643,28 +574,32 @@ final class PrivilegedHelperService: ObservableObject {
 
     func unregister() {
         lastError = nil
-        do {
-            try service.unregister()
-        } catch {
-            // A compatibility-installed daemon is not registered with SMAppService.
-            if !compatibilityHelperActive {
-                lastError = error.localizedDescription
-            }
-        }
-
-        if compatibilityHelperActive {
+        switch Self.registrationBackend {
+        case .adHoc:
             do {
                 try compatibilityInstaller.uninstall()
                 compatibilityHelperActive = false
             } catch {
                 lastError = error.localizedDescription
             }
+        case .smAppService:
+            do {
+                try service.unregister()
+            } catch {
+                lastError = error.localizedDescription
+            }
+            compatibilityHelperActive = false
         }
         connectionVerified = false
         refreshStatus()
     }
 
+    func openApprovalSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
     func verifyConnection() async -> Bool {
+        let backend = Self.registrationBackend
         for attempt in 0..<3 {
             do {
                 let response = try await client.ping()
@@ -672,8 +607,20 @@ final class PrivilegedHelperService: ObservableObject {
                       response.effectiveUID == 0 else {
                     throw PrivilegedHelperClientError.protocolMismatch
                 }
+
+                switch backend {
+                case .adHoc:
+                    guard service.status != .enabled && service.status != .requiresApproval else {
+                        throw PrivilegedHelperClientError.registrationModeMismatch
+                    }
+                case .smAppService:
+                    guard service.status == .enabled else {
+                        throw PrivilegedHelperClientError.registrationModeMismatch
+                    }
+                }
+
                 connectionVerified = true
-                compatibilityHelperActive = service.status != .enabled
+                compatibilityHelperActive = backend == .adHoc
                 refreshStatus()
                 lastError = nil
                 return true

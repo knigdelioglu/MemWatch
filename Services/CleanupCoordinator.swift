@@ -338,6 +338,10 @@ final class CleanupCoordinator: ObservableObject {
         startScan()
     }
 
+    func openHelperApprovalSettings() {
+        helperService.openApprovalSettings()
+    }
+
     func openFullDiskAccessSettings() {
         fullDiskAccessService.openSettings()
     }

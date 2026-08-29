@@ -197,6 +197,12 @@ struct CleanupView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            } else if coordinator.helperService.state == .requiresApproval {
+                Button("Sistem Ayarlarında Onayla") {
+                    coordinator.openHelperApprovalSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             } else if !coordinator.helperService.isAvailableForCleanup {
                 Button(coordinator.helperService.state == .enabled ? "Bağlantıyı Yeniden Dene" : "Derin Sistem Temizlemeyi Etkinleştir") {
                     coordinator.registerHelper()

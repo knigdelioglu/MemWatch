@@ -37,6 +37,7 @@
 		D10000000000000000000001 /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
 		D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PrivilegedHelperService.swift */; };
 		D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* PrivilegedSystemScanner.swift */; };
+		D10000000000000000000009 /* PrivilegedHelperInstallerScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */; };
 		D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
 		D10000000000000000000005 /* HelperMain.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* HelperMain.swift */; };
 		D10000000000000000000008 /* CleanupSecureRemoval.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
@@ -119,6 +120,7 @@
 		D20000000000000000000004 /* PrivilegedSystemScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedSystemScanner.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = com.knigdelioglu.MemWatch.PrivilegedHelper.plist; sourceTree = "<group>"; };
 		D20000000000000000000006 /* MemWatchPrivilegedHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MemWatchPrivilegedHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperInstallerScript.swift; sourceTree = "<group>"; };
 		E20000000000000000000001 /* CleanupDeletionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupDeletionEngine.swift; sourceTree = "<group>"; };
 		E20000000000000000000002 /* CleanupStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupStores.swift; sourceTree = "<group>"; };
 		E20000000000000000000003 /* FullDiskAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullDiskAccessService.swift; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 				A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */,
 				A20000000000000000000018 /* LaunchAtLoginService.swift */,
 				D20000000000000000000003 /* PrivilegedHelperService.swift */,
+				D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */,
 				E20000000000000000000003 /* FullDiskAccessService.swift */,
 				E20000000000000000000004 /* CleanupCoordinator.swift */,
 			);
@@ -382,6 +385,7 @@
 				D10000000000000000000001 /* HelperProtocol.swift in Sources */,
 				D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */,
 				D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */,
+				D10000000000000000000009 /* PrivilegedHelperInstallerScript.swift in Sources */,
 				E10000000000000000000001 /* CleanupDeletionEngine.swift in Sources */,
 				E10000000000000000000002 /* CleanupStores.swift in Sources */,
 				E10000000000000000000003 /* FullDiskAccessService.swift in Sources */,
