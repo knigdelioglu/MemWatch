@@ -12,6 +12,7 @@ struct CleanupView: View {
     @State private var showItemDetails = false
     @State private var showAdvancedDetails = false
     @State private var showScanIssues = false
+    @State private var showApplicationDetails = false
 
     var body: some View {
         ScrollView {
@@ -28,7 +29,9 @@ struct CleanupView: View {
 
                 if let result = coordinator.scanResult {
                     summaryCard(result)
-                    itemReviewSection(result)
+                    if !result.items.isEmpty {
+                        itemReviewSection(result)
+                    }
                     let relevantIssues = userRelevantIssues(in: result.issues)
                     if !relevantIssues.isEmpty {
                         scanIssuesCard(relevantIssues)
@@ -46,6 +49,10 @@ struct CleanupView: View {
             .padding(16)
         }
         .onAppear {
+            showItemDetails = false
+            showAdvancedDetails = false
+            showScanIssues = false
+            showApplicationDetails = false
             if coordinator.scanResult == nil, !coordinator.isBusy {
                 coordinator.startScan()
             }
@@ -410,7 +417,7 @@ struct CleanupView: View {
         }
     }
 
-    private func summaryCard(_ result: CleanupScanResult) -> some View {
+    private func summaryCard(_: CleanupScanResult) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(bytes(coordinator.automaticSafeBytes))
@@ -522,31 +529,40 @@ struct CleanupView: View {
     }
 
     private var applicationCleanupCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Temizlik sırasında kapatılacak uygulamalar", systemImage: "app.badge.checkmark")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.orange)
+        DisclosureGroup(isExpanded: $showApplicationDetails) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Açık bıraktığın uygulamanın önbelleği korunur.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
-            Text("Açık bıraktığın uygulamanın önbelleği korunur.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            ForEach(coordinator.applicationCleanupPlans) { plan in
-                Toggle(isOn: Binding(
-                    get: { coordinator.isApplicationCleanupEnabled(plan) },
-                    set: { coordinator.setApplicationCleanupEnabled($0, for: plan) }
-                )) {
-                    HStack {
-                        Text(plan.name)
-                            .font(.caption)
-                        Spacer()
-                        Text(bytes(plan.allocatedBytes))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                ForEach(coordinator.applicationCleanupPlans) { plan in
+                    Toggle(isOn: Binding(
+                        get: { coordinator.isApplicationCleanupEnabled(plan) },
+                        set: { coordinator.setApplicationCleanupEnabled($0, for: plan) }
+                    )) {
+                        HStack {
+                            Text(plan.name)
+                                .font(.caption)
+                            Spacer()
+                            Text(bytes(plan.allocatedBytes))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 7) {
+                Label("Temizlik sırasında kapatılacak uygulamalar", systemImage: "app.badge.checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Spacer()
+                Text("\(coordinator.applicationCleanupPlans.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
         }
     }

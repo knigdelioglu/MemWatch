@@ -28,6 +28,7 @@ struct TrayUXContractTests {
         expect(cleanupSource.contains("Label(\"Derin Temizleme\""), "cleanup window should use Turkish UI text")
         expect(cleanupSource.contains("showItemDetails"), "item-level complexity should remain behind progressive disclosure")
         expect(cleanupSource.contains("showAdvancedDetails"), "permissions, storage, and maintenance details should remain collapsed by default")
+        expect(cleanupSource.contains("showApplicationDetails"), "application cleanup choices should remain collapsed by default")
         expect(cleanupSource.contains("Text(bytes(coordinator.automaticSafeBytes))"), "safe cleanup amount should be the primary summary")
         expect(cleanupSource.contains("Label(\"Ne silinecek?\""), "cleanup must explain deletion scope before actions")
         expect(cleanupSource.contains("title: \"GÜVENLİ\""), "safe scope must be explicitly explained")
