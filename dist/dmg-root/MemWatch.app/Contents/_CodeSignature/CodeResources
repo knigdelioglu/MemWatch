@@ -12,6 +12,10 @@
 		<data>
 		wWkYqgZ4oyd/yL0ycw/Rvi7I71M=
 		</data>
+		<key>Resources/Samsung_4C2D_76AB_reference.plist</key>
+		<data>
+		UaiCmIIaZlNedEUBqdwar2ugENw=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -41,6 +45,13 @@
 			<key>hash2</key>
 			<data>
 			HjLjctEss4j1KH4AFWh7av/WTzajvkA4ujlRFejPSEM=
+			</data>
+		</dict>
+		<key>Resources/Samsung_4C2D_76AB_reference.plist</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			En5pq2lwMoxgXehbhfBHaf6+Rwd1GKK+/Eoic/QgAKY=
 			</data>
 		</dict>
 	</dict>

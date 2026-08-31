@@ -82,9 +82,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var cleanupWindowController: NSWindowController?
     private var settingsWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
-    private var pendingSingleClick: DispatchWorkItem?
-    private var localClickMonitor: Any?
-    private var globalClickMonitor: Any?
     private var previousTrayPresentation: TrayPresentation?
 
     init(monitor: MonitoringService, cleanup: CleanupCoordinator, display: DisplayCoordinator) {
@@ -98,15 +95,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         configurePopover()
         observeMonitor()
         updateStatusButton()
-    }
-
-    deinit {
-        if let localClickMonitor {
-            NSEvent.removeMonitor(localClickMonitor)
-        }
-        if let globalClickMonitor {
-            NSEvent.removeMonitor(globalClickMonitor)
-        }
     }
 
     private func configureStatusItem() {
@@ -225,22 +213,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        if event.type == .rightMouseUp || event.clickCount >= 2 {
-            pendingSingleClick?.cancel()
-            pendingSingleClick = nil
+        if event.type == .rightMouseUp || (event.type == .leftMouseUp && event.modifierFlags.contains(.control)) {
             closePopover()
             showContextMenu(relativeTo: sender)
             return
         }
 
-        pendingSingleClick?.cancel()
-        let workItem = DispatchWorkItem { [weak self, weak sender] in
-            guard let self, let sender else { return }
-            self.togglePopover(relativeTo: sender)
-        }
-        pendingSingleClick = workItem
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        togglePopover(relativeTo: sender)
     }
 
     private func togglePopover(relativeTo button: NSStatusBarButton) {
@@ -248,62 +227,20 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             closePopover()
         } else {
             monitor.refresh(forceStorage: true, forceDiagnostics: true)
-            installDashboardRootView()
             popover.show(
                 relativeTo: button.bounds,
                 of: button,
                 preferredEdge: .minY
             )
-            startOutsideClickMonitoring()
+            NSApp.activate(ignoringOtherApps: true)
+            popover.contentViewController?.view.window?.makeKey()
         }
     }
 
     private func closePopover() {
-        stopOutsideClickMonitoring()
         if popover.isShown {
             popover.performClose(nil)
         }
-    }
-
-    private func startOutsideClickMonitoring() {
-        stopOutsideClickMonitoring()
-
-        localClickMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] event in
-            guard let self, self.popover.isShown else { return event }
-
-            let popoverWindow = self.popover.contentViewController?.view.window
-            let statusWindow = self.statusItem.button?.window
-
-            if event.window !== popoverWindow && event.window !== statusWindow {
-                self.closePopover()
-            }
-            return event
-        }
-
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.closePopover()
-            }
-        }
-    }
-
-    private func stopOutsideClickMonitoring() {
-        if let localClickMonitor {
-            NSEvent.removeMonitor(localClickMonitor)
-            self.localClickMonitor = nil
-        }
-        if let globalClickMonitor {
-            NSEvent.removeMonitor(globalClickMonitor)
-            self.globalClickMonitor = nil
-        }
-    }
-
-    func popoverDidClose(_ notification: Notification) {
-        stopOutsideClickMonitoring()
     }
 
     private func showContextMenu(relativeTo button: NSStatusBarButton) {
