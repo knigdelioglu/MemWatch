@@ -77,7 +77,8 @@ final class MonitoringService: ObservableObject {
     private let notificationPolicy = NotificationPolicyEngine()
     private let storageNotificationPolicy = StorageNotificationPolicyEngine()
     private let notificationService = NotificationService()
-    private var timer: Timer?
+    private let scheduler: PollingScheduler
+    private var isRunning = false
     private var lastStorageRefreshDate: Date?
     private var lastProcessRefreshDate: Date?
 
@@ -85,7 +86,9 @@ final class MonitoringService: ObservableObject {
     private var previousSwapInBytes: UInt64?
     private var previousSwapOutBytes: UInt64?
 
-    init() {
+    init(scheduler: PollingScheduler) {
+        self.scheduler = scheduler
+
         if UserDefaults.standard.object(forKey: Self.notificationsEnabledKey) != nil {
             notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledKey)
         }
@@ -118,11 +121,6 @@ final class MonitoringService: ObservableObject {
         }
 
         refresh(forceStorage: true, forceDiagnostics: true)
-        startMonitoring()
-    }
-
-    deinit {
-        timer?.invalidate()
     }
 
     func setNotificationsEnabled(_ enabled: Bool) {
@@ -169,6 +167,17 @@ final class MonitoringService: ObservableObject {
         refreshDiagnostics(forceProcesses: forceDiagnostics)
         refreshStorageIfNeeded(force: forceStorage)
         launchAtLoginState = launchAtLoginService.currentState()
+    }
+
+    func stop() {
+        isRunning = false
+        scheduler.unregister(id: "system-health")
+    }
+
+    func start() {
+        guard !isRunning else { return }
+        isRunning = true
+        startMonitoring()
     }
 
     private func refreshMemory() {
@@ -329,15 +338,9 @@ final class MonitoringService: ObservableObject {
     }
 
     private func startMonitoring() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refresh()
-            }
-        }
-
-        if let timer {
-            RunLoop.main.add(timer, forMode: .common)
+        guard isRunning else { return }
+        scheduler.register(id: "system-health", interval: 5) { [weak self] in
+            self?.refresh()
         }
     }
 

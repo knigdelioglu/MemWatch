@@ -17,7 +17,7 @@ struct BackgroundCadenceTests {
         )
         let mainInterval = try captureNumber(
             in: source,
-            pattern: #"scheduledTimer\(withTimeInterval:\s*([0-9.]+)"#,
+            pattern: #"register\(id:\s*\"system-health\",\s*interval:\s*([0-9.]+)"#,
             name: "main monitoring timer"
         )
         let powerHistoryLimit = try captureNumber(
@@ -30,6 +30,8 @@ struct BackgroundCadenceTests {
             pattern: #"systemHistoryLimit\s*=\s*([0-9.]+)"#,
             name: "systemHistoryLimit"
         )
+
+        require(source.contains("private let scheduler: PollingScheduler"), "Monitoring must use the shared polling scheduler")
 
         require(mainInterval >= 5, "Main background polling must not be faster than 5s")
         require(storageInterval >= 30, "Storage polling must not be faster than 30s")

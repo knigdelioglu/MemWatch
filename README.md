@@ -87,6 +87,41 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - macOS bildirim izin durumunu gösterme
 - Bildirim engelliyse System Settings bildirim sayfasına doğrudan geçiş
 
+### Display
+
+AmbientSync'in ekran kontrol özellikleri MemWatch'in tek uygulama ve tek menü çubuğu yaşam döngüsüne entegre edilmiştir:
+
+- Dahili ALS sensöründen lux okuma ve yumuşatma
+- Ortam ışığına göre otomatik harici ekran parlaklığı
+- Dahili ve harici ekran parlaklığı
+- DDC/CI ve `m1ddc` backend'i
+- Harici monitör ses seviyesi, mute ve medya tuşu yönlendirmesi
+- HiDPI/Retina mod tespiti, uygulama ve geri alma
+- Samsung S60UD için EDID/fingerprint doğrulaması
+- Güvenli yazılımsal ekran ayırma/yeniden bağlama
+- Keep Awake ve ekranı uyanık tutma oturumları
+- EDID, HDR, DDC ve parlaklık eşleme tanıları
+
+DDC gerektiren özellikler `/opt/homebrew/bin/m1ddc` veya `/usr/local/bin/m1ddc` bulunamadığında devre dışı kalır; MemWatch'in bellek, depolama, enerji ve temizlik işlevleri çalışmaya devam eder. HiDPI ve yazılımsal ekran bağlantısı macOS'un özel/private grafik API'lerine bağlıdır; desteklenmeyen sürümlerde yetenek durumu `Unavailable`/`Limited` olarak gösterilir.
+
+Display tanıları birleşik uygulamanın aynı binary'si üzerinden çalışır:
+
+```text
+MemWatch --diagnostic
+MemWatch --hidpi-mode-pool-diagnostic
+MemWatch --cgs-mode-enumeration
+MemWatch --cgs-mode74-without-betterdisplay
+MemWatch --cgs-mode74-apply-experiment
+MemWatch --hidpi-system-snapshot <output-directory>
+MemWatch --hidpi-activation-spike
+```
+
+Bu yollar donanım ve WindowServer durumuna bağlıdır; başarıları fiziksel doğrulama yerine geçmez.
+
+### Unified Architecture
+
+MemWatch artık tek `.app`, tek `NSStatusItem`, tek primary popover ve tek Launch at Login politikasına sahiptir. `AppServices` ortak `PollingScheduler`, system-health izleme, cleanup ve `DisplayCoordinator` bileşenlerini başlatır. Display private API'leri `Display/DisplayControl` altında izole edilir ve yetenek modeli üzerinden güvenli biçimde degrade olur. Eski AmbientSync `UserDefaults` değerleri sürüm numaralı, idempotent migration ile korunur.
+
 ## Release Quality
 
 MemWatch artık release-candidate kalite hattına sahiptir:
@@ -111,10 +146,12 @@ Ayrıntılı kalite ve fiziksel MacBook batarya A/B test protokolü `docs/RELEAS
 - UI: SwiftUI + native AppKit status-item/popover shell
 - Native APIs: Mach, Foundation, Dispatch, UserNotifications, AppKit, IOKit / IOPowerSources, ServiceManagement, libproc
 - Dock davranışı: `LSUIElement=YES` + `.accessory` activation policy
+- External DDC backend: optional `m1ddc`
+- Display resource: bundled Samsung S60UD HiDPI reference plist
 
 ## Durum
 
-Sprint 1-7 release-candidate kapsamı tamamlandı:
+Sprint 1-7 release-candidate kapsamına ek olarak Display birleşimi tamamlandı:
 
 1. Core Memory Monitoring
 2. Swap Intelligence
@@ -123,10 +160,12 @@ Sprint 1-7 release-candidate kapsamı tamamlandı:
 5. Energy Monitoring
 6. Advanced Diagnostics
 7. Release Quality
+8. AmbientSync Display Integration
 
 Public dağıtım öncesinde kalan gerçek-dünya kapıları:
 
 - Fiziksel MacBook üzerinde tekrarlı batarya A/B doğrulaması
+- Fiziksel Samsung S60UD üzerinde ALS, DDC, ses, HiDPI ve disconnect/reconnect doğrulaması
 - Developer ID Application signing
 - Apple notarization + stapling
 

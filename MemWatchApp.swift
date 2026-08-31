@@ -4,25 +4,43 @@ import QuartzCore
 import SwiftUI
 
 @main
-struct MemWatchApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+struct MemWatchApp {
+    /// Keep command-line diagnostics independent from AppKit's GUI bootstrap.
+    static func main() async {
+        if await DisplayDiagnosticRouter.handleIfRequested() {
+            return
+        }
 
-    var body: some Scene {
-        Settings {
-            EmptyView()
+        await MainActor.run {
+            let application = NSApplication.shared
+            let delegate = AppDelegate()
+            application.delegate = delegate
+            withExtendedLifetime(delegate) {
+                application.run()
+            }
         }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var services: AppServices?
     private var statusBarController: StatusBarController?
-    private lazy var monitor = MonitoringService()
-    private lazy var cleanup = CleanupCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
-        statusBarController = StatusBarController(monitor: monitor, cleanup: cleanup)
+        let services = AppServices()
+        self.services = services
+        services.start()
+        statusBarController = StatusBarController(
+            monitor: services.monitoring,
+            cleanup: services.cleanup,
+            display: services.display
+        )
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        services?.stop()
     }
 }
 
@@ -58,18 +76,21 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private let monitor: MonitoringService
     private let cleanup: CleanupCoordinator
+    private let display: DisplayCoordinator
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cleanupWindowController: NSWindowController?
+    private var settingsWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
     private var pendingSingleClick: DispatchWorkItem?
     private var localClickMonitor: Any?
     private var globalClickMonitor: Any?
     private var previousTrayPresentation: TrayPresentation?
 
-    init(monitor: MonitoringService, cleanup: CleanupCoordinator) {
+    init(monitor: MonitoringService, cleanup: CleanupCoordinator, display: DisplayCoordinator) {
         self.monitor = monitor
         self.cleanup = cleanup
+        self.display = display
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -111,8 +132,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(
             rootView: SmartMenuBarRootView(
                 monitor: monitor,
+                display: display,
                 openCleanup: { [weak self] in
                     self?.openCleanupWindow()
+                },
+                openSettings: { [weak self] in
+                    self?.openSettings()
                 }
             )
                 .frame(width: Self.panelSize.width, height: Self.panelSize.height)
@@ -131,6 +156,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self?.updateStatusButton()
         }
         .store(in: &cancellables)
+
+        display.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateStatusButton()
+            }
+            .store(in: &cancellables)
     }
 
     private func updateStatusButton() {
@@ -288,6 +320,18 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         )
         cleanupItem.target = self
         menu.addItem(cleanupItem)
+
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.image = NSImage(
+            systemSymbolName: "gearshape",
+            accessibilityDescription: "Settings"
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -303,6 +347,33 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             at: NSPoint(x: 0, y: button.bounds.minY),
             in: button
         )
+    }
+
+    @objc
+    private func openSettings() {
+        closePopover()
+
+        if let window = settingsWindowController?.window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hostingController = NSHostingController(
+            rootView: UnifiedSettingsView(monitor: monitor, display: display)
+        )
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "MemWatch Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 760, height: 620))
+        window.minSize = NSSize(width: 680, height: 520)
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        settingsWindowController = controller
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
     }
 
     @objc
@@ -371,6 +442,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         switch monitor.intelligence.state {
         case .stable:
+            if let displayPresentation = displayTrayPresentation {
+                return displayPresentation
+            }
             return TrayPresentation(
                 symbolName: "memorychip",
                 tintRole: .system,
@@ -379,6 +453,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 pulseOnEntry: false
             )
         case .idleSwap:
+            if let displayPresentation = displayTrayPresentation {
+                return displayPresentation
+            }
             return TrayPresentation(
                 symbolName: "memorychip",
                 tintRole: .system,
@@ -387,6 +464,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 pulseOnEntry: false
             )
         case .readback:
+            if let displayPresentation = displayTrayPresentation {
+                return displayPresentation
+            }
             return TrayPresentation(
                 symbolName: "arrow.down.circle",
                 tintRole: .system,
@@ -420,12 +500,37 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             )
         }
     }
+
+    private var displayTrayPresentation: TrayPresentation? {
+        if display.keepAwakeState.featureEnabled && display.isAwakeAssertionActive {
+            return TrayPresentation(
+                symbolName: "moon.zzz.fill",
+                tintRole: .system,
+                accessibilityDescription: "MemWatch, display keep-awake session is active",
+                toolTip: "MemWatch — Display keep-awake active",
+                pulseOnEntry: false
+            )
+        }
+
+        guard display.currentDisplayInfo != nil else { return nil }
+        let mode = display.autoBrightnessEnabled ? "automatic brightness" : "manual brightness"
+        return TrayPresentation(
+            symbolName: "sun.max.fill",
+            tintRole: .system,
+            accessibilityDescription: "MemWatch, external display connected with \(mode)",
+            toolTip: "MemWatch — External display connected",
+            pulseOnEntry: false
+        )
+    }
 }
 
 private struct SmartMenuBarRootView: View {
     @ObservedObject var monitor: MonitoringService
+    @ObservedObject var display: DisplayCoordinator
     let openCleanup: () -> Void
+    let openSettings: () -> Void
     @State private var showingTechnicalDetails = false
+    @State private var showingDisplayDetails = false
 
     private var snapshot: MemorySnapshot { monitor.snapshot }
     private var intelligence: SwapIntelligenceResult { monitor.intelligence }
@@ -433,7 +538,12 @@ private struct SmartMenuBarRootView: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if showingTechnicalDetails {
+            if showingDisplayDetails {
+                DisplayFeatureView(display: display) {
+                    showingDisplayDetails = false
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if showingTechnicalDetails {
                 MenuBarView(monitor: monitor)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
 
@@ -465,6 +575,7 @@ private struct SmartMenuBarRootView: View {
             VStack(alignment: .leading, spacing: 14) {
                 healthCard
                 memoryFocusCard
+                displayCard
                 quickFactsCard
                 cleanupCard
                 topConsumersCard
@@ -576,6 +687,55 @@ private struct SmartMenuBarRootView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
+    private var displayCard: some View {
+        Button {
+            showingDisplayDetails = true
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: displaySymbol)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(displayColor)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Display")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(displayStateLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(displayColor)
+                    }
+
+                    Text(displayHeadline)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+
+                    Text(displayDetail)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(displayColor.opacity(0.24), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Display settings")
+        .accessibilityValue(displayHeadline)
+    }
+
     private func quickFactRow(symbol: String, title: String, value: String, color: Color) -> some View {
         HStack(spacing: 9) {
             Image(systemName: symbol)
@@ -678,6 +838,12 @@ private struct SmartMenuBarRootView: View {
                 showingTechnicalDetails = true
             } label: {
                 Label("All details", systemImage: "slider.horizontal.3")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button(action: openSettings) {
+                Label("Settings", systemImage: "gearshape")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -855,6 +1021,50 @@ private struct SmartMenuBarRootView: View {
             return "CPU \(Int(cpu.rounded()))% · \(thermal)"
         }
         return thermal
+    }
+
+    private var displayStateLabel: String {
+        if display.currentDisplayInfo != nil { return "Connected" }
+        switch display.capabilities.externalDisplay.status {
+        case .available: return "Ready"
+        case .degraded: return "Limited"
+        case .unavailable: return "Unavailable"
+        }
+    }
+
+    private var displayHeadline: String {
+        guard let info = display.currentDisplayInfo else {
+            return display.capabilities.externalDisplay.reason ?? "No supported external display detected"
+        }
+        return info.displayLabel
+    }
+
+    private var displayDetail: String {
+        var details: [String] = []
+        if let lux = display.currentLux {
+            details.append("Ambient \(Int(lux.rounded())) lux")
+        }
+        details.append(display.autoBrightnessEnabled ? "Automatic brightness on" : "Manual brightness")
+        if display.keepAwakeState.featureEnabled {
+            details.append("Keep Awake enabled")
+        }
+        return details.joined(separator: " · ")
+    }
+
+    private var displaySymbol: String {
+        if display.keepAwakeState.featureEnabled && display.isAwakeAssertionActive {
+            return "moon.zzz.fill"
+        }
+        return display.currentDisplayInfo == nil ? "display.trianglebadge.exclamationmark" : "sun.max.fill"
+    }
+
+    private var displayColor: Color {
+        if display.currentDisplayInfo != nil { return .green }
+        switch display.capabilities.externalDisplay.status {
+        case .available: return .blue
+        case .degraded: return .orange
+        case .unavailable: return .secondary
+        }
     }
 
     private var thermalColor: Color {

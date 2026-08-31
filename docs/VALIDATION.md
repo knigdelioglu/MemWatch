@@ -18,6 +18,18 @@ xcodebuild \
 
 This gate verifies that the native SwiftUI menu bar application and its Mach/Darwin memory collector compile together as a macOS application.
 
+## Merged Display feature smoke gate
+
+Run the deterministic display-feature checks from the repository root:
+
+```bash
+Scripts/run_display_feature_tests.sh
+```
+
+This covers the brightness curve, lux filtering, DDC percentage scaling, capability degradation, automatic-brightness preflight, display-connection safety policy, keep-awake preference persistence, scheduler ownership, and AmbientSync preference migration. The CI workflow also runs the source-level merge architecture contract checks for the single status item, shared service container, bundled HiDPI reference, and removal of the unused duplicate recovery controller.
+
+The Xcode project is the only runtime build system for MemWatch. The standalone smoke scripts intentionally compile only deterministic feature seams; they do not claim physical ALS, DDC, HiDPI, or display-disconnect validation.
+
 ### Collector smoke gate
 
 The CI workflow also compiles and runs `Tests/MemoryCollectorSmoke.swift` directly against `MemorySnapshot` and `MemoryCollector`.

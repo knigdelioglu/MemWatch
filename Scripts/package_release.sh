@@ -35,6 +35,13 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+HI_DPI_REFERENCE="$APP_PATH/Contents/Resources/Samsung_4C2D_76AB_reference.plist"
+if [[ ! -f "$HI_DPI_REFERENCE" ]]; then
+  echo "Bundled HiDPI reference resource is missing: $HI_DPI_REFERENCE" >&2
+  exit 1
+fi
+plutil -lint "$HI_DPI_REFERENCE" >/dev/null
+
 # Xcode's target dependency must produce the helper. Normalize the final release
 # bundle explicitly as well, so SMAppService does not depend on Copy Files phase
 # behavior changing across Xcode versions/configurations.

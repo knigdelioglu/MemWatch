@@ -51,7 +51,84 @@
 		E10000000000000000000002 /* CleanupStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002 /* CleanupStores.swift */; };
 		E10000000000000000000003 /* FullDiskAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000003 /* FullDiskAccessService.swift */; };
 		E10000000000000000000004 /* CleanupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000004 /* CleanupCoordinator.swift */; };
-		E10000000000000000000005 /* CleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* CleanupView.swift */; };
+			E10000000000000000000005 /* CleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* CleanupView.swift */; };
+			F10000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift */; };
+			F10000000000000000000002 /* Display/App/DisplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* Display/App/DisplayCoordinator.swift */; };
+			F10000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift */; };
+			F10000000000000000000004 /* Display/App/KeepAwakeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000004 /* Display/App/KeepAwakeCoordinator.swift */; };
+			F10000000000000000000005 /* Display/App/LegacyAmbientSyncMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000005 /* Display/App/LegacyAmbientSyncMigration.swift */; };
+			F10000000000000000000006 /* Display/BrightnessEngine/BrightnessCurve.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000006 /* Display/BrightnessEngine/BrightnessCurve.swift */; };
+			F10000000000000000000007 /* Display/BrightnessEngine/LuxFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000007 /* Display/BrightnessEngine/LuxFilter.swift */; };
+			F10000000000000000000008 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000008 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticModels.swift */; };
+			F10000000000000000000009 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000009 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticReporter.swift */; };
+			F10000000000000000000010 /* Display/DisplayControl/Brightness/BrightnessAutoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000010 /* Display/DisplayControl/Brightness/BrightnessAutoController.swift */; };
+			F10000000000000000000011 /* Display/DisplayControl/Brightness/BrightnessAutoLoopPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000011 /* Display/DisplayControl/Brightness/BrightnessAutoLoopPlanner.swift */; };
+			F10000000000000000000012 /* Display/DisplayControl/Brightness/BrightnessAutoWriteOutcomePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000012 /* Display/DisplayControl/Brightness/BrightnessAutoWriteOutcomePlanner.swift */; };
+			F10000000000000000000013 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000013 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticModels.swift */; };
+			F10000000000000000000014 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000014 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticReporter.swift */; };
+			F10000000000000000000015 /* Display/DisplayControl/Brightness/BrightnessState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000015 /* Display/DisplayControl/Brightness/BrightnessState.swift */; };
+			F10000000000000000000016 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000016 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnostic.swift */; };
+			F10000000000000000000017 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000017 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticModels.swift */; };
+			F10000000000000000000018 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000018 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticReporter.swift */; };
+			F10000000000000000000019 /* Display/DisplayControl/Brightness/DDCBrightnessParsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000019 /* Display/DisplayControl/Brightness/DDCBrightnessParsing.swift */; };
+			F10000000000000000000020 /* Display/DisplayControl/Brightness/DDCBrightnessScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000020 /* Display/DisplayControl/Brightness/DDCBrightnessScale.swift */; };
+			F10000000000000000000021 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000021 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeDiagnostic.swift */; };
+			F10000000000000000000022 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000022 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeModels.swift */; };
+			F10000000000000000000023 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000023 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeReporter.swift */; };
+			F10000000000000000000024 /* Display/DisplayControl/Brightness/HDRBrightnessDDCReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000024 /* Display/DisplayControl/Brightness/HDRBrightnessDDCReader.swift */; };
+			F10000000000000000000025 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000025 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnostic.swift */; };
+			F10000000000000000000026 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnosticReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000026 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnosticReporter.swift */; };
+			F10000000000000000000027 /* Display/DisplayControl/Brightness/HDRBrightnessModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000027 /* Display/DisplayControl/Brightness/HDRBrightnessModels.swift */; };
+			F10000000000000000000028 /* Display/DisplayControl/CGSModeSwitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000028 /* Display/DisplayControl/CGSModeSwitcher.swift */; };
+			F10000000000000000000029 /* Display/DisplayControl/DisplayConnectionBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000029 /* Display/DisplayControl/DisplayConnectionBackend.swift */; };
+			F10000000000000000000030 /* Display/DisplayControl/DisplayConnectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000030 /* Display/DisplayControl/DisplayConnectionController.swift */; };
+			F10000000000000000000031 /* Display/DisplayControl/DisplayConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000031 /* Display/DisplayControl/DisplayConnectionState.swift */; };
+			F10000000000000000000034 /* Display/DisplayControl/EDID/DisplayEDIDReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000034 /* Display/DisplayControl/EDID/DisplayEDIDReader.swift */; };
+			F10000000000000000000035 /* Display/DisplayControl/EDID/EDIDDiagnosticReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000035 /* Display/DisplayControl/EDID/EDIDDiagnosticReporter.swift */; };
+			F10000000000000000000036 /* Display/DisplayControl/EDID/EDIDHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000036 /* Display/DisplayControl/EDID/EDIDHash.swift */; };
+			F10000000000000000000037 /* Display/DisplayControl/EDID/EDIDIORegistryReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000037 /* Display/DisplayControl/EDID/EDIDIORegistryReader.swift */; };
+			F10000000000000000000038 /* Display/DisplayControl/EDID/EDIDModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000038 /* Display/DisplayControl/EDID/EDIDModels.swift */; };
+			F10000000000000000000039 /* Display/DisplayControl/EDID/EDIDParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000039 /* Display/DisplayControl/EDID/EDIDParser.swift */; };
+			F10000000000000000000040 /* Display/DisplayControl/Experimental/CGSModeEnumerationDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000040 /* Display/DisplayControl/Experimental/CGSModeEnumerationDiagnostic.swift */; };
+			F10000000000000000000041 /* Display/DisplayControl/Experimental/HiDPIPrivateActivationSafety.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000041 /* Display/DisplayControl/Experimental/HiDPIPrivateActivationSafety.swift */; };
+			F10000000000000000000043 /* Display/DisplayControl/Experimental/PrivateActivationExperiment.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000043 /* Display/DisplayControl/Experimental/PrivateActivationExperiment.swift */; };
+			F10000000000000000000044 /* Display/DisplayControl/Experimental/PrivateDisplaySymbolResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000044 /* Display/DisplayControl/Experimental/PrivateDisplaySymbolResolver.swift */; };
+			F10000000000000000000045 /* Display/DisplayControl/Experimental/PrivateHiDPIActivationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000045 /* Display/DisplayControl/Experimental/PrivateHiDPIActivationEngine.swift */; };
+			F10000000000000000000047 /* Display/DisplayControl/HiDPIActivationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000047 /* Display/DisplayControl/HiDPIActivationEngine.swift */; };
+			F10000000000000000000048 /* Display/DisplayControl/HiDPIDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000048 /* Display/DisplayControl/HiDPIDiagnostic.swift */; };
+			F10000000000000000000049 /* Display/DisplayControl/HiDPIDisplayOverrideManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000049 /* Display/DisplayControl/HiDPIDisplayOverrideManager.swift */; };
+			F10000000000000000000050 /* Display/DisplayControl/HiDPIFeatureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000050 /* Display/DisplayControl/HiDPIFeatureController.swift */; };
+			F10000000000000000000051 /* Display/DisplayControl/HiDPIModeApplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000051 /* Display/DisplayControl/HiDPIModeApplier.swift */; };
+			F10000000000000000000052 /* Display/DisplayControl/HiDPIModePoolDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000052 /* Display/DisplayControl/HiDPIModePoolDiagnostic.swift */; };
+			F10000000000000000000053 /* Display/DisplayControl/HiDPIOverridePlistBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000053 /* Display/DisplayControl/HiDPIOverridePlistBuilder.swift */; };
+			F10000000000000000000054 /* Display/DisplayControl/HiDPIOverrideReferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000054 /* Display/DisplayControl/HiDPIOverrideReferenceStore.swift */; };
+			F10000000000000000000055 /* Display/DisplayControl/HiDPIReapplyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000055 /* Display/DisplayControl/HiDPIReapplyService.swift */; };
+			F10000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift */; };
+			F10000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift */; };
+			F10000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift */; };
+			F10000000000000000000059 /* Display/DisplayControl/HiDPISystemSnapshotReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000059 /* Display/DisplayControl/HiDPISystemSnapshotReporter.swift */; };
+			F10000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift */; };
+			F10000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift */; };
+			F10000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift */; };
+			F10000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift */; };
+			F10000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift */; };
+			F10000000000000000000065 /* Display/DisplayFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000065 /* Display/DisplayFeature.swift */; };
+			F10000000000000000000066 /* Display/Preferences/AmbientSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000066 /* Display/Preferences/AmbientSyncModels.swift */; };
+			F10000000000000000000067 /* Display/Sensors/PrivateALSSensorReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000067 /* Display/Sensors/PrivateALSSensorReader.swift */; };
+			F10000000000000000000068 /* Display/System/KeepAwakeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000068 /* Display/System/KeepAwakeController.swift */; };
+			F10000000000000000000069 /* Display/System/KeepAwakeFeatureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000069 /* Display/System/KeepAwakeFeatureController.swift */; };
+			F10000000000000000000070 /* Display/System/MonitorVolumeKeyRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000070 /* Display/System/MonitorVolumeKeyRouter.swift */; };
+			F10000000000000000000071 /* Display/System/PowerSourceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000071 /* Display/System/PowerSourceController.swift */; };
+			F10000000000000000000072 /* Display/System/VolumeFeatureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000072 /* Display/System/VolumeFeatureController.swift */; };
+			F10000000000000000000073 /* App/AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000073 /* App/AppServices.swift */; };
+			F10000000000000000000074 /* App/CapabilityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000074 /* App/CapabilityRegistry.swift */; };
+			F10000000000000000000075 /* Core/Polling/PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000075 /* Core/Polling/PollingScheduler.swift */; };
+			F10000000000000000000076 /* App/DisplayDiagnosticRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000076 /* App/DisplayDiagnosticRouter.swift */; };
+			F10000000000000000000077 /* Views/DisplayFeatureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000077 /* Views/DisplayFeatureView.swift */; };
+			F10000000000000000000078 /* Views/UnifiedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000078 /* Views/UnifiedSettingsView.swift */; };
+			F10000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift */; };
+			F10000000000000000000080 /* Core/Power/PowerSourceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000080 /* Core/Power/PowerSourceReader.swift */; };
+			F70000000000000000000001 /* Samsung HiDPI reference in Resources */ = {isa = PBXBuildFile; fileRef = F60000000000000000000001 /* Samsung_4C2D_76AB_reference.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -133,7 +210,84 @@
 		E20000000000000000000002 /* CleanupStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupStores.swift; sourceTree = "<group>"; };
 		E20000000000000000000003 /* FullDiskAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullDiskAccessService.swift; sourceTree = "<group>"; };
 		E20000000000000000000004 /* CleanupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupCoordinator.swift; sourceTree = "<group>"; };
-		E20000000000000000000005 /* CleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupView.swift; sourceTree = "<group>"; };
+			E20000000000000000000005 /* CleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupView.swift; sourceTree = "<group>"; };
+			F20000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DisplayCoordinator+Connection.swift"; sourceTree = "<group>"; };
+			F20000000000000000000002 /* Display/App/DisplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCoordinator.swift; sourceTree = "<group>"; };
+			F20000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayPreferencesMigration.swift; sourceTree = "<group>"; };
+			F20000000000000000000004 /* Display/App/KeepAwakeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepAwakeCoordinator.swift; sourceTree = "<group>"; };
+			F20000000000000000000005 /* Display/App/LegacyAmbientSyncMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyAmbientSyncMigration.swift; sourceTree = "<group>"; };
+			F20000000000000000000006 /* Display/BrightnessEngine/BrightnessCurve.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessCurve.swift; sourceTree = "<group>"; };
+			F20000000000000000000007 /* Display/BrightnessEngine/LuxFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LuxFilter.swift; sourceTree = "<group>"; };
+			F20000000000000000000008 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessAutoControlDiagnosticModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000009 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessAutoControlDiagnosticReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000010 /* Display/DisplayControl/Brightness/BrightnessAutoController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessAutoController.swift; sourceTree = "<group>"; };
+			F20000000000000000000011 /* Display/DisplayControl/Brightness/BrightnessAutoLoopPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessAutoLoopPlanner.swift; sourceTree = "<group>"; };
+			F20000000000000000000012 /* Display/DisplayControl/Brightness/BrightnessAutoWriteOutcomePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessAutoWriteOutcomePlanner.swift; sourceTree = "<group>"; };
+			F20000000000000000000013 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessMappingDiagnosticModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000014 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessMappingDiagnosticReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000015 /* Display/DisplayControl/Brightness/BrightnessState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessState.swift; sourceTree = "<group>"; };
+			F20000000000000000000016 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCBrightnessMaxDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000017 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCBrightnessMaxDiagnosticModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000018 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCBrightnessMaxDiagnosticReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000019 /* Display/DisplayControl/Brightness/DDCBrightnessParsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCBrightnessParsing.swift; sourceTree = "<group>"; };
+			F20000000000000000000020 /* Display/DisplayControl/Brightness/DDCBrightnessScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCBrightnessScale.swift; sourceTree = "<group>"; };
+			F20000000000000000000021 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCRawBrightnessProbeDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000022 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCRawBrightnessProbeModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000023 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDCRawBrightnessProbeReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000024 /* Display/DisplayControl/Brightness/HDRBrightnessDDCReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRBrightnessDDCReader.swift; sourceTree = "<group>"; };
+			F20000000000000000000025 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRBrightnessDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000026 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnosticReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRBrightnessDiagnosticReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000027 /* Display/DisplayControl/Brightness/HDRBrightnessModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRBrightnessModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000028 /* Display/DisplayControl/CGSModeSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGSModeSwitcher.swift; sourceTree = "<group>"; };
+			F20000000000000000000029 /* Display/DisplayControl/DisplayConnectionBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayConnectionBackend.swift; sourceTree = "<group>"; };
+			F20000000000000000000030 /* Display/DisplayControl/DisplayConnectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayConnectionController.swift; sourceTree = "<group>"; };
+			F20000000000000000000031 /* Display/DisplayControl/DisplayConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayConnectionState.swift; sourceTree = "<group>"; };
+			F20000000000000000000034 /* Display/DisplayControl/EDID/DisplayEDIDReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayEDIDReader.swift; sourceTree = "<group>"; };
+			F20000000000000000000035 /* Display/DisplayControl/EDID/EDIDDiagnosticReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EDIDDiagnosticReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000036 /* Display/DisplayControl/EDID/EDIDHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EDIDHash.swift; sourceTree = "<group>"; };
+			F20000000000000000000037 /* Display/DisplayControl/EDID/EDIDIORegistryReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EDIDIORegistryReader.swift; sourceTree = "<group>"; };
+			F20000000000000000000038 /* Display/DisplayControl/EDID/EDIDModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EDIDModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000039 /* Display/DisplayControl/EDID/EDIDParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EDIDParser.swift; sourceTree = "<group>"; };
+			F20000000000000000000040 /* Display/DisplayControl/Experimental/CGSModeEnumerationDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGSModeEnumerationDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000041 /* Display/DisplayControl/Experimental/HiDPIPrivateActivationSafety.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIPrivateActivationSafety.swift; sourceTree = "<group>"; };
+			F20000000000000000000043 /* Display/DisplayControl/Experimental/PrivateActivationExperiment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateActivationExperiment.swift; sourceTree = "<group>"; };
+			F20000000000000000000044 /* Display/DisplayControl/Experimental/PrivateDisplaySymbolResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateDisplaySymbolResolver.swift; sourceTree = "<group>"; };
+			F20000000000000000000045 /* Display/DisplayControl/Experimental/PrivateHiDPIActivationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateHiDPIActivationEngine.swift; sourceTree = "<group>"; };
+			F20000000000000000000047 /* Display/DisplayControl/HiDPIActivationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIActivationEngine.swift; sourceTree = "<group>"; };
+			F20000000000000000000048 /* Display/DisplayControl/HiDPIDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000049 /* Display/DisplayControl/HiDPIDisplayOverrideManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIDisplayOverrideManager.swift; sourceTree = "<group>"; };
+			F20000000000000000000050 /* Display/DisplayControl/HiDPIFeatureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIFeatureController.swift; sourceTree = "<group>"; };
+			F20000000000000000000051 /* Display/DisplayControl/HiDPIModeApplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIModeApplier.swift; sourceTree = "<group>"; };
+			F20000000000000000000052 /* Display/DisplayControl/HiDPIModePoolDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIModePoolDiagnostic.swift; sourceTree = "<group>"; };
+			F20000000000000000000053 /* Display/DisplayControl/HiDPIOverridePlistBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIOverridePlistBuilder.swift; sourceTree = "<group>"; };
+			F20000000000000000000054 /* Display/DisplayControl/HiDPIOverrideReferenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIOverrideReferenceStore.swift; sourceTree = "<group>"; };
+			F20000000000000000000055 /* Display/DisplayControl/HiDPIReapplyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIReapplyService.swift; sourceTree = "<group>"; };
+			F20000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIRefreshService.swift; sourceTree = "<group>"; };
+			F20000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIReportPaths.swift; sourceTree = "<group>"; };
+			F20000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIStateStore.swift; sourceTree = "<group>"; };
+			F20000000000000000000059 /* Display/DisplayControl/HiDPISystemSnapshotReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPISystemSnapshotReporter.swift; sourceTree = "<group>"; };
+			F20000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPITargetDisplayResolver.swift; sourceTree = "<group>"; };
+			F20000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternalDisplayBrightnessController.swift; sourceTree = "<group>"; };
+			F20000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M1DDCDisplayController.swift; sourceTree = "<group>"; };
+			F20000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDisplayModeReader.swift; sourceTree = "<group>"; };
+			F20000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateDisplayConnectionBackend.swift; sourceTree = "<group>"; };
+			F20000000000000000000065 /* Display/DisplayFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayFeature.swift; sourceTree = "<group>"; };
+			F20000000000000000000066 /* Display/Preferences/AmbientSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmbientSyncModels.swift; sourceTree = "<group>"; };
+			F20000000000000000000067 /* Display/Sensors/PrivateALSSensorReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateALSSensorReader.swift; sourceTree = "<group>"; };
+			F20000000000000000000068 /* Display/System/KeepAwakeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepAwakeController.swift; sourceTree = "<group>"; };
+			F20000000000000000000069 /* Display/System/KeepAwakeFeatureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeepAwakeFeatureController.swift; sourceTree = "<group>"; };
+			F20000000000000000000070 /* Display/System/MonitorVolumeKeyRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorVolumeKeyRouter.swift; sourceTree = "<group>"; };
+			F20000000000000000000071 /* Display/System/PowerSourceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceController.swift; sourceTree = "<group>"; };
+			F20000000000000000000072 /* Display/System/VolumeFeatureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeFeatureController.swift; sourceTree = "<group>"; };
+			F20000000000000000000073 /* App/AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
+			F20000000000000000000074 /* App/CapabilityRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilityRegistry.swift; sourceTree = "<group>"; };
+			F20000000000000000000075 /* Core/Polling/PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
+			F20000000000000000000076 /* App/DisplayDiagnosticRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayDiagnosticRouter.swift; sourceTree = "<group>"; };
+			F20000000000000000000077 /* Views/DisplayFeatureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayFeatureView.swift; sourceTree = "<group>"; };
+			F20000000000000000000078 /* Views/UnifiedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedSettingsView.swift; sourceTree = "<group>"; };
+			F20000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M1DDCBrightnessWriteStatus.swift; sourceTree = "<group>"; };
+			F20000000000000000000080 /* Core/Power/PowerSourceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceReader.swift; sourceTree = "<group>"; };
+			F60000000000000000000001 /* Samsung_4C2D_76AB_reference.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Samsung_4C2D_76AB_reference.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +319,10 @@
 				B40000000000000000000001 /* Cleanup */,
 				D40000000000000000000001 /* PrivilegedHelper */,
 				A40000000000000000000006 /* Views */,
+				F40000000000000000000001 /* Display */,
+				F40000000000000000000002 /* App */,
+				F40000000000000000000003 /* Core */,
+				F40000000000000000000004 /* Resources */,
 				A40000000000000000000002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -223,8 +381,10 @@
 			children = (
 				A20000000000000000000005 /* MenuBarView.swift */,
 				A20000000000000000000015 /* PowerMonitorView.swift */,
-				A20000000000000000000019 /* SystemDiagnosticsView.swift */,
-				E20000000000000000000005 /* CleanupView.swift */,
+					A20000000000000000000019 /* SystemDiagnosticsView.swift */,
+					E20000000000000000000005 /* CleanupView.swift */,
+					F20000000000000000000077 /* Views/DisplayFeatureView.swift */,
+					F20000000000000000000078 /* Views/UnifiedSettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -274,6 +434,205 @@
 				D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */,
 			);
 			path = PrivilegedHelper;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000001 /* Display */ = {
+			isa = PBXGroup;
+			children = (
+				F40000000000000000000010 /* App */,
+				F40000000000000000000011 /* BrightnessEngine */,
+				F40000000000000000000012 /* DisplayControl */,
+				F40000000000000000000013 /* Preferences */,
+				F40000000000000000000014 /* Sensors */,
+				F40000000000000000000015 /* System */,
+				F20000000000000000000065 /* Display/DisplayFeature.swift */,
+			);
+			path = Display;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000020 /* Power */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000080 /* Core/Power/PowerSourceReader.swift */,
+			);
+			path = Power;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000010 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift */,
+				F20000000000000000000002 /* Display/App/DisplayCoordinator.swift */,
+				F20000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift */,
+				F20000000000000000000004 /* Display/App/KeepAwakeCoordinator.swift */,
+				F20000000000000000000005 /* Display/App/LegacyAmbientSyncMigration.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000011 /* BrightnessEngine */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000006 /* Display/BrightnessEngine/BrightnessCurve.swift */,
+				F20000000000000000000007 /* Display/BrightnessEngine/LuxFilter.swift */,
+			);
+			path = BrightnessEngine;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000012 /* DisplayControl */ = {
+			isa = PBXGroup;
+			children = (
+				F40000000000000000000016 /* Brightness */,
+				F40000000000000000000017 /* EDID */,
+				F40000000000000000000018 /* Experimental */,
+				F20000000000000000000028 /* Display/DisplayControl/CGSModeSwitcher.swift */,
+				F20000000000000000000029 /* Display/DisplayControl/DisplayConnectionBackend.swift */,
+				F20000000000000000000030 /* Display/DisplayControl/DisplayConnectionController.swift */,
+				F20000000000000000000031 /* Display/DisplayControl/DisplayConnectionState.swift */,
+				F20000000000000000000047 /* Display/DisplayControl/HiDPIActivationEngine.swift */,
+				F20000000000000000000048 /* Display/DisplayControl/HiDPIDiagnostic.swift */,
+				F20000000000000000000049 /* Display/DisplayControl/HiDPIDisplayOverrideManager.swift */,
+				F20000000000000000000050 /* Display/DisplayControl/HiDPIFeatureController.swift */,
+				F20000000000000000000051 /* Display/DisplayControl/HiDPIModeApplier.swift */,
+				F20000000000000000000052 /* Display/DisplayControl/HiDPIModePoolDiagnostic.swift */,
+				F20000000000000000000053 /* Display/DisplayControl/HiDPIOverridePlistBuilder.swift */,
+				F20000000000000000000054 /* Display/DisplayControl/HiDPIOverrideReferenceStore.swift */,
+				F20000000000000000000055 /* Display/DisplayControl/HiDPIReapplyService.swift */,
+				F20000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift */,
+				F20000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift */,
+				F20000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift */,
+				F20000000000000000000059 /* Display/DisplayControl/HiDPISystemSnapshotReporter.swift */,
+				F20000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift */,
+				F20000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift */,
+				F20000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift */,
+				F20000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift */,
+				F20000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift */,
+			);
+			path = DisplayControl;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000016 /* Brightness */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000008 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticModels.swift */,
+				F20000000000000000000009 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticReporter.swift */,
+				F20000000000000000000010 /* Display/DisplayControl/Brightness/BrightnessAutoController.swift */,
+				F20000000000000000000011 /* Display/DisplayControl/Brightness/BrightnessAutoLoopPlanner.swift */,
+				F20000000000000000000012 /* Display/DisplayControl/Brightness/BrightnessAutoWriteOutcomePlanner.swift */,
+				F20000000000000000000013 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticModels.swift */,
+				F20000000000000000000014 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticReporter.swift */,
+				F20000000000000000000015 /* Display/DisplayControl/Brightness/BrightnessState.swift */,
+				F20000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift */,
+				F20000000000000000000016 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnostic.swift */,
+				F20000000000000000000017 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticModels.swift */,
+				F20000000000000000000018 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticReporter.swift */,
+				F20000000000000000000019 /* Display/DisplayControl/Brightness/DDCBrightnessParsing.swift */,
+				F20000000000000000000020 /* Display/DisplayControl/Brightness/DDCBrightnessScale.swift */,
+				F20000000000000000000021 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeDiagnostic.swift */,
+				F20000000000000000000022 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeModels.swift */,
+				F20000000000000000000023 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeReporter.swift */,
+				F20000000000000000000024 /* Display/DisplayControl/Brightness/HDRBrightnessDDCReader.swift */,
+				F20000000000000000000025 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnostic.swift */,
+				F20000000000000000000026 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnosticReporter.swift */,
+				F20000000000000000000027 /* Display/DisplayControl/Brightness/HDRBrightnessModels.swift */,
+			);
+			path = Brightness;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000017 /* EDID */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000034 /* Display/DisplayControl/EDID/DisplayEDIDReader.swift */,
+				F20000000000000000000035 /* Display/DisplayControl/EDID/EDIDDiagnosticReporter.swift */,
+				F20000000000000000000036 /* Display/DisplayControl/EDID/EDIDHash.swift */,
+				F20000000000000000000037 /* Display/DisplayControl/EDID/EDIDIORegistryReader.swift */,
+				F20000000000000000000038 /* Display/DisplayControl/EDID/EDIDModels.swift */,
+				F20000000000000000000039 /* Display/DisplayControl/EDID/EDIDParser.swift */,
+			);
+			path = EDID;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000018 /* Experimental */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000040 /* Display/DisplayControl/Experimental/CGSModeEnumerationDiagnostic.swift */,
+				F20000000000000000000041 /* Display/DisplayControl/Experimental/HiDPIPrivateActivationSafety.swift */,
+				F20000000000000000000043 /* Display/DisplayControl/Experimental/PrivateActivationExperiment.swift */,
+				F20000000000000000000044 /* Display/DisplayControl/Experimental/PrivateDisplaySymbolResolver.swift */,
+				F20000000000000000000045 /* Display/DisplayControl/Experimental/PrivateHiDPIActivationEngine.swift */,
+			);
+			path = Experimental;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000013 /* Preferences */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000066 /* Display/Preferences/AmbientSyncModels.swift */,
+			);
+			path = Preferences;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000014 /* Sensors */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000067 /* Display/Sensors/PrivateALSSensorReader.swift */,
+			);
+			path = Sensors;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000015 /* System */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000068 /* Display/System/KeepAwakeController.swift */,
+				F20000000000000000000069 /* Display/System/KeepAwakeFeatureController.swift */,
+				F20000000000000000000070 /* Display/System/MonitorVolumeKeyRouter.swift */,
+				F20000000000000000000071 /* Display/System/PowerSourceController.swift */,
+				F20000000000000000000072 /* Display/System/VolumeFeatureController.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000002 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000073 /* App/AppServices.swift */,
+				F20000000000000000000074 /* App/CapabilityRegistry.swift */,
+				F20000000000000000000076 /* App/DisplayDiagnosticRouter.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000003 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				F40000000000000000000019 /* Polling */,
+				F40000000000000000000020 /* Power */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000019 /* Polling */ = {
+			isa = PBXGroup;
+			children = (
+				F20000000000000000000075 /* Core/Polling/PollingScheduler.swift */,
+			);
+			path = Polling;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000004 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F40000000000000000000005 /* HiDPIOverrides */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		F40000000000000000000005 /* HiDPIOverrides */ = {
+			isa = PBXGroup;
+			children = (
+				F60000000000000000000001 /* Samsung_4C2D_76AB_reference.plist */,
+			);
+			path = HiDPIOverrides;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -358,6 +717,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000019 /* Assets.xcassets in Resources */,
+				F70000000000000000000001 /* Samsung HiDPI reference in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -407,6 +767,82 @@
 				E10000000000000000000003 /* FullDiskAccessService.swift in Sources */,
 				E10000000000000000000004 /* CleanupCoordinator.swift in Sources */,
 				E10000000000000000000005 /* CleanupView.swift in Sources */,
+				F10000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift in Sources */,
+				F10000000000000000000002 /* Display/App/DisplayCoordinator.swift in Sources */,
+				F10000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift in Sources */,
+				F10000000000000000000004 /* Display/App/KeepAwakeCoordinator.swift in Sources */,
+				F10000000000000000000005 /* Display/App/LegacyAmbientSyncMigration.swift in Sources */,
+				F10000000000000000000006 /* Display/BrightnessEngine/BrightnessCurve.swift in Sources */,
+				F10000000000000000000007 /* Display/BrightnessEngine/LuxFilter.swift in Sources */,
+				F10000000000000000000008 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticModels.swift in Sources */,
+				F10000000000000000000009 /* Display/DisplayControl/Brightness/BrightnessAutoControlDiagnosticReporter.swift in Sources */,
+				F10000000000000000000010 /* Display/DisplayControl/Brightness/BrightnessAutoController.swift in Sources */,
+				F10000000000000000000011 /* Display/DisplayControl/Brightness/BrightnessAutoLoopPlanner.swift in Sources */,
+				F10000000000000000000012 /* Display/DisplayControl/Brightness/BrightnessAutoWriteOutcomePlanner.swift in Sources */,
+				F10000000000000000000013 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticModels.swift in Sources */,
+				F10000000000000000000014 /* Display/DisplayControl/Brightness/BrightnessMappingDiagnosticReporter.swift in Sources */,
+				F10000000000000000000015 /* Display/DisplayControl/Brightness/BrightnessState.swift in Sources */,
+				F10000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift in Sources */,
+				F10000000000000000000016 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnostic.swift in Sources */,
+				F10000000000000000000017 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticModels.swift in Sources */,
+				F10000000000000000000018 /* Display/DisplayControl/Brightness/DDCBrightnessMaxDiagnosticReporter.swift in Sources */,
+				F10000000000000000000019 /* Display/DisplayControl/Brightness/DDCBrightnessParsing.swift in Sources */,
+				F10000000000000000000020 /* Display/DisplayControl/Brightness/DDCBrightnessScale.swift in Sources */,
+				F10000000000000000000021 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeDiagnostic.swift in Sources */,
+				F10000000000000000000022 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeModels.swift in Sources */,
+				F10000000000000000000023 /* Display/DisplayControl/Brightness/DDCRawBrightnessProbeReporter.swift in Sources */,
+				F10000000000000000000024 /* Display/DisplayControl/Brightness/HDRBrightnessDDCReader.swift in Sources */,
+				F10000000000000000000025 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnostic.swift in Sources */,
+				F10000000000000000000026 /* Display/DisplayControl/Brightness/HDRBrightnessDiagnosticReporter.swift in Sources */,
+				F10000000000000000000027 /* Display/DisplayControl/Brightness/HDRBrightnessModels.swift in Sources */,
+				F10000000000000000000028 /* Display/DisplayControl/CGSModeSwitcher.swift in Sources */,
+				F10000000000000000000029 /* Display/DisplayControl/DisplayConnectionBackend.swift in Sources */,
+				F10000000000000000000030 /* Display/DisplayControl/DisplayConnectionController.swift in Sources */,
+				F10000000000000000000031 /* Display/DisplayControl/DisplayConnectionState.swift in Sources */,
+				F10000000000000000000034 /* Display/DisplayControl/EDID/DisplayEDIDReader.swift in Sources */,
+				F10000000000000000000035 /* Display/DisplayControl/EDID/EDIDDiagnosticReporter.swift in Sources */,
+				F10000000000000000000036 /* Display/DisplayControl/EDID/EDIDHash.swift in Sources */,
+				F10000000000000000000037 /* Display/DisplayControl/EDID/EDIDIORegistryReader.swift in Sources */,
+				F10000000000000000000038 /* Display/DisplayControl/EDID/EDIDModels.swift in Sources */,
+				F10000000000000000000039 /* Display/DisplayControl/EDID/EDIDParser.swift in Sources */,
+				F10000000000000000000040 /* Display/DisplayControl/Experimental/CGSModeEnumerationDiagnostic.swift in Sources */,
+				F10000000000000000000041 /* Display/DisplayControl/Experimental/HiDPIPrivateActivationSafety.swift in Sources */,
+				F10000000000000000000043 /* Display/DisplayControl/Experimental/PrivateActivationExperiment.swift in Sources */,
+				F10000000000000000000044 /* Display/DisplayControl/Experimental/PrivateDisplaySymbolResolver.swift in Sources */,
+				F10000000000000000000045 /* Display/DisplayControl/Experimental/PrivateHiDPIActivationEngine.swift in Sources */,
+				F10000000000000000000047 /* Display/DisplayControl/HiDPIActivationEngine.swift in Sources */,
+				F10000000000000000000048 /* Display/DisplayControl/HiDPIDiagnostic.swift in Sources */,
+				F10000000000000000000049 /* Display/DisplayControl/HiDPIDisplayOverrideManager.swift in Sources */,
+				F10000000000000000000050 /* Display/DisplayControl/HiDPIFeatureController.swift in Sources */,
+				F10000000000000000000051 /* Display/DisplayControl/HiDPIModeApplier.swift in Sources */,
+				F10000000000000000000052 /* Display/DisplayControl/HiDPIModePoolDiagnostic.swift in Sources */,
+				F10000000000000000000053 /* Display/DisplayControl/HiDPIOverridePlistBuilder.swift in Sources */,
+				F10000000000000000000054 /* Display/DisplayControl/HiDPIOverrideReferenceStore.swift in Sources */,
+				F10000000000000000000055 /* Display/DisplayControl/HiDPIReapplyService.swift in Sources */,
+				F10000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift in Sources */,
+				F10000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift in Sources */,
+				F10000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift in Sources */,
+				F10000000000000000000059 /* Display/DisplayControl/HiDPISystemSnapshotReporter.swift in Sources */,
+				F10000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift in Sources */,
+				F10000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift in Sources */,
+				F10000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift in Sources */,
+				F10000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift in Sources */,
+				F10000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift in Sources */,
+				F10000000000000000000065 /* Display/DisplayFeature.swift in Sources */,
+				F10000000000000000000066 /* Display/Preferences/AmbientSyncModels.swift in Sources */,
+				F10000000000000000000067 /* Display/Sensors/PrivateALSSensorReader.swift in Sources */,
+				F10000000000000000000068 /* Display/System/KeepAwakeController.swift in Sources */,
+				F10000000000000000000069 /* Display/System/KeepAwakeFeatureController.swift in Sources */,
+				F10000000000000000000070 /* Display/System/MonitorVolumeKeyRouter.swift in Sources */,
+				F10000000000000000000071 /* Display/System/PowerSourceController.swift in Sources */,
+				F10000000000000000000072 /* Display/System/VolumeFeatureController.swift in Sources */,
+				F10000000000000000000073 /* App/AppServices.swift in Sources */,
+				F10000000000000000000074 /* App/CapabilityRegistry.swift in Sources */,
+				F10000000000000000000075 /* Core/Polling/PollingScheduler.swift in Sources */,
+				F10000000000000000000076 /* App/DisplayDiagnosticRouter.swift in Sources */,
+				F10000000000000000000077 /* Views/DisplayFeatureView.swift in Sources */,
+				F10000000000000000000078 /* Views/UnifiedSettingsView.swift in Sources */,
+				F10000000000000000000080 /* Core/Power/PowerSourceReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

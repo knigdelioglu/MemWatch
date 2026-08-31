@@ -5,27 +5,9 @@ import IOKit.ps
 struct PowerCollector {
     func collect() -> PowerSnapshot {
         let now = Date()
-        let info = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        let sources = IOPSCopyPowerSourcesList(info).takeRetainedValue() as NSArray
-
-        var batteryDescription: NSDictionary?
-
-        for item in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, item as CFTypeRef)?.takeUnretainedValue() else {
-                continue
-            }
-
-            let dictionary = description as NSDictionary
-            let type = dictionary.object(forKey: kIOPSTypeKey) as? String
-            let transport = dictionary.object(forKey: kIOPSTransportTypeKey) as? String
-
-            if type == kIOPSInternalBatteryType || transport == kIOPSInternalType {
-                batteryDescription = dictionary
-                break
-            }
-        }
-
-        let source = powerSource(from: batteryDescription)
+        let powerSourceReading = PowerSourceReader().read()
+        let batteryDescription = powerSourceReading.batteryDescription
+        let source = powerSourceReading.source
         let isCharging = bool(batteryDescription, key: kIOPSIsChargingKey) ?? false
         let isCharged = bool(batteryDescription, key: kIOPSIsChargedKey) ?? false
 
@@ -62,21 +44,6 @@ struct PowerCollector {
             timeToEmptyMinutes: positiveMinutes(batteryDescription, key: kIOPSTimeToEmptyKey),
             timeToFullMinutes: positiveMinutes(batteryDescription, key: kIOPSTimeToFullChargeKey)
         )
-    }
-
-    private func powerSource(from battery: NSDictionary?) -> PowerSourceKind {
-        guard let state = battery?.object(forKey: kIOPSPowerSourceStateKey) as? String else {
-            return .unknown
-        }
-
-        if state == kIOPSACPowerValue {
-            return .ac
-        }
-        if state == kIOPSBatteryPowerValue {
-            return .battery
-        }
-
-        return .unknown
     }
 
     private func readAdapterDetails() -> (ratedWatts: Double?, currentMilliAmps: Double?) {

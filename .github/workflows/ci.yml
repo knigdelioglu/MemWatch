@@ -52,6 +52,17 @@ jobs:
             -o /tmp/memwatch-tray-ux-tests
           /tmp/memwatch-tray-ux-tests
 
+      - name: Run merged display feature smoke tests
+        run: Scripts/run_display_feature_tests.sh
+
+      - name: Run merge architecture contract tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Tests/MergeArchitectureContractTests.swift \
+            -o /tmp/memwatch-merge-architecture-contract-tests
+          /tmp/memwatch-merge-architecture-contract-tests
+
       - name: Run memory collector smoke test
         run: |
           xcrun swiftc \
@@ -107,6 +118,7 @@ jobs:
         run: |
           xcrun swiftc \
             Models/PowerSnapshot.swift \
+            Core/Power/PowerSourceReader.swift \
             Collectors/PowerCollector.swift \
             Tests/PowerCollectorSmoke.swift \
             -framework IOKit \
@@ -394,6 +406,7 @@ jobs:
             Models/MemorySnapshot.swift \
             Collectors/MemoryCollector.swift \
             Models/PowerSnapshot.swift \
+            Core/Power/PowerSourceReader.swift \
             Collectors/PowerCollector.swift \
             Models/SystemDiagnosticsSnapshot.swift \
             Collectors/SystemDiagnosticsCollector.swift \
