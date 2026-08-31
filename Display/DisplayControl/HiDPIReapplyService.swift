@@ -30,6 +30,8 @@ public final class HiDPIReapplyService {
             return
         }
 
+        lifecycleState.registrationSucceeded()
+
         print("[HiDPIReapplyService] Yeniden uygulama servisi başlatıldı.")
     }
 
@@ -42,7 +44,10 @@ public final class HiDPIReapplyService {
         }
 
         let result = CGDisplayRemoveReconfigurationCallback(Self.displayReconfigurationCallback, nil)
-        if result != .success {
+        if result == .success {
+            lifecycleState.removalSucceeded()
+        } else {
+            lifecycleState.removalFailed()
             print("[HiDPIReapplyService] Callback removal failed: \(result.rawValue)")
         }
         reapplyWorkItem?.cancel()
@@ -149,10 +154,4 @@ public final class HiDPIReapplyService {
         return try body()
     }
 
-    deinit {
-        reapplyWorkItem?.cancel()
-        if lifecycleState.isListening {
-            _ = CGDisplayRemoveReconfigurationCallback(Self.displayReconfigurationCallback, nil)
-        }
-    }
 }

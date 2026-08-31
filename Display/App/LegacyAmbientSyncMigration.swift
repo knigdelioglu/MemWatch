@@ -61,10 +61,11 @@ enum LegacyAmbientSyncMigration {
     private static let currentVersion = 1
     private static let legacyLabel = "fyi.kadir.AmbientSync"
     @MainActor private static var migrationInFlight = false
+    @MainActor private static var scheduledTask: Task<LegacyAmbientSyncMigrationResult, Never>?
 
     /// Schedules the one-shot migration without making app construction wait
-    /// for launchctl. The version is written only by runIfNeeded after the
-    /// plist has either not existed or has been safely removed.
+    /// for launchctl. Callers share the same task, so runtime activation cannot
+    /// accidentally proceed while another coordinator is migrating.
     @MainActor
     @discardableResult
     static func scheduleIfNeeded(
@@ -73,10 +74,13 @@ enum LegacyAmbientSyncMigration {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         runner: LegacyAmbientSyncProcessRunning = SystemLegacyAmbientSyncProcessRunner()
     ) -> Task<LegacyAmbientSyncMigrationResult, Never>? {
+        if let scheduledTask {
+            return scheduledTask
+        }
         guard defaults.integer(forKey: versionKey) < currentVersion, !migrationInFlight else { return nil }
         migrationInFlight = true
 
-        return Task {
+        let task = Task {
             let result = await runIfNeeded(defaults: defaults, fileManager: fileManager, homeDirectory: homeDirectory, runner: runner)
             if case .failed(let reason) = result {
                 print("[LegacyAmbientSyncMigration] cleanup failed: \(reason)")
@@ -84,10 +88,14 @@ enum LegacyAmbientSyncMigration {
                 print("[LegacyAmbientSyncMigration] cleanup result: \(result)")
             }
             migrationInFlight = false
+            scheduledTask = nil
             return result
         }
+        scheduledTask = task
+        return task
     }
 
+    @MainActor
     static func runIfNeeded(
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,

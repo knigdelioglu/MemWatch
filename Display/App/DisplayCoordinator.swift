@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -13,9 +14,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     var legacyMigrationTask: Task<LegacyAmbientSyncMigrationResult, Never>?
     var observerTokens: [(NotificationCenter, NSObjectProtocol)] = []
     private(set) var isRunning = false
-    var ddcAvailable = false
-    @Published private(set) var capabilities = DisplayCapabilities.unavailable
-    @Published var autoBrightnessEnabled = true
+    let runtimeState: DisplayRuntimeState
+    private var runtimeStateObservation: AnyCancellable?
+    private var startGeneration = 0
     var volumeKeyRouter: MonitorVolumeKeyRouter?
     lazy var keepAwakeCoordinator = KeepAwakeCoordinator(app: self)
     let volumeCoordinator = DisplayVolumeCoordinator()
@@ -25,76 +26,76 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     let brightnessAutoController = BrightnessAutoController()
     let brightnessAutoLoopPlanner = BrightnessAutoLoopPlanner()
     let brightnessAutoWriteOutcomePlanner = BrightnessAutoWriteOutcomePlanner()
-    var isTickRunning = false
-    var lastSmoothedLux: Double?
-    var lastSentBrightness: Int?
-    var lastWriteDate = Date.distantPast
-    var lastBrightnessReadDate = Date.distantPast
-    var lastDisplaySearchDate = Date.distantPast
-    let brightnessReadInterval: TimeInterval = 8.0
-    let displaySearchInterval: TimeInterval = 3.0
-    var manualBrightnessOverrideUntil = Date.distantPast
-    var autoBrightnessSuppressedUntil = Date.distantPast
-    var manualBrightnessOverrideStartLux: Double?
-    var pendingTargetCandidate: Int?
-    var pendingTargetCandidateSince: Date = .distantPast
-    var mismatchIntervalsCount: Int = 0
-    var brightnessLimiterCooldownUntil = Date.distantPast
-    var brightnessLimiterCooldownDisplayKey: String?
-    let brightnessLimiterCooldownDuration: TimeInterval = 120.0
-    let volumeReadInterval: TimeInterval = 5.0
-    var lastVolumeReadDate = Date.distantPast
-
-    @Published var keepAwakeState: KeepAwakeState
-
-    @Published var currentIdleTimeString: String = "00:00"
-    @Published var remainingIdleTimeString: String = "--:--"
-    var isAwakeAssertionActive: Bool { keepAwakeCoordinator.isActive }
-    
-    @Published var statusText: String = "Başlatılıyor..."
-    @Published var currentLux: Double?
-    @Published var currentBrightness: Int?
-    @Published var currentInternalBrightness: Int?
-    @Published var currentVolume: Int? = nil
-    @Published var currentDisplayInfo: ExternalDisplayInfo?
-    @Published var hiDPIStatusText: String = "Mevcut Mod: bilinmiyor"
-    @Published var hiDPIActivationStatusText: String = "HiDPI disabled"
-    @Published var cgsModeEnumerationStatusText: String = "CGS mode enumeration henüz çalıştırılmadı."
-    @Published var cgsModeEnumerationSummary: CGSModeEnumerationSummary?
-    @Published var cgsModeApplyExperimentStatusText: String = "CGS apply experiment henüz çalıştırılmadı."
-    @Published var cgsModeApplyExperimentSummary: CGSModeApplyExperimentSummary?
-    @Published var cgsManualModeSwitcherStatusText: String = "Current CGS Mode: unavailable"
-    @Published var cgsManualModeSwitcherSummary: CGSModeSwitcherStatus?
-    @Published var cgsDynamicSelectionState: CGSDynamicModeSelectionState?
-    @Published var cgsSamsungFallbackUsed: Bool = false
-    @Published var cgsSelectedHiDPICandidate: CGSDisplayModeCandidate?
-    @Published var cgsSelectedNormalCandidate: CGSDisplayModeCandidate?
-    @Published var availableModes: [PhysicalDisplayMode] = []
-    @Published var isHiDPIActive: Bool = false
-    @Published var calibrationSession: CalibrationSession?
-    @Published var currentEDIDSummary: EDIDDiagnosticSummary?
-    @Published var hdrBrightnessDiagnosticSummary: HDRBrightnessDiagnosticSummary?
-    @Published var ddcBrightnessMaxDiagnosticSummary: DDCBrightnessMaxDiagnosticSummary?
-    @Published var ddcRawBrightnessProbeSummary: DDCRawBrightnessProbeSummary?
-    @Published var brightnessMappingDiagnosticSummary: BrightnessMappingDiagnosticSummary?
-    @Published var brightnessState = BrightnessState()
     let hdrBrightnessDiagnostic = HDRBrightnessDiagnostic()
     let ddcBrightnessMaxDiagnostic = DDCBrightnessMaxDiagnostic()
     let ddcRawBrightnessProbeDiagnostic = DDCRawBrightnessProbeDiagnostic()
+
     init(scheduler: PollingScheduler, capabilityRegistry: CapabilityRegistry? = nil) {
         DisplayPreferencesMigration.migrateIfNeeded()
         self.store = AmbientSyncStore()
-        self.keepAwakeState = KeepAwakeFeatureController.loadInitialState()
-        self.autoBrightnessEnabled = UserDefaults.standard.object(forKey: "AmbientSync.AutoBrightnessEnabled") == nil
+        let initialAutoBrightnessEnabled = UserDefaults.standard.object(forKey: "AmbientSync.AutoBrightnessEnabled") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "AmbientSync.AutoBrightnessEnabled")
+        self.runtimeState = DisplayRuntimeState(
+            autoBrightnessEnabled: initialAutoBrightnessEnabled,
+            keepAwakeState: KeepAwakeFeatureController.loadInitialState()
+        )
         self.scheduler = scheduler
         self.capabilityRegistry = capabilityRegistry ?? CapabilityRegistry()
         super.init()
+        self.runtimeStateObservation = runtimeState.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         self.legacyMigrationTask = LegacyAmbientSyncMigration.scheduleIfNeeded()
     }
 
     func start() {
+        guard !isRunning, startupTask == nil else { return }
+        startGeneration += 1
+        let generation = startGeneration
+        if legacyMigrationTask == nil {
+            legacyMigrationTask = LegacyAmbientSyncMigration.scheduleIfNeeded()
+        }
+        let migrationTask = legacyMigrationTask
+
+        startupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let migrationTask {
+                let migrationResult = await migrationTask.value
+                guard migrationResult.completedSuccessfully else {
+                    guard self.isCurrentStart(generation) else { return }
+                    self.updateStatus("Legacy AmbientSync cleanup failed; display features are paused")
+                    self.updateCapabilities()
+                    self.startupTask = nil
+                    return
+                }
+            }
+
+            guard self.isCurrentStart(generation) else { return }
+            self.activateRuntime()
+            self.ddcAvailable = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
+            guard self.isCurrentStart(generation) else { return }
+            self.updateCapabilities()
+            await self.reloadDisplayModes()
+            guard self.isCurrentStart(generation) else { return }
+            self.refreshCGSModeSwitcherState()
+            if self.keepAwakeState.featureEnabled {
+                self.startDefaultAfterWakeSession()
+            }
+            await self.reloadDisplayInfo()
+            guard self.isCurrentStart(generation) else { return }
+            self.refreshInternalBrightness()
+            self.volumeKeyRouter?.setEnabled(self.currentDisplayInfo != nil)
+            self.refreshCGSModeSwitcherState()
+            await self.tick()
+        }
+    }
+
+    private func isCurrentStart(_ generation: Int) -> Bool {
+        !Task.isCancelled && generation == startGeneration
+    }
+
+    private func activateRuntime() {
         guard !isRunning else { return }
         isRunning = true
         HiDPIReapplyService.shared.startService()
@@ -109,34 +110,14 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
                 await self?.tick()
             }
         }
-
-        startupTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            if let migrationResult = await self.legacyMigrationTask?.value,
-               !migrationResult.completedSuccessfully {
-                self.updateStatus("Legacy AmbientSync cleanup failed; display features are paused")
-                self.updateCapabilities()
-                return
-            }
-            self.ddcAvailable = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
-            self.updateCapabilities()
-            await self.reloadDisplayModes()
-            self.refreshCGSModeSwitcherState()
-            if self.keepAwakeState.featureEnabled {
-                self.startDefaultAfterWakeSession()
-            }
-            await self.reloadDisplayInfo()
-            self.refreshInternalBrightness()
-            self.volumeKeyRouter?.setEnabled(self.currentDisplayInfo != nil)
-            self.refreshCGSModeSwitcherState()
-            await self.tick()
-        }
     }
 
     func stop() {
+        startGeneration += 1
         startupTask?.cancel()
         startupTask = nil
-        legacyMigrationTask?.cancel()
+        // Migration is shared and must finish fail-closed; cancel only the
+        // runtime startup waiter, not the cleanup itself.
         legacyMigrationTask = nil
         scheduler.unregister(id: "display-feature")
         volumeKeyRouter?.stop()
@@ -208,7 +189,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         )
 
         guard next != capabilities else { return }
-        capabilities = next
+        runtimeState.capabilities = next
         capabilityRegistry.update(display: next)
     }
 

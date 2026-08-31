@@ -7,6 +7,8 @@ struct MergeArchitectureContractTests {
         let appShell = try read("MemWatchApp.swift", root: root)
         let services = try read("App/AppServices.swift", root: root)
         let displayCoordinator = try read("Display/App/DisplayCoordinator.swift", root: root)
+        let displayRuntimeState = try read("Display/App/DisplayRuntimeState.swift", root: root)
+        let displayCoordinatorState = try read("Display/App/DisplayCoordinator+State.swift", root: root)
         let displayComposition = try read("Display/App/DisplayFeatureComposition.swift", root: root)
         let displayFeatures = try read("Display/App/DisplayCoordinator+Features.swift", root: root)
         let displayBrightnessRuntime = try read("Display/App/DisplayCoordinator+BrightnessRuntime.swift", root: root)
@@ -35,6 +37,16 @@ struct MergeArchitectureContractTests {
             && displayCoordinator.contains("DisplayVolumeCoordinator")
             && displayCoordinator.contains("DisplayCapabilityProvider"),
                "DisplayCoordinator must compose focused display feature owners")
+        expect(!displayCoordinator.contains("@Published")
+            && displayRuntimeState.contains("final class DisplayBrightnessRuntimeState")
+            && displayRuntimeState.contains("final class DisplayHiDPIRuntimeState")
+            && displayRuntimeState.contains("final class DisplayDiagnosticsRuntimeState")
+            && displayRuntimeState.contains("final class DisplayVolumeRuntimeState")
+            && displayRuntimeState.contains("lastSmoothedLux")
+            && displayRuntimeState.contains("brightnessState")
+            && displayRuntimeState.contains("currentEDIDSummary")
+            && displayCoordinatorState.contains("extension DisplayCoordinator"),
+               "Mutable display state must be owned outside the lifecycle coordinator")
         expect(!displayCoordinator.contains("private let writer")
             && !displayCoordinator.contains("private let internalBrightnessController")
             && !displayCoordinator.contains("private let cgsModeSwitcher")
@@ -89,9 +101,20 @@ struct MergeArchitectureContractTests {
             && !migrationRuntime.contains("try? fileManager.removeItem")
             && migrationRuntime.contains("guard processResult.succeeded"),
                "Legacy migration must be non-blocking and fail closed")
+        expect(displayCoordinator.contains("let migrationTask = legacyMigrationTask")
+            && displayCoordinator.contains("self.activateRuntime()")
+            && displayCoordinator.firstRange(of: "let migrationTask = legacyMigrationTask")!.lowerBound
+                < displayCoordinator.firstRange(of: "self.activateRuntime()")!.lowerBound
+            && displayCoordinator.firstRange(of: "self.activateRuntime()")!.lowerBound
+                < displayCoordinator.firstRange(of: "HiDPIReapplyService.shared.startService()")!.lowerBound,
+               "Display runtime activation must be gated by successful legacy migration")
+        expect(project.components(separatedBy: "SWIFT_STRICT_CONCURRENCY = complete;").count - 1 >= 6,
+               "All Swift targets must enable complete strict concurrency checking")
         expect(hiDPIReapply.contains("CGDisplayRemoveReconfigurationCallback")
             && hiDPIReapply.contains("stopService()")
-            && hiDPILifecycle.contains("mutating func stop()"),
+            && hiDPILifecycle.contains("mutating func stop()")
+            && hiDPILifecycle.contains("mutating func removalFailed()")
+            && hiDPILifecycle.contains("isRegistrationInFlight"),
                "HiDPI callback lifecycle must support idempotent stop/unregister")
         expect(m1DDC.contains("M1DDCExecutableLocator")
             && m1DDC.contains("executableCacheInterval"),
