@@ -538,6 +538,24 @@ final class PrivilegedHelperService: ObservableObject {
         // A registered SMAppService daemon must be the only source used by a
         // team-signed build. In particular, do not fall back to the manual
         // installer when registration fails or approval is pending.
+        // If the registration is stale but still reported as enabled, a retry
+        // must be able to recreate the launchd submission instead of calling
+        // register() on the same broken record forever.
+        if service.status == .enabled {
+            if await verifyConnection() {
+                return true
+            }
+
+            do {
+                try await service.unregister()
+            } catch {
+                lastError = "Önceki SMAppService kaydı kaldırılamadı: \(error.localizedDescription)"
+                refreshStatus()
+                return false
+            }
+            refreshStatus()
+        }
+
         do {
             try service.register()
         } catch {

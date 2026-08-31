@@ -45,8 +45,22 @@ final class CleanupCoordinator: ObservableObject {
     private var lastContext: CleanupScanContext?
     private let activityGuard = CleanupActivityGuard()
     private var operationGeneration = 0
+    private var childObservations = Set<AnyCancellable>()
 
     init() {
+        // The cleanup screen observes this coordinator, while permissions and
+        // helper registration are owned by their own ObservableObjects. Forward
+        // those changes so async install/approval/failure states are rendered
+        // immediately instead of making a button appear to do nothing.
+        helperService.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childObservations)
+        fullDiskAccessService.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &childObservations)
+
         Task { [weak self] in
             await self?.loadPersistentState()
         }
@@ -326,12 +340,11 @@ final class CleanupCoordinator: ObservableObject {
     func registerHelper() {
         guard preferences.cleanupEnabled, preferences.privilegedOperationsEnabled else { return }
         helperRefreshTask?.cancel()
-        Task { [weak self] in
+        helperRefreshTask = Task { [weak self] in
             guard let self else { return }
             let ok = await helperService.register()
-            if ok || helperService.state != .requiresApproval {
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            guard !Task.isCancelled else { return }
+            NSApp.activate(ignoringOtherApps: true)
             if ok { startScan() }
         }
     }

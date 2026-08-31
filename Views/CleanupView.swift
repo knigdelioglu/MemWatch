@@ -220,10 +220,17 @@ struct CleanupView: View {
 
             if let helperError = coordinator.helperService.lastError,
                !helperError.isEmpty {
-                Text("Yetkili yardımcı etkinleştirilemedi. Yeniden deneyin veya Sistem Ayarları'nı kontrol edin.")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Yetkili yardımcı etkinleştirilemedi. Yeniden deneyin veya Sistem Ayarları'nı kontrol edin.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(helperError)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
 
             Divider()
@@ -357,6 +364,21 @@ struct CleanupView: View {
                 }
 
                 Spacer()
+            }
+
+            if let helperError = coordinator.helperService.lastError,
+               !helperError.isEmpty,
+               !coordinator.helperService.isRegistering {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Yetkili yardımcı kurulamadı", systemImage: "xmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    Text(helperError)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
         }
         .padding(11)

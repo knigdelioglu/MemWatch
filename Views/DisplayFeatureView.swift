@@ -223,53 +223,7 @@ struct DisplayFeatureView: View {
 
     private var keepAwakeCard: some View {
         FeatureCard {
-            featureHeader(title: "Keep Awake", symbol: "moon.zzz.fill")
-
-            Toggle(
-                "Keep system awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.featureEnabled },
-                    set: { display.setKeepAwakeFeatureEnabled($0) }
-                )
-            )
-            .toggleStyle(.switch)
-
-            Toggle(
-                "Keep display awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.keepDisplayAwake },
-                    set: { display.setKeepAwakeDisplayAwake($0) }
-                )
-            )
-            .disabled(!display.keepAwakeState.featureEnabled)
-
-            Toggle(
-                "Only while connected to power",
-                isOn: Binding(
-                    get: { display.keepAwakeState.onlyWhilePluggedIn },
-                    set: { display.setKeepAwakePluggedOnly($0) }
-                )
-            )
-            .disabled(!display.keepAwakeState.featureEnabled)
-
-            HStack {
-                Text(display.keepAwakeSummaryText)
-                    .font(.caption)
-                    .foregroundStyle(display.isAwakeAssertionActive ? .green : .secondary)
-                Spacer()
-                if let until = display.keepAwakeUntilText {
-                    Text(until)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 8) {
-                sessionButton(title: "15 min", mode: "15")
-                sessionButton(title: "30 min", mode: "30")
-                sessionButton(title: "1 hour", mode: "60")
-                sessionButton(title: "Until off", mode: "never")
-            }
+            KeepAwakeControlsView(display: display)
         }
     }
 
@@ -390,15 +344,6 @@ struct DisplayFeatureView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func sessionButton(title: String, mode: String) -> some View {
-        Button(title) {
-            display.startSessionWithDurationMode(mode)
-        }
-        .buttonStyle(.bordered)
-        .font(.caption)
-        .disabled(!display.keepAwakeState.featureEnabled)
-    }
-
     private func diagnosticButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
             .buttonStyle(.bordered)
@@ -473,6 +418,81 @@ struct DisplayFeatureView: View {
         case .reconnecting, .disconnecting: return .orange
         default: return .secondary
         }
+    }
+}
+
+/// The keep-awake feature is available from the main overview and the display
+/// details route. Keeping the controls in one view prevents those entry points
+/// from drifting apart while the coordinator remains the single state owner.
+struct KeepAwakeControlsView: View {
+    @ObservedObject var display: DisplayCoordinator
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
+            Label("Keep Awake", systemImage: "moon.zzz.fill")
+                .font(compact ? .headline : .subheadline.weight(.semibold))
+
+            Toggle(
+                "Keep system awake",
+                isOn: Binding(
+                    get: { display.keepAwakeState.featureEnabled },
+                    set: { display.setKeepAwakeFeatureEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .font(compact ? .body : .subheadline)
+
+            Toggle(
+                "Keep display awake",
+                isOn: Binding(
+                    get: { display.keepAwakeState.keepDisplayAwake },
+                    set: { display.setKeepAwakeDisplayAwake($0) }
+                )
+            )
+            .disabled(!display.keepAwakeState.featureEnabled)
+            .font(compact ? .body : .subheadline)
+
+            Toggle(
+                "Only while connected to power",
+                isOn: Binding(
+                    get: { display.keepAwakeState.onlyWhilePluggedIn },
+                    set: { display.setKeepAwakePluggedOnly($0) }
+                )
+            )
+            .disabled(!display.keepAwakeState.featureEnabled)
+            .font(compact ? .body : .subheadline)
+
+            HStack {
+                Text(display.keepAwakeSummaryText)
+                    .font(compact ? .callout : .caption)
+                    .foregroundStyle(display.isAwakeAssertionActive ? .green : .secondary)
+                Spacer()
+                if let until = display.keepAwakeUntilText {
+                    Text(until)
+                        .font((compact ? Font.callout : Font.caption).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                sessionButton(title: "15 min", mode: "15")
+                sessionButton(title: "30 min", mode: "30")
+                sessionButton(title: "1 hour", mode: "60")
+                sessionButton(title: "Until off", mode: "never")
+            }
+        }
+    }
+
+    private func sessionButton(title: String, mode: String) -> some View {
+        Button(title) {
+            display.startSessionWithDurationMode(mode)
+        }
+        .buttonStyle(.bordered)
+        .font(compact ? .callout : .caption)
+        .frame(maxWidth: .infinity)
+        .controlSize(compact ? .small : .regular)
+        .disabled(!display.keepAwakeState.featureEnabled)
     }
 }
 

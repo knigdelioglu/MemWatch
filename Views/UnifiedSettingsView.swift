@@ -213,43 +213,7 @@ struct UnifiedSettingsView: View {
 
     private var settingsKeepAwakeSection: some View {
         SettingsSectionCard {
-            Text("Keep Awake")
-                .font(.headline)
-
-            Toggle(
-                "Keep system awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.featureEnabled },
-                    set: { display.setKeepAwakeFeatureEnabled($0) }
-                )
-            )
-            Toggle(
-                "Keep display awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.keepDisplayAwake },
-                    set: { display.setKeepAwakeDisplayAwake($0) }
-                )
-            )
-            .disabled(!display.keepAwakeState.featureEnabled)
-            Toggle(
-                "Only while connected to power",
-                isOn: Binding(
-                    get: { display.keepAwakeState.onlyWhilePluggedIn },
-                    set: { display.setKeepAwakePluggedOnly($0) }
-                )
-            )
-            .disabled(!display.keepAwakeState.featureEnabled)
-
-            HStack {
-                Text(display.keepAwakeSummaryText)
-                Spacer()
-                if let until = display.keepAwakeUntilText {
-                    Text(until)
-                        .font(.caption.monospacedDigit())
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(display.isAwakeAssertionActive ? .green : .secondary)
+            KeepAwakeControlsView(display: display)
         }
     }
 

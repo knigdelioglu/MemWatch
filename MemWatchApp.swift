@@ -511,6 +511,7 @@ private struct SmartMenuBarRootView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 healthCard
+                keepAwakeCard
                 memoryFocusCard
                 displayCard
                 quickFactsCard
@@ -531,10 +532,10 @@ private struct SmartMenuBarRootView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(healthTitle)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
 
                 Text(healthMessage)
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -557,7 +558,7 @@ private struct SmartMenuBarRootView: View {
                     .font(.headline)
                 Spacer()
                 Text(memoryStateLabel)
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(memoryStateColor)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -565,7 +566,7 @@ private struct SmartMenuBarRootView: View {
             }
 
             Text(memoryInterpretation)
-                .font(.subheadline)
+                .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -584,10 +585,10 @@ private struct SmartMenuBarRootView: View {
     private func smartMetric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.caption2)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.caption.monospacedDigit().weight(.semibold))
+                .font(.body.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
@@ -597,31 +598,49 @@ private struct SmartMenuBarRootView: View {
     private var quickFactsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("At a glance")
-                .font(.subheadline.weight(.semibold))
+                .font(.headline)
 
-            quickFactRow(
-                symbol: "internaldrive",
-                title: "Storage",
-                value: storageFact,
-                color: storageColor
-            )
-
-            quickFactRow(
-                symbol: powerSymbol,
-                title: "Power",
-                value: powerFact,
-                color: powerColor
-            )
-
-            quickFactRow(
-                symbol: "cpu",
-                title: "System",
-                value: systemFact,
-                color: thermalColor
-            )
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 10),
+                    GridItem(.flexible(), spacing: 10),
+                    GridItem(.flexible(), spacing: 10)
+                ],
+                spacing: 10
+            ) {
+                quickFactCell(
+                    symbol: "internaldrive",
+                    title: "Storage",
+                    value: storageFact,
+                    color: storageColor
+                )
+                quickFactCell(
+                    symbol: powerSymbol,
+                    title: "Power",
+                    value: powerFact,
+                    color: powerColor
+                )
+                quickFactCell(
+                    symbol: "cpu",
+                    title: "System",
+                    value: systemFact,
+                    color: thermalColor
+                )
+            }
         }
         .padding(15)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+
+    private var keepAwakeCard: some View {
+        KeepAwakeControlsView(display: display, compact: true)
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
+            }
     }
 
     private var displayCard: some View {
@@ -637,20 +656,20 @@ private struct SmartMenuBarRootView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Display")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.headline)
                         Spacer()
                         Text(displayStateLabel)
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(displayColor)
                     }
 
                     Text(displayHeadline)
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
                     Text(displayDetail)
-                        .font(.caption2)
+                        .font(.callout)
                         .foregroundStyle(.tertiary)
                         .lineLimit(2)
                 }
@@ -673,19 +692,22 @@ private struct SmartMenuBarRootView: View {
         .accessibilityValue(displayHeadline)
     }
 
-    private func quickFactRow(symbol: String, title: String, value: String, color: Color) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: symbol)
-                .foregroundStyle(color)
-                .frame(width: 18)
-            Text(title)
-                .font(.caption.weight(.semibold))
-            Spacer()
+    private func quickFactCell(symbol: String, title: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .foregroundStyle(color)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
             Text(value)
-                .font(.caption.monospacedDigit())
+                .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var cleanupCard: some View {
@@ -702,9 +724,9 @@ private struct SmartMenuBarRootView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Cleanup & Storage")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                     Text("Scan caches, developer files, duplicates, large items and system cleanup")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
@@ -734,7 +756,7 @@ private struct SmartMenuBarRootView: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text("Top memory users")
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                 Spacer()
                 if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
                     Text("Check first")
@@ -755,11 +777,11 @@ private struct SmartMenuBarRootView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 16)
                         Text(process.name)
-                            .font(.caption)
+                            .font(.body)
                             .lineLimit(1)
                         Spacer()
                         Text(memoryBytes(process.residentBytes))
-                            .font(.caption.monospacedDigit())
+                            .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
