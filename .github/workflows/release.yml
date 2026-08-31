@@ -8,10 +8,13 @@ on:
     tags:
       - 'v*'
     paths:
-      - '.github/release-trigger-v0.1.15'
+      - '.github/release-trigger-v0.1.16'
 
 permissions:
   contents: write
+
+env:
+  DEFAULT_RELEASE_TAG: v0.1.16
 
 jobs:
   package:
@@ -51,21 +54,23 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v0.1.15"
+            TAG="${DEFAULT_RELEASE_TAG}"
           fi
 
           cat > /tmp/release-notes.md <<'EOF'
-          MemWatch v0.1.15 makes Cleanup deletion scope explicit and translates the Cleanup interface to Turkish.
+          MemWatch v0.1.16 folds AmbientSync into the main MemWatch application and hardens the merged display runtime.
 
           Changes:
-          - Cleanup interface is now Turkish, including categories, permissions, APFS storage, Time Machine, scan roots, ignore rules, history and item actions
-          - Main cleanup action is explicitly labeled as safe-only and shows the exact SAFE byte total it will attempt to remove
-          - SAFE items now show a filled green checkmark because they are automatically included in the main safe cleanup action
-          - REVIEW items remain opt-in: the main safe-clean button never removes them; users must select them explicitly before the separate selected-items cleanup action appears
-          - PROTECTED items show a lock and cannot be selected for cleanup
-          - Added a visible "Ne silinecek?" explanation card and clearer confirmation dialogs
-          - "Dry Run" is presented as "Silmeden Kontrol Et"
-          - CI architecture checks now validate behavior instead of hard-coded English UI strings, so localization cannot break the safety contract
+          - AmbientSync display features now live inside the single MemWatch menu-bar app, lifecycle and settings experience
+          - Display runtime activation is gated by successful legacy AmbientSync cleanup to avoid dual display controllers
+          - Mutable display state is split into focused brightness, volume, diagnostics and HiDPI runtime owners
+          - Private display symbols are resolved and cached outside the hot path
+          - m1ddc availability can refresh safely at runtime without probing on every display tick
+          - HiDPI callback registration/unregistration now has explicit idempotent lifecycle handling
+          - Keep Awake disable semantics and display capability degradation paths are hardened
+          - Complete Swift strict-concurrency checking is enabled for the app and helper targets
+          - Existing memory, swap, storage, power, notification and Cleanup functionality remains integrated under the shared scheduler
+          - macOS CI covers the app build, Display smoke/architecture checks, memory/storage/power tests, Cleanup safety/cancellation tests, helper contracts and release packaging
 
           This build is ad-hoc signed and has not yet been Apple-notarized. macOS Gatekeeper may require explicit approval on first launch.
           EOF
@@ -74,13 +79,13 @@ jobs:
             gh release upload "$TAG" dist/MemWatch.dmg dist/MemWatch.dmg.sha256 --clobber
             gh release edit "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Türkçe Cleanup ve Açık Silme Kapsamı" \
+              --title "MemWatch $TAG — AmbientSync Birleşimi ve Display Hardening" \
               --notes-file /tmp/release-notes.md \
               --prerelease
           else
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "MemWatch $TAG — Türkçe Cleanup ve Açık Silme Kapsamı" \
+              --title "MemWatch $TAG — AmbientSync Birleşimi ve Display Hardening" \
               --notes-file /tmp/release-notes.md \
               --prerelease \
               dist/MemWatch.dmg \
@@ -92,7 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT_TAG="v0.1.15"
+          CURRENT_TAG="${DEFAULT_RELEASE_TAG}"
           gh release list --limit 1000 --json tagName --jq '.[].tagName' | while IFS= read -r TAG; do
             [[ -z "$TAG" || "$TAG" == "$CURRENT_TAG" ]] && continue
             echo "Deleting previous release: $TAG"
