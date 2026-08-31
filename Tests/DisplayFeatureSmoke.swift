@@ -3,7 +3,7 @@ import Foundation
 @main
 struct DisplayFeatureSmoke {
     @MainActor
-    static func main() {
+    static func main() async {
         testBrightnessCurve()
         testDDCBrightnessParsing()
         testDDCBrightnessScale()
@@ -15,6 +15,12 @@ struct DisplayFeatureSmoke {
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
+        testCapabilityProvider()
+        testPrivateDisplayBackendResolutionCache()
+        testM1DDCExecutableLocator()
+        await testM1DDCRuntimeAvailabilityRefresh()
+        testHiDPIReapplyLifecycle()
+        await testLegacyMigration()
         print("Display feature smoke tests passed")
     }
 
@@ -67,6 +73,160 @@ struct DisplayFeatureSmoke {
         precondition(DisplayCapability.degraded("limited").isAvailable)
         precondition(!DisplayCapabilities.unavailable.ddc.isAvailable)
         precondition(DisplayCapabilities.unavailable.keepAwake.isAvailable)
+    }
+
+    private static func testCapabilityProvider() {
+        let provider = DisplayCapabilityProvider()
+        let unavailable = provider.capabilities(
+            for: DisplayCapabilityInputs(
+                hasAmbientLightSensor: true,
+                hasInternalBrightness: false,
+                hasExternalDisplay: false,
+                hasDDCExecutable: false,
+                hasHiDPIPrivateAPI: false,
+                hasSoftwareDisconnect: false
+            )
+        )
+        precondition(unavailable.ddc.status == .unavailable)
+        precondition(unavailable.externalDisplay.reason?.isEmpty == false)
+        precondition(unavailable.keepAwake.status == .available)
+
+        let connected = provider.capabilities(
+            for: DisplayCapabilityInputs(
+                hasAmbientLightSensor: true,
+                hasInternalBrightness: true,
+                hasExternalDisplay: true,
+                hasDDCExecutable: true,
+                hasHiDPIPrivateAPI: true,
+                hasSoftwareDisconnect: true
+            )
+        )
+        precondition(connected.ddc.status == .available)
+        precondition(connected.hiDPI.status == .available)
+    }
+
+    private static func testPrivateDisplayBackendResolutionCache() {
+        final class CountingLookup: PrivateDisplaySymbolLookup {
+            var calls = 0
+
+            func symbol(named: String) -> UnsafeMutableRawPointer? {
+                calls += 1
+                return nil
+            }
+        }
+
+        let lookup = CountingLookup()
+        let backend = PrivateDisplayConnectionBackend(symbolLookup: lookup)
+        let callsAfterInit = lookup.calls
+        precondition(callsAfterInit > 0)
+        precondition(!backend.isAvailable)
+        precondition(!backend.isAvailable)
+        precondition(lookup.calls == callsAfterInit)
+    }
+
+    private static func testM1DDCExecutableLocator() {
+        var available = Set<String>()
+        let locator = M1DDCExecutableLocator(
+            candidates: ["/opt/homebrew/bin/m1ddc", "/usr/local/bin/m1ddc"],
+            executableCheck: { available.contains($0) }
+        )
+        precondition(locator.locate() == nil)
+        available.insert("/usr/local/bin/m1ddc")
+        precondition(locator.locate()?.path == "/usr/local/bin/m1ddc")
+        available.remove("/usr/local/bin/m1ddc")
+        precondition(locator.locate() == nil)
+    }
+
+    private static func testM1DDCRuntimeAvailabilityRefresh() async {
+        final class AvailabilityBox: @unchecked Sendable {
+            var available = false
+            var checks = 0
+        }
+
+        let box = AvailabilityBox()
+        let writer = M1DDCWriter(
+            executableLocator: M1DDCExecutableLocator(
+                candidates: ["/tmp/m1ddc"],
+                executableCheck: { _ in
+                    box.checks += 1
+                    return box.available
+                }
+            )
+        )
+        let initiallyAvailable = await writer.isAvailable(refresh: true)
+        precondition(!initiallyAvailable)
+        let checksAfterFirstRefresh = box.checks
+        let cachedAvailability = await writer.isAvailable()
+        precondition(!cachedAvailability)
+        precondition(box.checks == checksAfterFirstRefresh)
+        box.available = true
+        let becameAvailable = await writer.isAvailable(refresh: true)
+        precondition(becameAvailable)
+        box.available = false
+        let becameUnavailable = await writer.isAvailable(refresh: true)
+        precondition(!becameUnavailable)
+    }
+
+    private static func testHiDPIReapplyLifecycle() {
+        var lifecycle = HiDPIReapplyLifecycle()
+        precondition(lifecycle.start())
+        precondition(!lifecycle.start())
+        precondition(lifecycle.scheduleWork())
+        precondition(lifecycle.hasPendingWork)
+        precondition(lifecycle.stop())
+        precondition(!lifecycle.isListening)
+        precondition(!lifecycle.hasPendingWork)
+        precondition(!lifecycle.stop())
+        precondition(lifecycle.start())
+        precondition(lifecycle.scheduleWork())
+        lifecycle.completeWork()
+        precondition(!lifecycle.hasPendingWork)
+    }
+
+    private static func testLegacyMigration() async {
+        struct FakeRunner: LegacyAmbientSyncProcessRunning {
+            let result: LegacyAmbientSyncProcessResult
+
+            func run(executableURL: URL, arguments: [String]) async -> LegacyAmbientSyncProcessResult {
+                result
+            }
+        }
+
+        let root = URL(fileURLWithPath: "/private/tmp/memwatch-migration-smoke-\(ProcessInfo.processInfo.processIdentifier)")
+        let launchAgents = root.appendingPathComponent("Library/LaunchAgents")
+        let plist = launchAgents.appendingPathComponent("fyi.kadir.AmbientSync.plist")
+        let defaults = UserDefaults(suiteName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")!
+        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
+        try? FileManager.default.removeItem(at: root)
+        try! FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+
+        try! Data("legacy".utf8).write(to: plist)
+        let failed = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: defaults,
+            homeDirectory: root,
+            runner: FakeRunner(result: LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil))
+        )
+        guard case .failed = failed else { preconditionFailure("bootout failure must remain incomplete") }
+        precondition(FileManager.default.fileExists(atPath: plist.path))
+        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 0)
+
+        let completed = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: defaults,
+            homeDirectory: root,
+            runner: FakeRunner(result: LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil))
+        )
+        precondition(completed == .completed)
+        precondition(!FileManager.default.fileExists(atPath: plist.path))
+        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+        let repeated = await LegacyAmbientSyncMigration.runIfNeeded(defaults: defaults, homeDirectory: root)
+        precondition(repeated == .alreadyCompleted)
+
+        try? FileManager.default.removeItem(at: root)
+        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
+        let absent = await LegacyAmbientSyncMigration.runIfNeeded(defaults: defaults, homeDirectory: root)
+        precondition(absent == .noLegacyPlist)
+        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
     }
 
     private static func testAutomaticBrightnessPlanning() {
@@ -209,6 +369,9 @@ struct DisplayFeatureSmoke {
         scheduler.register(id: "smoke", interval: 1) {}
         precondition(scheduler.registeredJobIDs == ["smoke"])
         scheduler.unregister(id: "smoke")
+        precondition(scheduler.registeredJobIDs.isEmpty)
+        scheduler.register(id: "smoke", interval: 1) {}
+        scheduler.stop()
         precondition(scheduler.registeredJobIDs.isEmpty)
     }
 

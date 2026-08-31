@@ -7,6 +7,15 @@ struct MergeArchitectureContractTests {
         let appShell = try read("MemWatchApp.swift", root: root)
         let services = try read("App/AppServices.swift", root: root)
         let displayCoordinator = try read("Display/App/DisplayCoordinator.swift", root: root)
+        let displayComposition = try read("Display/App/DisplayFeatureComposition.swift", root: root)
+        let displayFeatures = try read("Display/App/DisplayCoordinator+Features.swift", root: root)
+        let displayBrightnessRuntime = try read("Display/App/DisplayCoordinator+BrightnessRuntime.swift", root: root)
+        let privateBackend = try read("Display/DisplayControl/PrivateDisplayConnectionBackend.swift", root: root)
+        let migrationRuntime = try read("Display/App/LegacyAmbientSyncMigration.swift", root: root)
+        let hiDPIReapply = try read("Display/DisplayControl/HiDPIReapplyService.swift", root: root)
+        let hiDPILifecycle = try read("Display/DisplayControl/HiDPIReapplyLifecycle.swift", root: root)
+        let m1DDC = try read("Display/DisplayControl/M1DDCDisplayController.swift", root: root)
+        let keepAwake = try read("Display/App/KeepAwakeCoordinator.swift", root: root)
         let displayFeature = try read("Display/DisplayFeature.swift", root: root)
         let scheduler = try read("Core/Polling/PollingScheduler.swift", root: root)
         let migration = try read("Display/App/DisplayPreferencesMigration.swift", root: root)
@@ -19,6 +28,26 @@ struct MergeArchitectureContractTests {
                "DisplayCoordinator must not own the status item")
         expect(!displayCoordinator.contains("NSApplicationDelegate"),
                "DisplayCoordinator must not own the application lifecycle")
+        expect(displayCoordinator.split(whereSeparator: \.isNewline).count < 400,
+               "DisplayCoordinator must remain a thin lifecycle/facade type")
+        expect(displayCoordinator.contains("DisplayBrightnessCoordinator")
+            && displayCoordinator.contains("DisplayHiDPICoordinator")
+            && displayCoordinator.contains("DisplayVolumeCoordinator")
+            && displayCoordinator.contains("DisplayCapabilityProvider"),
+               "DisplayCoordinator must compose focused display feature owners")
+        expect(!displayCoordinator.contains("private let writer")
+            && !displayCoordinator.contains("private let internalBrightnessController")
+            && !displayCoordinator.contains("private let cgsModeSwitcher")
+            && !displayCoordinator.contains("dlopen")
+            && !displayCoordinator.contains("dlsym"),
+               "DisplayCoordinator must not carry low-level hardware/private API ownership")
+        expect(displayFeatures.contains("extension DisplayCoordinator")
+            && displayBrightnessRuntime.contains("extension DisplayCoordinator"),
+               "Display feature implementation must be separated from lifecycle composition")
+        expect(displayComposition.contains("final class DisplayBrightnessCoordinator")
+            && displayComposition.contains("final class DisplayVolumeCoordinator")
+            && displayComposition.contains("final class DisplayHiDPICoordinator"),
+               "Focused display coordinators must own hardware/controller composition")
         expect(appShell.contains("let services = AppServices()"),
                "The app shell must create the shared service container")
         expect(appShell.contains("await DisplayDiagnosticRouter.handleIfRequested()"),
@@ -52,6 +81,24 @@ struct MergeArchitectureContractTests {
         ), "The unused external brightness adapter must not ship")
         expect(workflow.contains("Scripts/run_display_feature_tests.sh"),
                "The merged display smoke suite must run in CI")
+        expect(privateBackend.contains("init(symbolLookup:")
+            && privateBackend.contains("var isAvailable: Bool")
+            && !privateBackend.contains("func isAvailable"),
+               "Private display symbols must be resolved once, outside the availability hot path")
+        expect(migrationRuntime.contains("Task.detached")
+            && !migrationRuntime.contains("try? fileManager.removeItem")
+            && migrationRuntime.contains("guard processResult.succeeded"),
+               "Legacy migration must be non-blocking and fail closed")
+        expect(hiDPIReapply.contains("CGDisplayRemoveReconfigurationCallback")
+            && hiDPIReapply.contains("stopService()")
+            && hiDPILifecycle.contains("mutating func stop()"),
+               "HiDPI callback lifecycle must support idempotent stop/unregister")
+        expect(m1DDC.contains("M1DDCExecutableLocator")
+            && m1DDC.contains("executableCacheInterval"),
+               "m1ddc availability must be refreshable with bounded discovery")
+        expect(keepAwake.contains("func disableKeepAwake()")
+            && keepAwake.contains("setKeepAwakeFeatureEnabled(false)"),
+               "Keep Awake disable must disable the feature instead of starting a session")
 
         print("Merge architecture contract tests passed")
     }

@@ -7,35 +7,55 @@ public final class HiDPIReapplyService {
     public static let shared = HiDPIReapplyService()
     
     private var reapplyWorkItem: DispatchWorkItem?
-    private var isListening = false
+    private var lifecycleState = HiDPIReapplyLifecycle()
     private var manualSwitchSuppressionDepth = 0
     
     private init() {}
+
+    private static let displayReconfigurationCallback: CGDisplayReconfigurationCallBack = {
+        _, flags, _ in
+        guard flags.contains(.beginConfigurationFlag) == false else { return }
+        DispatchQueue.main.async {
+            HiDPIReapplyService.shared.triggerReapplyDebounced()
+        }
+    }
     
     public func startService() {
-        guard !isListening else { return }
-        
-        // Workspace/application notifications are owned by DisplayCoordinator.
-        // Keep only the low-level callback here so one lifecycle owns refresh events.
-        CGDisplayRegisterReconfigurationCallback({ (displayID, flags, userInfo) in
-            // Ekran konfigürasyon değişikliklerinde servise haber ver
-            if flags.contains(.beginConfigurationFlag) == false {
-                // Konfigürasyon bittiğinde reapply tetikleyelim
-                DispatchQueue.main.async {
-                    HiDPIReapplyService.shared.triggerReapplyDebounced()
-                }
-            }
-        }, nil)
-        
-        isListening = true
+        guard lifecycleState.start() else { return }
+
+        let result = CGDisplayRegisterReconfigurationCallback(Self.displayReconfigurationCallback, nil)
+        guard result == .success else {
+            print("[HiDPIReapplyService] Callback registration failed: \(result.rawValue)")
+            lifecycleState.registrationFailed()
+            return
+        }
+
         print("[HiDPIReapplyService] Yeniden uygulama servisi başlatıldı.")
+    }
+
+    public func stopService() {
+        let wasListening = lifecycleState.stop()
+        guard wasListening else {
+            reapplyWorkItem?.cancel()
+            reapplyWorkItem = nil
+            return
+        }
+
+        let result = CGDisplayRemoveReconfigurationCallback(Self.displayReconfigurationCallback, nil)
+        if result != .success {
+            print("[HiDPIReapplyService] Callback removal failed: \(result.rawValue)")
+        }
+        reapplyWorkItem?.cancel()
+        reapplyWorkItem = nil
     }
     
     public func triggerReapplyDebounced() {
+        guard lifecycleState.isListening else { return }
         guard manualSwitchSuppressionDepth == 0 else {
             print("[HiDPIReapplyService] Manual CGS switch suppression aktif; reapply atlandı.")
             return
         }
+        guard lifecycleState.scheduleWork() else { return }
 
         // Debounce işlemi: Ekranların yerine oturması için 2 saniye bekliyoruz
         reapplyWorkItem?.cancel()
@@ -49,6 +69,9 @@ public final class HiDPIReapplyService {
     }
     
     private func executeReapply() {
+        defer { lifecycleState.completeWork() }
+
+        guard lifecycleState.isListening else { return }
         guard manualSwitchSuppressionDepth == 0 else {
             print("[HiDPIReapplyService] Manual CGS switch suppression aktif; reapply iptal edildi.")
             return
@@ -124,5 +147,12 @@ public final class HiDPIReapplyService {
         manualSwitchSuppressionDepth += 1
         defer { manualSwitchSuppressionDepth = max(0, manualSwitchSuppressionDepth - 1) }
         return try body()
+    }
+
+    deinit {
+        reapplyWorkItem?.cancel()
+        if lifecycleState.isListening {
+            _ = CGDisplayRemoveReconfigurationCallback(Self.displayReconfigurationCallback, nil)
+        }
     }
 }

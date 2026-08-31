@@ -58,6 +58,7 @@ final class PollingScheduler {
     func stop() {
         timer?.invalidate()
         timer = nil
+        jobs.removeAll()
     }
 
     private func fireDueJobs(now: Date = Date()) {

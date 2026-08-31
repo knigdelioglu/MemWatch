@@ -1,38 +1,127 @@
 import Foundation
 
+struct LegacyAmbientSyncProcessResult: Sendable {
+    let terminationStatus: Int32?
+    let launchError: String?
+
+    var succeeded: Bool { terminationStatus == 0 && launchError == nil }
+}
+
+protocol LegacyAmbientSyncProcessRunning: Sendable {
+    func run(executableURL: URL, arguments: [String]) async -> LegacyAmbientSyncProcessResult
+}
+
+struct SystemLegacyAmbientSyncProcessRunner: LegacyAmbientSyncProcessRunning {
+    func run(executableURL: URL, arguments: [String]) async -> LegacyAmbientSyncProcessResult {
+        let path = executableURL.path
+        return await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = arguments
+            // Migration diagnostics are represented by the exit status. Avoid
+            // pipe back-pressure while the detached runner waits for launchctl.
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                return LegacyAmbientSyncProcessResult(
+                    terminationStatus: process.terminationStatus,
+                    launchError: nil
+                )
+            } catch {
+                return LegacyAmbientSyncProcessResult(
+                    terminationStatus: nil,
+                    launchError: error.localizedDescription
+                )
+            }
+        }.value
+    }
+}
+
+enum LegacyAmbientSyncMigrationResult: Equatable, Sendable {
+    case alreadyCompleted
+    case noLegacyPlist
+    case completed
+    case failed(String)
+
+    var completedSuccessfully: Bool {
+        switch self {
+        case .alreadyCompleted, .noLegacyPlist, .completed:
+            return true
+        case .failed:
+            return false
+        }
+    }
+}
+
 enum LegacyAmbientSyncMigration {
     private static let versionKey = "MemWatch.LegacyAmbientSyncCleanupVersion"
     private static let currentVersion = 1
     private static let legacyLabel = "fyi.kadir.AmbientSync"
+    @MainActor private static var migrationInFlight = false
+
+    /// Schedules the one-shot migration without making app construction wait
+    /// for launchctl. The version is written only by runIfNeeded after the
+    /// plist has either not existed or has been safely removed.
+    @MainActor
+    @discardableResult
+    static func scheduleIfNeeded(
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        runner: LegacyAmbientSyncProcessRunning = SystemLegacyAmbientSyncProcessRunner()
+    ) -> Task<LegacyAmbientSyncMigrationResult, Never>? {
+        guard defaults.integer(forKey: versionKey) < currentVersion, !migrationInFlight else { return nil }
+        migrationInFlight = true
+
+        return Task {
+            let result = await runIfNeeded(defaults: defaults, fileManager: fileManager, homeDirectory: homeDirectory, runner: runner)
+            if case .failed(let reason) = result {
+                print("[LegacyAmbientSyncMigration] cleanup failed: \(reason)")
+            } else {
+                print("[LegacyAmbientSyncMigration] cleanup result: \(result)")
+            }
+            migrationInFlight = false
+            return result
+        }
+    }
 
     static func runIfNeeded(
         defaults: UserDefaults = .standard,
-        fileManager: FileManager = .default
-    ) {
-        guard defaults.integer(forKey: versionKey) < currentVersion else { return }
-        defer { defaults.set(currentVersion, forKey: versionKey) }
+        fileManager: FileManager = .default,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        runner: LegacyAmbientSyncProcessRunning = SystemLegacyAmbientSyncProcessRunner()
+    ) async -> LegacyAmbientSyncMigrationResult {
+        guard defaults.integer(forKey: versionKey) < currentVersion else {
+            return .alreadyCompleted
+        }
 
-        let launchAgentURL = fileManager.homeDirectoryForCurrentUser
+        let launchAgentURL = homeDirectory
             .appendingPathComponent("Library/LaunchAgents")
             .appendingPathComponent("\(legacyLabel).plist")
 
-        guard fileManager.fileExists(atPath: launchAgentURL.path) else { return }
-
-        // Unload only the exact legacy label owned by AmbientSync. A failed
-        // unload is non-fatal; removing the known plist prevents it from
-        // starting again on the next login.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootout", "gui/\(getuid())/\(legacyLabel)"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            // A missing or unavailable launchctl must not block app startup.
+        guard fileManager.fileExists(atPath: launchAgentURL.path) else {
+            defaults.set(currentVersion, forKey: versionKey)
+            return .noLegacyPlist
         }
 
-        try? fileManager.removeItem(at: launchAgentURL)
+        let processResult = await runner.run(
+            executableURL: URL(fileURLWithPath: "/bin/launchctl"),
+            arguments: ["bootout", "gui/\(getuid())/\(legacyLabel)"]
+        )
+        guard processResult.succeeded else {
+            let detail = processResult.launchError ?? "launchctl exited with status \(processResult.terminationStatus.map(String.init) ?? "unknown")"
+            return .failed("bootout failed: \(detail)")
+        }
+
+        do {
+            try fileManager.removeItem(at: launchAgentURL)
+            defaults.set(currentVersion, forKey: versionKey)
+            return .completed
+        } catch {
+            return .failed("legacy plist removal failed: \(error.localizedDescription)")
+        }
     }
 }

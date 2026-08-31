@@ -58,7 +58,9 @@ final class KeepAwakeCoordinator {
     }
 
     func setKeepDisplayAwakeOnWake(_ enabled: Bool) {
-        setKeepAwakeFeatureEnabled(enabled)
+        // Compatibility API: this setting controls the display assertion,
+        // while featureEnabled controls the complete keep-awake feature.
+        setKeepAwakeDisplayAwake(enabled)
     }
 
     func setKeepAwakeDefaultDurationMode(_ mode: String) {
@@ -97,7 +99,7 @@ final class KeepAwakeCoordinator {
     }
 
     func disableKeepAwake() {
-        startSessionWithDefault()
+        setKeepAwakeFeatureEnabled(false)
     }
 
     func setKeepAwakeDuration(_ duration: TimeInterval) {

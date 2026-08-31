@@ -41,34 +41,63 @@ private final class ResumeGuard: @unchecked Sendable {
     }
 }
 
+struct M1DDCExecutableLocator {
+    static let defaultCandidates = [
+        "/opt/homebrew/bin/m1ddc",
+        "/usr/local/bin/m1ddc"
+    ]
+
+    let candidates: [String]
+    private let executableCheck: (String) -> Bool
+
+    init(
+        candidates: [String] = M1DDCExecutableLocator.defaultCandidates,
+        executableCheck: @escaping (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) {
+        self.candidates = candidates
+        self.executableCheck = executableCheck
+    }
+
+    func locate() -> URL? {
+        candidates.lazy.map(URL.init(fileURLWithPath:)).first { executableCheck($0.path) }
+    }
+}
+
 actor M1DDCWriter {
     private static let targetMonitorNames = ["S60UD", "LS32D60", "LS32D60xU"]
     private static let fallbackMonitorName = "Samsung"
     private static let processTimeout: TimeInterval = 5.0
     private let workQueue = DispatchQueue(label: "com.ambientsync.m1ddc-worker")
 
-    private let executableURL: URL?
+    private let executableLocator: M1DDCExecutableLocator
+    private var executableURL: URL?
+    private var lastExecutableCheckDate = Date.distantPast
     private(set) var currentDisplayInfo: ExternalDisplayInfo?
     private var cachedDisplays: [ExternalDisplayInfo] = []
     private var lastDiscoveryDate: Date = .distantPast
     private var lastKnownBrightnessByDisplay: [String: Int] = [:]
     private var lastKnownVolumeByDisplay: [String: Int] = [:]
     private let discoveryCacheInterval: TimeInterval = 6.0
+    private let executableCacheInterval: TimeInterval = 5.0
 
-    init() {
-        let candidates = [
-            "/opt/homebrew/bin/m1ddc",
-            "/usr/local/bin/m1ddc",
-        ]
-        executableURL = candidates.map(URL.init(fileURLWithPath:)).first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    init(executableLocator: M1DDCExecutableLocator = M1DDCExecutableLocator()) {
+        self.executableLocator = executableLocator
+        executableURL = nil
         currentDisplayInfo = nil 
     }
 
-    func isAvailable() -> Bool {
-        executableURL != nil
+    func isAvailable(refresh: Bool = false) -> Bool {
+        refreshExecutableAvailability(force: refresh)
+        return executableURL != nil
     }
 
     func refreshDisplay(preferredKey: String?) async -> ExternalDisplayInfo? {
+        refreshExecutableAvailability(force: true)
+        if executableURL == nil {
+            cachedDisplays = []
+            currentDisplayInfo = nil
+            return nil
+        }
         currentDisplayInfo = await selectDisplay(preferredKey: preferredKey, forceRefresh: true)
         return currentDisplayInfo
     }
@@ -198,6 +227,12 @@ actor M1DDCWriter {
     }
 
     private func discoverDisplays(forceRefresh: Bool) async -> [ExternalDisplayInfo] {
+        refreshExecutableAvailability(force: forceRefresh)
+        guard executableURL != nil else {
+            cachedDisplays = []
+            return []
+        }
+
         let now = Date()
         if
             !forceRefresh,
@@ -217,6 +252,22 @@ actor M1DDCWriter {
             cachedDisplays = []
         }
         return cachedDisplays
+    }
+
+    private func refreshExecutableAvailability(force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastExecutableCheckDate) >= executableCacheInterval else { return }
+
+        lastExecutableCheckDate = now
+        let nextURL = executableLocator.locate()
+        if nextURL?.path != executableURL?.path {
+            executableURL = nextURL
+            cachedDisplays = []
+            currentDisplayInfo = nil
+            lastDiscoveryDate = .distantPast
+        } else {
+            executableURL = nextURL
+        }
     }
 
     private func setBrightness(_ clamped: Int, for display: ExternalDisplayInfo) async -> M1DDCBrightnessWriteResult {
