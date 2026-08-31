@@ -88,7 +88,9 @@ jobs:
           ! grep -q 'CleanupScanEngine' Services/MonitoringService.swift
           ! grep -q 'CleanupCoordinator' Services/MonitoringService.swift
           ! grep -q 'startScan' Services/MonitoringService.swift
-          grep -q 'Timer.scheduledTimer' Services/MonitoringService.swift
+          grep -q 'private let scheduler: PollingScheduler' Services/MonitoringService.swift
+          grep -q 'scheduler.register(id: "system-health"' Services/MonitoringService.swift
+          ! grep -q 'Timer.scheduledTimer' Services/MonitoringService.swift
 
       - name: Verify Phase 8 safety boundaries
         run: |
