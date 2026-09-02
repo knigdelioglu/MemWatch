@@ -28,7 +28,7 @@ extension DisplayCoordinator {
         return true
     }
 
-    func reloadDisplayInfo() async {
+    func reloadDisplayInfo(reloadModes: Bool = true) async {
         if applySoftwareDisconnectedDisplayStateIfNeeded() {
             return
         }
@@ -63,7 +63,13 @@ extension DisplayCoordinator {
             updateAutoBrightnessTitle()
             await refreshCurrentVolume(force: true)
             volumeKeyRouter?.setEnabled(true)
-            await reloadDisplayModes()
+            // Publish display capabilities before the optional synchronous
+            // HiDPI/CGS scan so discovery is visible even when that scan is
+            // slow or unavailable.
+            updateCapabilities()
+            if reloadModes {
+                await reloadDisplayModes()
+            }
         } else {
             currentDisplayInfo = nil
             currentBrightness = nil
@@ -78,6 +84,7 @@ extension DisplayCoordinator {
             ddcRawBrightnessProbeSummary = nil
             brightnessMappingDiagnosticSummary = nil
             brightnessState = BrightnessState()
+            updateCapabilities()
         }
     }
 

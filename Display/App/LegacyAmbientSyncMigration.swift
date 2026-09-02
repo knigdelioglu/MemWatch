@@ -80,6 +80,18 @@ enum LegacyAmbientSyncMigration {
         guard defaults.integer(forKey: versionKey) < currentVersion, !migrationInFlight else { return nil }
         migrationInFlight = true
 
+        // The common case is that the legacy agent has already been removed.
+        // Complete that case synchronously so display runtime startup cannot
+        // remain behind an unnecessary task boundary or stale migration wait.
+        let launchAgentURL = homeDirectory
+            .appendingPathComponent("Library/LaunchAgents")
+            .appendingPathComponent("\(legacyLabel).plist")
+        guard fileManager.fileExists(atPath: launchAgentURL.path) else {
+            defaults.set(currentVersion, forKey: versionKey)
+            migrationInFlight = false
+            return nil
+        }
+
         let task = Task {
             let result = await runIfNeeded(defaults: defaults, fileManager: fileManager, homeDirectory: homeDirectory, runner: runner)
             if case .failed(let reason) = result {

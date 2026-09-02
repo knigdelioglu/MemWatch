@@ -19,6 +19,7 @@ struct DisplayFeatureSmoke {
         testPrivateDisplayBackendResolutionCache()
         testM1DDCExecutableLocator()
         await testM1DDCRuntimeAvailabilityRefresh()
+        testCoreGraphicsDisplayFingerprint()
         testHiDPIReapplyLifecycle()
         await testLegacyMigration()
         print("Display feature smoke tests passed")
@@ -167,6 +168,24 @@ struct DisplayFeatureSmoke {
         precondition(!becameUnavailable)
     }
 
+    private static func testCoreGraphicsDisplayFingerprint() {
+        precondition(M1DDCWriter.isSupportedTargetDisplay(
+            vendorID: 0x4C2D,
+            productID: 0x76AB,
+            isBuiltin: false
+        ))
+        precondition(!M1DDCWriter.isSupportedTargetDisplay(
+            vendorID: 0x4C2D,
+            productID: 0x76AB,
+            isBuiltin: true
+        ))
+        precondition(!M1DDCWriter.isSupportedTargetDisplay(
+            vendorID: 0x4C2D,
+            productID: 0x0001,
+            isBuiltin: false
+        ))
+    }
+
     private static func testHiDPIReapplyLifecycle() {
         var lifecycle = HiDPIReapplyLifecycle()
         precondition(lifecycle.start())
@@ -199,6 +218,7 @@ struct DisplayFeatureSmoke {
         precondition(!lifecycle.hasPendingWork)
     }
 
+    @MainActor
     private static func testLegacyMigration() async {
         struct FakeRunner: LegacyAmbientSyncProcessRunning {
             let result: LegacyAmbientSyncProcessResult
@@ -242,7 +262,19 @@ struct DisplayFeatureSmoke {
         let absent = await LegacyAmbientSyncMigration.runIfNeeded(defaults: defaults, homeDirectory: root)
         precondition(absent == .noLegacyPlist)
         precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+
+        let scheduledDefaultsName = "MemWatch.LegacyMigrationSchedule.\(ProcessInfo.processInfo.processIdentifier)"
+        let scheduledDefaults = UserDefaults(suiteName: scheduledDefaultsName)!
+        scheduledDefaults.removePersistentDomain(forName: scheduledDefaultsName)
+        let scheduled = LegacyAmbientSyncMigration.scheduleIfNeeded(
+            defaults: scheduledDefaults,
+            homeDirectory: root
+        )
+        precondition(scheduled == nil)
+        precondition(scheduledDefaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+
         defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
+        scheduledDefaults.removePersistentDomain(forName: scheduledDefaultsName)
     }
 
     private static func testAutomaticBrightnessPlanning() {

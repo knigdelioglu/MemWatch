@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import IOKit
 import IOKit.hid
@@ -66,6 +67,8 @@ struct M1DDCExecutableLocator {
 actor M1DDCWriter {
     private static let targetMonitorNames = ["S60UD", "LS32D60", "LS32D60xU"]
     private static let fallbackMonitorName = "Samsung"
+    private static let targetVendorID: UInt32 = 0x4C2D
+    private static let targetProductID: UInt32 = 0x76AB
     private static let processTimeout: TimeInterval = 5.0
     private let workQueue = DispatchQueue(label: "com.ambientsync.m1ddc-worker")
 
@@ -93,18 +96,27 @@ actor M1DDCWriter {
 
     func refreshDisplay(preferredKey: String?) async -> ExternalDisplayInfo? {
         refreshExecutableAvailability(force: true)
-        if executableURL == nil {
-            cachedDisplays = []
-            currentDisplayInfo = nil
-            return nil
+
+        if executableURL != nil {
+            if let display = await selectDisplay(preferredKey: preferredKey, forceRefresh: true) {
+                currentDisplayInfo = display
+                return display
+            }
         }
-        currentDisplayInfo = await selectDisplay(preferredKey: preferredKey, forceRefresh: true)
-        return currentDisplayInfo
+
+        // m1ddc is the control backend, but it is not the authoritative source
+        // for whether a supported monitor is physically connected. On newer
+        // macOS/display-driver combinations its list command can be empty while
+        // CoreGraphics still exposes the online monitor and its fingerprint.
+        let fallbackDisplays = Self.discoverCoreGraphicsDisplays()
+        let display = Self.selectDisplay(fallbackDisplays, preferredKey: preferredKey)
+        currentDisplayInfo = display
+        return display
     }
 
     func currentBrightness() async -> Int? {
         guard let display = await selectDisplay(preferredKey: nil) else { return nil }
-        if let sample = await readBrightnessRaw(displayIndex: display.displayIndex),
+        if let sample = await readBrightnessRaw(displayIndex: Self.ddcSelector(for: display)),
            let rawCurrent = sample.rawCurrent,
            let rawMax = sample.rawMax
         {
@@ -117,17 +129,17 @@ actor M1DDCWriter {
 
     func readBrightness(preferredKey: String? = nil) async -> Int? {
         guard let display = await selectDisplay(preferredKey: preferredKey) else { return nil }
-        return await readBrightness(displayIndex: display.displayIndex)
+        return await readBrightness(displayIndex: Self.ddcSelector(for: display))
     }
 
     func readBrightnessRaw(preferredKey: String? = nil) async -> DDCBrightnessRawSample? {
         guard let display = await selectDisplay(preferredKey: preferredKey) else { return nil }
-        return await readBrightnessRaw(displayIndex: display.displayIndex)
+        return await readBrightnessRaw(displayIndex: Self.ddcSelector(for: display))
     }
 
     func currentVolume() async -> Int? {
         guard let display = await selectDisplay(preferredKey: nil) else { return nil }
-        let result = await run(arguments: ["display", display.displayIndex, "get", "volume"])
+        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "get", "volume"])
         if result.success, let value = Self.parsePercent(from: result.output) {
             lastKnownVolumeByDisplay[display.displayKey] = value
             return value
@@ -169,7 +181,7 @@ actor M1DDCWriter {
         let display = await selectDisplay(preferredKey: preferredKey)
         guard let display else { return (false, "Samsung S60UD display not found") }
         let clamped = min(100, max(0, percent))
-        let result = await run(arguments: ["display", display.displayIndex, "set", "volume", "\(clamped)"])
+        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "set", "volume", "\(clamped)"])
         if result.success {
             lastKnownVolumeByDisplay[display.displayKey] = clamped
         }
@@ -179,7 +191,7 @@ actor M1DDCWriter {
     func changeVolume(_ delta: Int, preferredKey: String? = nil) async -> (Bool, String) {
         let display = await selectDisplay(preferredKey: preferredKey)
         guard let display else { return (false, "Samsung S60UD display not found") }
-        let result = await run(arguments: ["display", display.displayIndex, "chg", "volume", "\(delta)"])
+        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "chg", "volume", "\(delta)"])
         if result.success {
             let base = lastKnownVolumeByDisplay[display.displayKey] ?? 50
             lastKnownVolumeByDisplay[display.displayKey] = min(100, max(0, base + delta))
@@ -190,7 +202,7 @@ actor M1DDCWriter {
     func setMute(_ enabled: Bool, preferredKey: String? = nil) async -> (Bool, String) {
         let display = await selectDisplay(preferredKey: preferredKey)
         guard let display else { return (false, "Samsung S60UD display not found") }
-        let result = await run(arguments: ["display", display.displayIndex, "set", "mute", enabled ? "on" : "off"])
+        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "set", "mute", enabled ? "on" : "off"])
         if result.success {
             lastKnownVolumeByDisplay[display.displayKey] = enabled ? 0 : (lastKnownVolumeByDisplay[display.displayKey] ?? 50)
         }
@@ -226,6 +238,26 @@ actor M1DDCWriter {
         return displays[0]
     }
 
+    private static func selectDisplay(
+        _ displays: [ExternalDisplayInfo],
+        preferredKey: String?
+    ) -> ExternalDisplayInfo? {
+        if let preferredKey, let preferred = displays.first(where: { $0.displayKey == preferredKey }) {
+            return preferred
+        }
+        return displays.first
+    }
+
+    private static func ddcSelector(for display: ExternalDisplayInfo) -> String {
+        if let systemUUID = display.systemUUID, !systemUUID.isEmpty {
+            return "uuid:\(systemUUID)"
+        }
+        if let displayID = display.displayID {
+            return "id:\(displayID)"
+        }
+        return display.displayIndex
+    }
+
     private func discoverDisplays(forceRefresh: Bool) async -> [ExternalDisplayInfo] {
         refreshExecutableAvailability(force: forceRefresh)
         guard executableURL != nil else {
@@ -254,6 +286,61 @@ actor M1DDCWriter {
         return cachedDisplays
     }
 
+    static func isSupportedTargetDisplay(
+        vendorID: UInt32,
+        productID: UInt32,
+        isBuiltin: Bool
+    ) -> Bool {
+        !isBuiltin && vendorID == targetVendorID && productID == targetProductID
+    }
+
+    private static func discoverCoreGraphicsDisplays() -> [ExternalDisplayInfo] {
+        let displayIDs = copyOnlineDisplayIDs()
+
+        return displayIDs.compactMap { displayID in
+            guard isSupportedTargetDisplay(
+                vendorID: CGDisplayVendorNumber(displayID),
+                productID: CGDisplayModelNumber(displayID),
+                isBuiltin: CGDisplayIsBuiltin(displayID) != 0
+            ) else {
+                return nil
+            }
+
+            let serialValue = CGDisplaySerialNumber(displayID)
+            return ExternalDisplayInfo(
+                // m1ddc accepts a stable display-ID selector even when its
+                // numeric list index is unavailable or changes between boots.
+                displayIndex: "id:\(displayID)",
+                displayID: displayID,
+                productName: "Samsung S60UD",
+                serial: serialValue == 0 ? nil : String(serialValue),
+                systemUUID: nil,
+                ioLocation: nil
+            )
+        }
+    }
+
+    private static func copyOnlineDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        if CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 {
+            var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
+            if CGGetOnlineDisplayList(count, &displayIDs, &count) == .success {
+                return Array(displayIDs.prefix(Int(count)))
+            }
+        }
+
+        // Some display-driver/session combinations report no online list to a
+        // fresh process while the active display list is already populated.
+        // Use the active list as a discovery fallback; the fingerprint filter
+        // below still prevents unrelated displays from being selected.
+        let maxDisplays: UInt32 = 32
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(maxDisplays))
+        guard CGGetActiveDisplayList(maxDisplays, &displayIDs, &count) == .success else {
+            return []
+        }
+        return Array(displayIDs.prefix(Int(count)))
+    }
+
     private func refreshExecutableAvailability(force: Bool) {
         let now = Date()
         guard force || now.timeIntervalSince(lastExecutableCheckDate) >= executableCacheInterval else { return }
@@ -271,7 +358,8 @@ actor M1DDCWriter {
     }
 
     private func setBrightness(_ clamped: Int, for display: ExternalDisplayInfo) async -> M1DDCBrightnessWriteResult {
-        let beforeSample = await readBrightnessSample(displayIndex: display.displayIndex)
+        let selector = Self.ddcSelector(for: display)
+        let beforeSample = await readBrightnessSample(displayIndex: selector)
         guard let rawMax = beforeSample?.rawMax else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -291,7 +379,7 @@ actor M1DDCWriter {
 
         let rawBefore = beforeSample?.rawCurrent
         let computedRawTarget = DDCBrightnessScale.rawTarget(forUIPercent: clamped, rawMax: rawMax)
-        let result = await run(arguments: ["display", display.displayIndex, "set", "luminance", "\(computedRawTarget)"])
+        let result = await run(arguments: ["display", selector, "set", "luminance", "\(computedRawTarget)"])
         guard result.success else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -310,7 +398,7 @@ actor M1DDCWriter {
         }
 
         try? await Task.sleep(nanoseconds: 500_000_000)
-        let afterSample = await readBrightnessSample(displayIndex: display.displayIndex)
+        let afterSample = await readBrightnessSample(displayIndex: selector)
         guard let rawAfter = afterSample?.rawCurrent else {
             return M1DDCBrightnessWriteResult(
                 success: false,

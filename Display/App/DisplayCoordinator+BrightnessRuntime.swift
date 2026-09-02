@@ -15,6 +15,16 @@ extension DisplayCoordinator {
             return
         }
 
+        // Display discovery is independent from the ambient-light sensor. A
+        // monitor can be connected while ALS symbols are unavailable or while
+        // the sensor is still warming up; in that case we must still publish
+        // the external display and its capabilities.
+        if currentDisplayInfo == nil, Date().timeIntervalSince(lastDisplaySearchDate) >= displaySearchInterval {
+            lastDisplaySearchDate = Date()
+            await reloadDisplayInfo()
+            refreshSharedRuntimeFeatures()
+        }
+
         guard let reader = brightnessCoordinator.reader else {
             updateStatus("Işık sensörü bulunamadı")
             updateBrightnessState { state in
@@ -29,12 +39,6 @@ extension DisplayCoordinator {
                 state.suppressionReason = "Sensör bekleniyor"
             }
             return
-        }
-
-        if currentDisplayInfo == nil, Date().timeIntervalSince(lastDisplaySearchDate) >= displaySearchInterval {
-            lastDisplaySearchDate = Date()
-            await reloadDisplayInfo()
-            refreshSharedRuntimeFeatures()
         }
 
         guard let display = currentDisplayInfo else {

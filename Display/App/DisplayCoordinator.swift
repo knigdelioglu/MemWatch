@@ -76,14 +76,17 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             self.ddcAvailable = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
             guard self.isCurrentStart(generation) else { return }
             self.updateCapabilities()
+            // Discover and publish the monitor before the synchronous CGS/HiDPI
+            // scan. A slow or unavailable private mode API must not leave the
+            // UI showing the initial "no external display" state.
+            await self.reloadDisplayInfo(reloadModes: false)
+            guard self.isCurrentStart(generation) else { return }
             await self.reloadDisplayModes()
             guard self.isCurrentStart(generation) else { return }
             self.refreshCGSModeSwitcherState()
             if self.keepAwakeState.featureEnabled {
                 self.startDefaultAfterWakeSession()
             }
-            await self.reloadDisplayInfo()
-            guard self.isCurrentStart(generation) else { return }
             self.refreshInternalBrightness()
             self.volumeKeyRouter?.setEnabled(self.currentDisplayInfo != nil)
             self.refreshCGSModeSwitcherState()

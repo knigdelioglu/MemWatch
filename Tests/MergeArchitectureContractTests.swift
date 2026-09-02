@@ -7,6 +7,7 @@ struct MergeArchitectureContractTests {
         let appShell = try read("MemWatchApp.swift", root: root)
         let services = try read("App/AppServices.swift", root: root)
         let displayCoordinator = try read("Display/App/DisplayCoordinator.swift", root: root)
+        let displayRuntime = try read("Display/App/DisplayCoordinator+DisplayRuntime.swift", root: root)
         let displayRuntimeState = try read("Display/App/DisplayRuntimeState.swift", root: root)
         let displayCoordinatorState = try read("Display/App/DisplayCoordinator+State.swift", root: root)
         let displayComposition = try read("Display/App/DisplayFeatureComposition.swift", root: root)
@@ -56,6 +57,12 @@ struct MergeArchitectureContractTests {
         expect(displayFeatures.contains("extension DisplayCoordinator")
             && displayBrightnessRuntime.contains("extension DisplayCoordinator"),
                "Display feature implementation must be separated from lifecycle composition")
+        expect(displayCoordinator.contains("await self.reloadDisplayInfo(reloadModes: false)")
+            && displayCoordinator.firstRange(of: "await self.reloadDisplayInfo(reloadModes: false)")!.lowerBound
+                < displayCoordinator.firstRange(of: "await self.reloadDisplayModes()")!.lowerBound
+            && displayRuntime.contains("func reloadDisplayInfo(reloadModes: Bool = true)")
+            && displayRuntime.contains("updateCapabilities()"),
+               "External display discovery must publish before the synchronous HiDPI scan")
         expect(displayComposition.contains("final class DisplayBrightnessCoordinator")
             && displayComposition.contains("final class DisplayVolumeCoordinator")
             && displayComposition.contains("final class DisplayHiDPICoordinator"),
