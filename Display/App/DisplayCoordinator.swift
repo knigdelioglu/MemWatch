@@ -62,12 +62,19 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             guard let self else { return }
             if let migrationTask {
                 let migrationResult = await migrationTask.value
-                guard migrationResult.completedSuccessfully else {
+                switch migrationResult {
+                case .conflict(let reason):
                     guard self.isCurrentStart(generation) else { return }
-                    self.updateStatus("Legacy AmbientSync cleanup failed; display features are paused")
+                    self.updateStatus("Legacy AmbientSync conflict: \(reason); display features are paused")
                     self.updateCapabilities()
                     self.startupTask = nil
                     return
+                case .failed(let reason):
+                    // Cleanup failures are actionable warnings, not a reason
+                    // to suppress display discovery or runtime activation.
+                    self.updateStatus("Legacy AmbientSync cleanup warning: \(reason)")
+                case .alreadyCompleted, .noLegacyPlist, .completed:
+                    break
                 }
             }
 
@@ -119,8 +126,8 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         startGeneration += 1
         startupTask?.cancel()
         startupTask = nil
-        // Migration is shared and must finish fail-closed; cancel only the
-        // runtime startup waiter, not the cleanup itself.
+        // Migration is shared; cancel only the runtime startup waiter, not
+        // the cleanup itself.
         legacyMigrationTask = nil
         scheduler.unregister(id: "display-feature")
         volumeKeyRouter?.stop()

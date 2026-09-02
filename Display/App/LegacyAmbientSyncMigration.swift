@@ -44,13 +44,14 @@ enum LegacyAmbientSyncMigrationResult: Equatable, Sendable {
     case alreadyCompleted
     case noLegacyPlist
     case completed
+    case conflict(String)
     case failed(String)
 
     var completedSuccessfully: Bool {
         switch self {
         case .alreadyCompleted, .noLegacyPlist, .completed:
             return true
-        case .failed:
+        case .conflict, .failed:
             return false
         }
     }
@@ -64,8 +65,8 @@ enum LegacyAmbientSyncMigration {
     @MainActor private static var scheduledTask: Task<LegacyAmbientSyncMigrationResult, Never>?
 
     /// Schedules the one-shot migration without making app construction wait
-    /// for launchctl. Callers share the same task, so runtime activation cannot
-    /// accidentally proceed while another coordinator is migrating.
+    /// for launchctl. Callers share the same task so cleanup is still
+    /// serialized, while the display runtime decides how to handle the result.
     @MainActor
     @discardableResult
     static func scheduleIfNeeded(
@@ -127,13 +128,39 @@ enum LegacyAmbientSyncMigration {
             return .noLegacyPlist
         }
 
-        let processResult = await runner.run(
+        let serviceTarget = "gui/\(getuid())/\(legacyLabel)"
+        let serviceState = await runner.run(
             executableURL: URL(fileURLWithPath: "/bin/launchctl"),
-            arguments: ["bootout", "gui/\(getuid())/\(legacyLabel)"]
+            arguments: ["print", serviceTarget]
         )
-        guard processResult.succeeded else {
-            let detail = processResult.launchError ?? "launchctl exited with status \(processResult.terminationStatus.map(String.init) ?? "unknown")"
-            return .failed("bootout failed: \(detail)")
+
+        if serviceState.succeeded {
+            let bootoutResult = await runner.run(
+                executableURL: URL(fileURLWithPath: "/bin/launchctl"),
+                arguments: ["bootout", serviceTarget]
+            )
+
+            if !bootoutResult.succeeded {
+                // bootout can fail after the service has already disappeared
+                // (or while launchd is finishing the unload). Probe again
+                // before deciding that another AmbientSync controller is
+                // actually still active.
+                let remainingService = await runner.run(
+                    executableURL: URL(fileURLWithPath: "/bin/launchctl"),
+                    arguments: ["print", serviceTarget]
+                )
+                if remainingService.succeeded {
+                    return .conflict("legacy AmbientSync service is still loaded after bootout failed")
+                }
+                if let launchError = remainingService.launchError {
+                    return .failed("legacy AmbientSync service state could not be verified: \(launchError)")
+                }
+            }
+        } else if let launchError = serviceState.launchError {
+            // A launchctl launch error is different from its normal non-zero
+            // "service not found" result. Keep the plist for a later retry,
+            // but never make this infrastructure problem disable Display.
+            return .failed("legacy AmbientSync service state could not be inspected: \(launchError)")
         }
 
         do {

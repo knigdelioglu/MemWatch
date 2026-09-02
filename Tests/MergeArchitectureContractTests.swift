@@ -105,16 +105,20 @@ struct MergeArchitectureContractTests {
             && !privateBackend.contains("func isAvailable"),
                "Private display symbols must be resolved once, outside the availability hot path")
         expect(migrationRuntime.contains("Task.detached")
-            && !migrationRuntime.contains("try? fileManager.removeItem")
-            && migrationRuntime.contains("guard processResult.succeeded"),
-               "Legacy migration must be non-blocking and fail closed")
+            && migrationRuntime.contains("[\"print\", serviceTarget]")
+            && migrationRuntime.contains("[\"bootout\", serviceTarget]")
+            && migrationRuntime.contains("case .conflict")
+            && !migrationRuntime.contains("guard processResult.succeeded"),
+               "Legacy migration must distinguish stale plist cleanup from an active conflict")
         expect(displayCoordinator.contains("let migrationTask = legacyMigrationTask")
+            && displayCoordinator.contains("case .conflict(let reason)")
+            && !displayCoordinator.contains("guard migrationResult.completedSuccessfully")
             && displayCoordinator.contains("self.activateRuntime()")
             && displayCoordinator.firstRange(of: "let migrationTask = legacyMigrationTask")!.lowerBound
                 < displayCoordinator.firstRange(of: "self.activateRuntime()")!.lowerBound
             && displayCoordinator.firstRange(of: "self.activateRuntime()")!.lowerBound
                 < displayCoordinator.firstRange(of: "HiDPIReapplyService.shared.startService()")!.lowerBound,
-               "Display runtime activation must be gated by successful legacy migration")
+               "Display runtime activation must not be gated by non-conflict migration failures")
         expect(project.components(separatedBy: "SWIFT_STRICT_CONCURRENCY = complete;").count - 1 >= 6,
                "All Swift targets must enable complete strict concurrency checking")
         expect(hiDPIReapply.contains("CGDisplayRemoveReconfigurationCallback")

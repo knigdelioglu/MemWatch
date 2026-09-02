@@ -220,61 +220,127 @@ struct DisplayFeatureSmoke {
 
     @MainActor
     private static func testLegacyMigration() async {
-        struct FakeRunner: LegacyAmbientSyncProcessRunning {
-            let result: LegacyAmbientSyncProcessResult
+        final class SequencedRunner: @unchecked Sendable, LegacyAmbientSyncProcessRunning {
+            var results: [LegacyAmbientSyncProcessResult]
+            private(set) var calls: [[String]] = []
+
+            init(results: [LegacyAmbientSyncProcessResult]) {
+                self.results = results
+            }
 
             func run(executableURL: URL, arguments: [String]) async -> LegacyAmbientSyncProcessResult {
-                result
+                calls.append(arguments)
+                precondition(!results.isEmpty, "Unexpected launchctl invocation")
+                return results.removeFirst()
             }
         }
 
-        let root = URL(fileURLWithPath: "/private/tmp/memwatch-migration-smoke-\(ProcessInfo.processInfo.processIdentifier)")
-        let launchAgents = root.appendingPathComponent("Library/LaunchAgents")
-        let plist = launchAgents.appendingPathComponent("fyi.kadir.AmbientSync.plist")
-        let defaults = UserDefaults(suiteName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")!
-        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
-        try? FileManager.default.removeItem(at: root)
-        try! FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+        func makeFixture(_ name: String) throws -> (root: URL, plist: URL, defaults: UserDefaults, defaultsName: String) {
+            let root = URL(fileURLWithPath: "/private/tmp/memwatch-migration-smoke-\(name)-\(ProcessInfo.processInfo.processIdentifier)")
+            let launchAgents = root.appendingPathComponent("Library/LaunchAgents")
+            let plist = launchAgents.appendingPathComponent("fyi.kadir.AmbientSync.plist")
+            let defaultsName = "MemWatch.LegacyMigration.\(name).\(ProcessInfo.processInfo.processIdentifier)"
+            let defaults = UserDefaults(suiteName: defaultsName)!
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? FileManager.default.removeItem(at: root)
+            try FileManager.default.createDirectory(at: launchAgents, withIntermediateDirectories: true)
+            try Data("legacy".utf8).write(to: plist)
+            return (root, plist, defaults, defaultsName)
+        }
 
-        try! Data("legacy".utf8).write(to: plist)
-        let failed = await LegacyAmbientSyncMigration.runIfNeeded(
-            defaults: defaults,
-            homeDirectory: root,
-            runner: FakeRunner(result: LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil))
+        let stale = try! makeFixture("stale")
+        let staleRunner = SequencedRunner(results: [
+            LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil)
+        ])
+        let staleResult = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: stale.defaults,
+            homeDirectory: stale.root,
+            runner: staleRunner
         )
-        guard case .failed = failed else { preconditionFailure("bootout failure must remain incomplete") }
-        precondition(FileManager.default.fileExists(atPath: plist.path))
-        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 0)
+        precondition(staleResult == .completed)
+        precondition(!FileManager.default.fileExists(atPath: stale.plist.path))
+        precondition(stale.defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+        precondition(staleRunner.calls.count == 1 && staleRunner.calls[0].first == "print")
 
-        let completed = await LegacyAmbientSyncMigration.runIfNeeded(
-            defaults: defaults,
-            homeDirectory: root,
-            runner: FakeRunner(result: LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil))
+        let unloadedAfterBootout = try! makeFixture("unloaded-after-bootout")
+        let unloadRunner = SequencedRunner(results: [
+            LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil),
+            LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil),
+            LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil)
+        ])
+        let unloadResult = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: unloadedAfterBootout.defaults,
+            homeDirectory: unloadedAfterBootout.root,
+            runner: unloadRunner
         )
-        precondition(completed == .completed)
-        precondition(!FileManager.default.fileExists(atPath: plist.path))
-        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
-        let repeated = await LegacyAmbientSyncMigration.runIfNeeded(defaults: defaults, homeDirectory: root)
+        precondition(unloadResult == .completed)
+        precondition(!FileManager.default.fileExists(atPath: unloadedAfterBootout.plist.path))
+        precondition(unloadRunner.calls.map(\.first) == ["print", "bootout", "print"])
+
+        let conflict = try! makeFixture("conflict")
+        let conflictRunner = SequencedRunner(results: [
+            LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil),
+            LegacyAmbientSyncProcessResult(terminationStatus: 1, launchError: nil),
+            LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil)
+        ])
+        let conflictResult = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: conflict.defaults,
+            homeDirectory: conflict.root,
+            runner: conflictRunner
+        )
+        guard case .conflict = conflictResult else {
+            preconditionFailure("A service that remains loaded must be reported as a conflict")
+        }
+        precondition(!conflictResult.completedSuccessfully)
+        precondition(FileManager.default.fileExists(atPath: conflict.plist.path))
+        precondition(conflict.defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 0)
+
+        let completed = try! makeFixture("completed")
+        let completedRunner = SequencedRunner(results: [
+            LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil),
+            LegacyAmbientSyncProcessResult(terminationStatus: 0, launchError: nil)
+        ])
+        let completedResult = await LegacyAmbientSyncMigration.runIfNeeded(
+            defaults: completed.defaults,
+            homeDirectory: completed.root,
+            runner: completedRunner
+        )
+        precondition(completedResult == .completed)
+        precondition(!FileManager.default.fileExists(atPath: completed.plist.path))
+        let repeated = await LegacyAmbientSyncMigration.runIfNeeded(defaults: completed.defaults, homeDirectory: completed.root)
         precondition(repeated == .alreadyCompleted)
 
-        try? FileManager.default.removeItem(at: root)
-        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
-        let absent = await LegacyAmbientSyncMigration.runIfNeeded(defaults: defaults, homeDirectory: root)
+        let absentRoot = URL(fileURLWithPath: "/private/tmp/memwatch-migration-smoke-absent-\(ProcessInfo.processInfo.processIdentifier)")
+        let absentDefaultsName = "MemWatch.LegacyMigration.absent.\(ProcessInfo.processInfo.processIdentifier)"
+        let absentDefaults = UserDefaults(suiteName: absentDefaultsName)!
+        absentDefaults.removePersistentDomain(forName: absentDefaultsName)
+        try? FileManager.default.removeItem(at: absentRoot)
+        let absent = await LegacyAmbientSyncMigration.runIfNeeded(defaults: absentDefaults, homeDirectory: absentRoot)
         precondition(absent == .noLegacyPlist)
-        precondition(defaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
+        precondition(absentDefaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
 
-        let scheduledDefaultsName = "MemWatch.LegacyMigrationSchedule.\(ProcessInfo.processInfo.processIdentifier)"
+        let scheduledDefaultsName = "MemWatch.LegacyMigration.schedule.\(ProcessInfo.processInfo.processIdentifier)"
         let scheduledDefaults = UserDefaults(suiteName: scheduledDefaultsName)!
         scheduledDefaults.removePersistentDomain(forName: scheduledDefaultsName)
         let scheduled = LegacyAmbientSyncMigration.scheduleIfNeeded(
             defaults: scheduledDefaults,
-            homeDirectory: root
+            homeDirectory: absentRoot
         )
         precondition(scheduled == nil)
         precondition(scheduledDefaults.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion") == 1)
 
-        defaults.removePersistentDomain(forName: "MemWatch.LegacyMigration.\(ProcessInfo.processInfo.processIdentifier)")
-        scheduledDefaults.removePersistentDomain(forName: scheduledDefaultsName)
+        let fixtureRoots = [stale.root, unloadedAfterBootout.root, conflict.root, completed.root, absentRoot]
+        fixtureRoots.forEach { try? FileManager.default.removeItem(at: $0) }
+        [
+            (stale.defaults, stale.defaultsName),
+            (unloadedAfterBootout.defaults, unloadedAfterBootout.defaultsName),
+            (conflict.defaults, conflict.defaultsName),
+            (completed.defaults, completed.defaultsName),
+            (absentDefaults, absentDefaultsName),
+            (scheduledDefaults, scheduledDefaultsName)
+        ].forEach { defaults, name in
+            defaults.removePersistentDomain(forName: name)
+        }
     }
 
     private static func testAutomaticBrightnessPlanning() {
