@@ -6,19 +6,43 @@ import SwiftUI
 @main
 struct MemWatchApp {
     /// Keep command-line diagnostics independent from AppKit's GUI bootstrap.
-    static func main() async {
-        if await DisplayDiagnosticRouter.handleIfRequested() {
+    static func main() {
+        if runCommandLineDiagnosticsIfRequested() {
             return
         }
 
-        await MainActor.run {
-            let application = NSApplication.shared
-            let delegate = AppDelegate()
-            application.delegate = delegate
-            withExtendedLifetime(delegate) {
-                application.run()
-            }
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        withExtendedLifetime(delegate) {
+            application.run()
         }
+    }
+
+    private static let diagnosticArguments: Set<String> = [
+        "--release-bundle-smoke",
+        "--display-discovery-diagnostic",
+        "--diagnostic",
+        "--hidpi-mode-pool-diagnostic",
+        "--cgs-mode-enumeration",
+        "--cgs-mode74-without-betterdisplay",
+        "--cgs-mode74-apply-experiment",
+        "--hidpi-system-snapshot",
+        "--hidpi-activation-spike"
+    ]
+
+    private static func runCommandLineDiagnosticsIfRequested() -> Bool {
+        guard CommandLine.arguments.dropFirst().contains(where: diagnosticArguments.contains) else {
+            return false
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached(priority: .userInitiated) {
+            _ = await DisplayDiagnosticRouter.handleIfRequested()
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return true
     }
 }
 

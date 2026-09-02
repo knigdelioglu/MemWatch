@@ -32,6 +32,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
 
     init(scheduler: PollingScheduler, capabilityRegistry: CapabilityRegistry? = nil) {
         DisplayPreferencesMigration.migrateIfNeeded()
+        DisplayConnectionIntentMigration.migrateIfNeeded()
         self.store = AmbientSyncStore()
         let initialAutoBrightnessEnabled = UserDefaults.standard.object(forKey: "AmbientSync.AutoBrightnessEnabled") == nil
             ? true
@@ -50,6 +51,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     }
 
     func start() {
+        traceRuntime("start entered isRunning=\(isRunning) startupTask=\(startupTask != nil)")
         guard !isRunning, startupTask == nil else { return }
         startGeneration += 1
         let generation = startGeneration
@@ -57,11 +59,19 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             legacyMigrationTask = LegacyAmbientSyncMigration.scheduleIfNeeded()
         }
         let migrationTask = legacyMigrationTask
+        let cleanupVersion = UserDefaults.standard.integer(forKey: "MemWatch.LegacyAmbientSyncCleanupVersion")
+        traceRuntime(
+            "start prepared generation=\(generation) migrationTask=\(migrationTask != nil) " +
+                "cleanupVersion=\(cleanupVersion)"
+        )
 
         startupTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            self.traceRuntime("startup task entered generation=\(generation)")
             if let migrationTask {
+                self.traceRuntime("startup task awaiting legacy migration")
                 let migrationResult = await migrationTask.value
+                self.traceRuntime("startup task legacy migration result=\(migrationResult)")
                 switch migrationResult {
                 case .conflict(let reason):
                     guard self.isCurrentStart(generation) else { return }
@@ -79,8 +89,10 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             }
 
             guard self.isCurrentStart(generation) else { return }
+            self.traceRuntime("startup migration complete; activating runtime generation=\(generation)")
             self.activateRuntime()
             self.ddcAvailable = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
+            self.traceRuntime("activateRuntime complete ddcAvailable=\(self.ddcAvailable)")
             guard self.isCurrentStart(generation) else { return }
             self.updateCapabilities()
             // Discover and publish the monitor before the synchronous CGS/HiDPI
@@ -106,6 +118,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     }
 
     private func activateRuntime() {
+        traceRuntime("activateRuntime entered isRunning=\(isRunning)")
         guard !isRunning else { return }
         isRunning = true
         HiDPIReapplyService.shared.startService()
@@ -120,6 +133,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
                 await self?.tick()
             }
         }
+        traceRuntime("activateRuntime registered display-feature scheduler")
     }
 
     func stop() {
@@ -199,6 +213,10 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         )
 
         guard next != capabilities else { return }
+        traceRuntime(
+            "capability update external=\(next.externalDisplay.status.rawValue) ddc=\(next.ddc.status.rawValue) " +
+                "softwareDisconnect=\(next.softwareDisconnect.status.rawValue) currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")"
+        )
         runtimeState.capabilities = next
         capabilityRegistry.update(display: next)
     }

@@ -102,7 +102,9 @@ struct DisplayDiscoveryDiagnostic {
     private static let m1ddcArguments = ["display", "list", "detailed"]
     private static let processTimeout: TimeInterval = 5.0
     private static let legacyAmbientSyncLabel = "fyi.kadir.AmbientSync"
-    private static let softwareDisconnectDefaultsKey = "AmbientSync.DisplayConnection.SoftwareDisconnected"
+    private static let softwareDisconnectDefaultsKey = DisplayConnectionIntentMigration.memWatchDefaultsKey
+    private static let legacySoftwareDisconnectDefaultsKey = DisplayConnectionIntentMigration.legacyDefaultsKey
+    private static let displayConnectionIntentMigrationVersionKey = DisplayConnectionIntentMigration.versionKey
     private static let legacyCleanupVersionKey = "MemWatch.LegacyAmbientSyncCleanupVersion"
 
     static func run() async {
@@ -220,6 +222,10 @@ struct DisplayDiscoveryDiagnostic {
     private struct PersistedStateMeasurement {
         let softwareDisconnectRawValue: String
         let softwareDisconnectRequested: Bool
+        let legacySoftwareDisconnectRawValue: String
+        let legacySoftwareDisconnectRequested: Bool
+        let displayConnectionIntentMigrationVersionRawValue: String
+        let displayConnectionIntentMigrationVersion: Int
         let legacyCleanupVersionRawValue: String
         let legacyCleanupVersion: Int
         let currentPreferencesDataByteCount: Int?
@@ -583,13 +589,17 @@ struct DisplayDiscoveryDiagnostic {
 
     private static func readPersistedState() -> PersistedStateMeasurement {
         let defaults = UserDefaults.standard
+        let legacyDefaults = UserDefaults(suiteName: DisplayPreferencesMigration.legacySuiteName)
         let softwareDisconnectValue = defaults.object(forKey: softwareDisconnectDefaultsKey)
+        let legacySoftwareDisconnectValue = legacyDefaults?.object(forKey: legacySoftwareDisconnectDefaultsKey)
+        let displayConnectionIntentMigrationVersionValue = defaults.object(
+            forKey: displayConnectionIntentMigrationVersionKey
+        )
         let legacyCleanupVersionValue = defaults.object(forKey: legacyCleanupVersionKey)
 
         let currentPreferencesData = defaults.data(forKey: AppPreferences.storageKey)
         let currentPreferencesDecoded = decodePreferences(currentPreferencesData)
 
-        let legacyDefaults = UserDefaults(suiteName: DisplayPreferencesMigration.legacySuiteName)
         let legacyPreferencesData = legacyDefaults?.data(forKey: AppPreferences.storageKey)
         let legacyPreferencesDecoded = decodePreferences(legacyPreferencesData)
 
@@ -602,6 +612,12 @@ struct DisplayDiscoveryDiagnostic {
         return PersistedStateMeasurement(
             softwareDisconnectRawValue: persistedValueDescription(softwareDisconnectValue),
             softwareDisconnectRequested: defaults.bool(forKey: softwareDisconnectDefaultsKey),
+            legacySoftwareDisconnectRawValue: persistedValueDescription(legacySoftwareDisconnectValue),
+            legacySoftwareDisconnectRequested: legacyDefaults?.bool(forKey: legacySoftwareDisconnectDefaultsKey) == true,
+            displayConnectionIntentMigrationVersionRawValue: persistedValueDescription(
+                displayConnectionIntentMigrationVersionValue
+            ),
+            displayConnectionIntentMigrationVersion: defaults.integer(forKey: displayConnectionIntentMigrationVersionKey),
             legacyCleanupVersionRawValue: persistedValueDescription(legacyCleanupVersionValue),
             legacyCleanupVersion: defaults.integer(forKey: legacyCleanupVersionKey),
             currentPreferencesDataByteCount: currentPreferencesData?.count,
@@ -843,6 +859,24 @@ struct DisplayDiscoveryDiagnostic {
         )
         report.line(
             "SOFTWARE_DISCONNECT_STATE_PERSISTED = \(bool(measurement.persistedState.softwareDisconnectRequested))"
+        )
+        report.line(
+            "LEGACY_SOFTWARE_DISCONNECT_DEFAULTS_KEY = \(legacySoftwareDisconnectDefaultsKey)"
+        )
+        report.line(
+            "LEGACY_SOFTWARE_DISCONNECT_DEFAULTS_VALUE = \(measurement.persistedState.legacySoftwareDisconnectRawValue)"
+        )
+        report.line(
+            "LEGACY_SOFTWARE_DISCONNECT_STATE_PERSISTED = \(bool(measurement.persistedState.legacySoftwareDisconnectRequested))"
+        )
+        report.line(
+            "DISPLAY_CONNECTION_INTENT_MIGRATION_VERSION_KEY = \(displayConnectionIntentMigrationVersionKey)"
+        )
+        report.line(
+            "DISPLAY_CONNECTION_INTENT_MIGRATION_VERSION_VALUE = \(measurement.persistedState.displayConnectionIntentMigrationVersionRawValue)"
+        )
+        report.line(
+            "DISPLAY_CONNECTION_INTENT_MIGRATION_VERSION_INTEGER = \(measurement.persistedState.displayConnectionIntentMigrationVersion)"
         )
         report.line("LEGACY_CLEANUP_VERSION_KEY = \(legacyCleanupVersionKey)")
         report.line(

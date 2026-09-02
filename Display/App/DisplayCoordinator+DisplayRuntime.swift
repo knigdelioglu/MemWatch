@@ -4,9 +4,13 @@ import Foundation
 extension DisplayCoordinator {
     func applySoftwareDisconnectedDisplayStateIfNeeded() -> Bool {
         let connection = displayConnectionController.reconcileDesiredState()
+        traceRuntime(
+            "applySoftwareDisconnected result phase=\(connection.phase.rawValue) displayID=\(connection.displayID.map(String.init) ?? "nil") " +
+                "online=\(connection.isOnline) active=\(connection.isActive)"
+        )
         guard connection.phase == .softwareDisconnected else { return false }
 
-        currentDisplayInfo = nil
+        publishCurrentDisplayInfo(nil, reason: "software disconnect state applied")
         currentBrightness = nil
         currentVolume = nil
         volumeKeyRouter?.setEnabled(false)
@@ -29,12 +33,22 @@ extension DisplayCoordinator {
     }
 
     func reloadDisplayInfo(reloadModes: Bool = true) async {
+        traceRuntime(
+            "reloadDisplayInfo begin reloadModes=\(reloadModes) preferredKey=\(store.preferences.selectedDisplayKey ?? "nil") " +
+                "currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")"
+        )
         if applySoftwareDisconnectedDisplayStateIfNeeded() {
+            traceRuntime("reloadDisplayInfo suppressed by software disconnect state")
             return
         }
         let previousDisplayKey = currentDisplayInfo?.displayKey
-        if let display = await brightnessCoordinator.writer.refreshDisplay(preferredKey: store.preferences.selectedDisplayKey) {
-            currentDisplayInfo = display
+        let discoveredDisplay = await brightnessCoordinator.writer.refreshDisplay(preferredKey: store.preferences.selectedDisplayKey)
+        traceRuntime(
+            "writer.refreshDisplay result=\(discoveredDisplay?.displayKey ?? "nil") " +
+                "previousDisplay=\(previousDisplayKey ?? "nil")"
+        )
+        if let display = discoveredDisplay {
+            publishCurrentDisplayInfo(display, reason: "writer.refreshDisplay non-nil")
             store.setSelectedDisplayKey(display.displayKey)
             if display.displayKey != previousDisplayKey {
                 luxFilter.reset()
@@ -71,7 +85,7 @@ extension DisplayCoordinator {
                 await reloadDisplayModes()
             }
         } else {
-            currentDisplayInfo = nil
+            publishCurrentDisplayInfo(nil, reason: "writer.refreshDisplay returned nil")
             currentBrightness = nil
             clearManualBrightnessOverride()
             currentVolume = nil

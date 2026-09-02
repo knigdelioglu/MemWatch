@@ -13,7 +13,7 @@ final class DisplayConnectionController: ObservableObject {
         backend.isAvailable
     }
 
-    private static let softwareDisconnectDefaultsKey = "AmbientSync.DisplayConnection.SoftwareDisconnected"
+    private static let softwareDisconnectDefaultsKey = DisplayConnectionIntentMigration.memWatchDefaultsKey
     private static let reconnectAttemptCount = 3
     private static let reconnectRetryDelayNanoseconds: UInt64 = 400_000_000
 

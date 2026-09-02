@@ -4,6 +4,21 @@ import Foundation
 /// DisplayRuntimeState; this extension keeps the application feature API
 /// stable while making ownership explicit.
 extension DisplayCoordinator {
+    func traceRuntime(_ message: @autoclosure () -> String) {
+        guard ProcessInfo.processInfo.environment["MEMWATCH_DISPLAY_RUNTIME_TRACE"] == "1" else { return }
+        let line = "[MemWatch DisplayRuntime] \(message())\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
+    }
+
+    func publishCurrentDisplayInfo(_ display: ExternalDisplayInfo?, reason: String) {
+        let previousKey = currentDisplayInfo?.displayKey ?? "nil"
+        currentDisplayInfo = display
+        let nextKey = display?.displayKey ?? "nil"
+        traceRuntime(
+            "currentDisplayInfo assigned previous=\(previousKey) next=\(nextKey) reason=\(reason)"
+        )
+    }
+
     var ddcAvailable: Bool {
         get { runtimeState.ddcAvailable }
         set { runtimeState.ddcAvailable = newValue }

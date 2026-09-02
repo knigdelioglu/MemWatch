@@ -255,13 +255,28 @@ actor M1DDCWriter {
     }
 
     private static func ddcSelector(for display: ExternalDisplayInfo) -> String {
+        if !display.displayIndex.isEmpty, !display.displayIndex.hasPrefix("id:") {
+            // This is the selector used by the original AmbientSync
+            // implementation and is the index emitted by `display list
+            // detailed`. Keep the operational selector separate from the
+            // stable display identity stored in displayKey.
+            return display.displayIndex
+        }
+
         if let systemUUID = display.systemUUID, !systemUUID.isEmpty {
-            return "uuid:\(systemUUID)"
+            // m1ddc also accepts the UUID itself as a fallback; the `uuid:`
+            // prefix is not part of its selector grammar.
+            return systemUUID
         }
-        if let displayID = display.displayID {
-            return "id:\(displayID)"
-        }
-        return display.displayIndex
+
+        // A CoreGraphics-only fallback has a display ID but no m1ddc list
+        // index. The CG ID is an identity value, not a valid m1ddc selector;
+        // leave DDC unavailable rather than addressing an unrelated display.
+        return ""
+    }
+
+    static func ddcSelectorForDiagnostics(_ display: ExternalDisplayInfo) -> String {
+        ddcSelector(for: display)
     }
 
     private func discoverDisplays(forceRefresh: Bool) async -> [ExternalDisplayInfo] {
@@ -307,6 +322,13 @@ actor M1DDCWriter {
         parseDisplayStages(output)
     }
 
+    static func selectDisplayForDiagnostics(
+        _ displays: [ExternalDisplayInfo],
+        preferredKey: String?
+    ) -> ExternalDisplayInfo? {
+        selectDisplay(displays, preferredKey: preferredKey)
+    }
+
     private static func discoverCoreGraphicsDisplays() -> [ExternalDisplayInfo] {
         let displayIDs = copyOnlineDisplayIDs()
 
@@ -321,8 +343,9 @@ actor M1DDCWriter {
 
             let serialValue = CGDisplaySerialNumber(displayID)
             return ExternalDisplayInfo(
-                // m1ddc accepts a stable display-ID selector even when its
-                // numeric list index is unavailable or changes between boots.
+                // Keep the CG ID in a visibly non-DDC selector-shaped field so
+                // the identity remains diagnosable without mistaking it for
+                // an m1ddc list index.
                 displayIndex: "id:\(displayID)",
                 displayID: displayID,
                 productName: "Samsung S60UD",

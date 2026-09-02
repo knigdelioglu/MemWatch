@@ -7,6 +7,8 @@ extension DisplayCoordinator {
         isTickRunning = true
         defer { isTickRunning = false }
 
+        traceRuntime("tick entered currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")")
+
         ddcAvailable = await brightnessCoordinator.isDDCAvailable()
         updateCapabilities()
         refreshSharedRuntimeFeatures()

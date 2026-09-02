@@ -10,6 +10,7 @@ struct MergeArchitectureContractTests {
         let displayRuntime = try read("Display/App/DisplayCoordinator+DisplayRuntime.swift", root: root)
         let displayRuntimeState = try read("Display/App/DisplayRuntimeState.swift", root: root)
         let displayCoordinatorState = try read("Display/App/DisplayCoordinator+State.swift", root: root)
+        let displayConnection = try read("Display/DisplayControl/DisplayConnectionController.swift", root: root)
         let displayComposition = try read("Display/App/DisplayFeatureComposition.swift", root: root)
         let displayFeatures = try read("Display/App/DisplayCoordinator+Features.swift", root: root)
         let displayBrightnessRuntime = try read("Display/App/DisplayCoordinator+BrightnessRuntime.swift", root: root)
@@ -69,8 +70,11 @@ struct MergeArchitectureContractTests {
                "Focused display coordinators must own hardware/controller composition")
         expect(appShell.contains("let services = AppServices()"),
                "The app shell must create the shared service container")
-        expect(appShell.contains("await DisplayDiagnosticRouter.handleIfRequested()"),
-               "CLI diagnostics must run before AppKit bootstrap")
+        expect(appShell.contains("static func main()")
+            && !appShell.contains("static func main() async")
+            && appShell.contains("application.run()")
+            && appShell.contains("await DisplayDiagnosticRouter.handleIfRequested()"),
+               "AppKit must run from a synchronous main while CLI diagnostics remain pre-bootstrap")
         expect(services.contains("PollingScheduler"),
                "AppServices must own the shared polling scheduler")
         expect(services.contains("MonitoringService(scheduler: scheduler)"),
@@ -83,6 +87,12 @@ struct MergeArchitectureContractTests {
                "PollingScheduler must provide named job ownership")
         expect(migration.contains("fyi.kadir.AmbientSync"),
                "Preference migration must retain the legacy suite")
+        expect(migration.contains("enum DisplayConnectionIntentMigration")
+            && migration.contains("removeObject(forKey: legacyDefaultsKey)")
+            && migration.contains("memWatchDefaultsKey"),
+               "Display disconnect intent migration must remove stale copied state")
+        expect(displayConnection.contains("DisplayConnectionIntentMigration.memWatchDefaultsKey"),
+               "Display connection must read only the canonical MemWatch intent")
         expect(project.contains("Samsung_4C2D_76AB_reference.plist")
             && project.contains("Samsung HiDPI reference in Resources"),
                "The HiDPI reference resource must be in the app bundle")
@@ -128,8 +138,21 @@ struct MergeArchitectureContractTests {
             && hiDPILifecycle.contains("isRegistrationInFlight"),
                "HiDPI callback lifecycle must support idempotent stop/unregister")
         expect(m1DDC.contains("M1DDCExecutableLocator")
-            && m1DDC.contains("executableCacheInterval"),
-               "m1ddc availability must be refreshable with bounded discovery")
+            && m1DDC.contains("executableCacheInterval")
+            && m1DDC.contains("run(arguments: [\"display\", \"list\", \"detailed\"])")
+            && m1DDC.contains("stdout.fileHandleForReading.readDataToEndOfFile() + stderr.fileHandleForReading.readDataToEndOfFile()")
+            && !m1DDC.contains("return \"uuid:\\(systemUUID)\""),
+               "m1ddc discovery and DDC selectors must retain the working command contract")
+        expect(displayRuntime.contains("guard connection.phase == .softwareDisconnected else { return false }")
+            && displayRuntime.contains("await brightnessCoordinator.writer.refreshDisplay")
+            && displayRuntime.contains("publishCurrentDisplayInfo(display, reason: \"writer.refreshDisplay non-nil\")")
+            && displayRuntime.contains("publishCurrentDisplayInfo(nil, reason: \"writer.refreshDisplay returned nil\")")
+            && !displayRuntime.contains("currentDisplayInfo = nil"),
+               "Connection capability degradation must not erase independently discovered display state")
+        expect(displayCoordinatorState.contains("currentDisplayInfo assigned")
+            && displayCoordinator.contains("traceRuntime(\"start entered")
+            && displayCoordinator.contains("traceRuntime(\"activateRuntime entered"),
+               "Display runtime lifecycle must expose startup and state-transition instrumentation")
         expect(keepAwake.contains("func disableKeepAwake()")
             && keepAwake.contains("setKeepAwakeFeatureEnabled(false)"),
                "Keep Awake disable must disable the feature instead of starting a session")

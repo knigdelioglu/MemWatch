@@ -15,6 +15,7 @@ struct DisplayFeatureSmoke {
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
+        testDisplayConnectionIntentMigration()
         testCapabilityProvider()
         testPrivateDisplayBackendResolutionCache()
         testM1DDCExecutableLocator()
@@ -209,6 +210,24 @@ struct DisplayFeatureSmoke {
         precondition(parsed.samsungFilteredDisplays.count == 1)
         precondition(parsed.samsungFilteredDisplays[0].displayKey == "Samsung S60UD|S60UD-serial")
         precondition(parsed.samsungFilteredDisplays[0].displayID == 42)
+        precondition(
+            M1DDCWriter.selectDisplayForDiagnostics(
+                parsed.samsungFilteredDisplays,
+                preferredKey: "stale-preferred-key"
+            )?.displayKey == parsed.samsungFilteredDisplays[0].displayKey
+        )
+        precondition(
+            M1DDCWriter.ddcSelectorForDiagnostics(parsed.samsungFilteredDisplays[0]) == "1"
+        )
+        let coreGraphicsOnlyFallback = ExternalDisplayInfo(
+            displayIndex: "id:42",
+            displayID: 42,
+            productName: "Samsung S60UD",
+            serial: "CG-serial",
+            systemUUID: nil,
+            ioLocation: nil
+        )
+        precondition(M1DDCWriter.ddcSelectorForDiagnostics(coreGraphicsOnlyFallback).isEmpty)
 
         func input(
             executableSelected: Bool = true,
@@ -599,6 +618,53 @@ struct DisplayFeatureSmoke {
         precondition(!DisplayPreferencesMigration.migrateIfNeeded(defaults: defaults, legacyDefaults: legacy))
 
         defaults.removePersistentDomain(forName: suffix + ".current")
+        legacy.removePersistentDomain(forName: suffix + ".legacy")
+    }
+
+    private static func testDisplayConnectionIntentMigration() {
+        let suffix = "MemWatch.DisplayFeatureSmoke.DisplayConnectionIntent.\(ProcessInfo.processInfo.processIdentifier)"
+        let defaults = UserDefaults(suiteName: suffix)!
+        let legacy = UserDefaults(suiteName: suffix + ".legacy")!
+        defaults.removePersistentDomain(forName: suffix)
+        legacy.removePersistentDomain(forName: suffix + ".legacy")
+
+        // A legacy AmbientSync request is not copied into the new MemWatch
+        // intent key during the first preferences migration.
+        legacy.set(true, forKey: DisplayConnectionIntentMigration.legacyDefaultsKey)
+        precondition(
+            DisplayPreferencesMigration.migrateIfNeeded(
+                defaults: defaults,
+                legacyDefaults: legacy
+            )
+        )
+        precondition(defaults.object(forKey: DisplayConnectionIntentMigration.legacyDefaultsKey) == nil)
+        precondition(!defaults.bool(forKey: DisplayConnectionIntentMigration.memWatchDefaultsKey))
+        precondition(legacy.bool(forKey: DisplayConnectionIntentMigration.legacyDefaultsKey))
+
+        precondition(DisplayConnectionIntentMigration.migrateIfNeeded(defaults: defaults))
+        precondition(defaults.integer(forKey: DisplayConnectionIntentMigration.versionKey) == 1)
+        precondition(!DisplayConnectionIntentMigration.migrateIfNeeded(defaults: defaults))
+
+        // A machine that already ran DisplayPreferencesMigration v1 may have
+        // the stale copied value; the corrective migration removes only that
+        // deprecated key.
+        defaults.removePersistentDomain(forName: suffix)
+        defaults.set(1, forKey: DisplayPreferencesMigration.versionKey)
+        defaults.set(true, forKey: DisplayConnectionIntentMigration.legacyDefaultsKey)
+        precondition(DisplayConnectionIntentMigration.migrateIfNeeded(defaults: defaults))
+        precondition(defaults.object(forKey: DisplayConnectionIntentMigration.legacyDefaultsKey) == nil)
+        precondition(!defaults.bool(forKey: DisplayConnectionIntentMigration.memWatchDefaultsKey))
+
+        // A deliberate MemWatch request uses the canonical key and survives
+        // cleanup even if the deprecated copied key is still present.
+        defaults.removePersistentDomain(forName: suffix)
+        defaults.set(true, forKey: DisplayConnectionIntentMigration.memWatchDefaultsKey)
+        defaults.set(true, forKey: DisplayConnectionIntentMigration.legacyDefaultsKey)
+        precondition(DisplayConnectionIntentMigration.migrateIfNeeded(defaults: defaults))
+        precondition(defaults.bool(forKey: DisplayConnectionIntentMigration.memWatchDefaultsKey))
+        precondition(defaults.object(forKey: DisplayConnectionIntentMigration.legacyDefaultsKey) == nil)
+
+        defaults.removePersistentDomain(forName: suffix)
         legacy.removePersistentDomain(forName: suffix + ".legacy")
     }
 }
