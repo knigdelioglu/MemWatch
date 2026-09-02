@@ -1,6 +1,6 @@
 import Foundation
 
-enum MemoryPressure: String, CaseIterable {
+enum MemoryPressure: String, CaseIterable, Sendable {
     case normal
     case warning
     case critical
@@ -14,7 +14,7 @@ enum MemoryPressure: String, CaseIterable {
     }
 }
 
-struct MemorySnapshot {
+struct MemorySnapshot: Sendable {
     let timestamp: Date
 
     let totalBytes: UInt64
@@ -63,7 +63,7 @@ struct MemorySnapshot {
 /// Native macOS warning/critical pressure events are intentionally kept separate
 /// from this numeric estimate. They remain authoritative categorical signals in
 /// the UI, but they do not impose artificial percentage floors.
-struct MemoryPressureEstimate {
+struct MemoryPressureEstimate: Sendable {
     let ratio: Double
 
     var percent: Int {

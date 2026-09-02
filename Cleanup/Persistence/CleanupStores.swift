@@ -158,6 +158,130 @@ enum CleanupPersistenceError: LocalizedError, Equatable {
     }
 }
 
+protocol CleanupPreferencesPersisting: Actor {
+    func load() async throws -> CleanupPreferences
+    func save(_ preferences: CleanupPreferences) async throws
+}
+
+/// Revision state shared by initial-load and user-intent tests. A load may
+/// publish only when no user intent has appeared since it began.
+struct CleanupPreferenceRevisionState: Sendable {
+    private(set) var current: UInt64 = 0
+
+    @discardableResult
+    mutating func recordUserIntent() -> UInt64 {
+        current &+= 1
+        return current
+    }
+
+    func acceptsInitialLoad(startedAt revision: UInt64) -> Bool {
+        current == revision
+    }
+}
+
+enum LatestIntentWriteOutcome: Equatable, Sendable {
+    case persisted
+    case superseded
+}
+
+/// Serializes durable writes while retaining only the newest pending intent.
+///
+/// A writer may suspend while its I/O is in flight. New submissions are still
+/// accepted during that suspension, but the pipeline never starts a second
+/// write until the first one has completed. If a newer revision arrived, the
+/// older completion is reported as superseded and the newest value is written
+/// next. This makes the final on-disk value deterministic even when a storage
+/// backend has delayed or reordered completion callbacks.
+actor LatestIntentWritePipeline<Value: Sendable> {
+    typealias Writer = @Sendable (Value) async throws -> Void
+
+    private struct Request {
+        let revision: UInt64
+        let value: Value
+    }
+
+    private let writer: Writer
+    private var latestRequest: Request?
+    private var highestSubmittedRevision: UInt64 = 0
+    private var isDraining = false
+    private var waiters: [UInt64: [CheckedContinuation<LatestIntentWriteOutcome, Error>]] = [:]
+
+    init(writer: @escaping Writer) {
+        self.writer = writer
+    }
+
+    var latestSubmittedRevision: UInt64 {
+        highestSubmittedRevision
+    }
+
+    func submit(_ value: Value, revision: UInt64) async throws -> LatestIntentWriteOutcome {
+        guard revision > highestSubmittedRevision else {
+            return .superseded
+        }
+
+        highestSubmittedRevision = revision
+        if let previous = latestRequest {
+            // Intermediate requests have not started I/O yet. Complete their
+            // waiters immediately; otherwise a 100-event burst would leave
+            // continuations suspended forever while only the newest value is
+            // retained.
+            finish(previous.revision, with: .success(.superseded))
+        }
+        latestRequest = Request(revision: revision, value: value)
+
+        return try await withCheckedThrowingContinuation { continuation in
+            waiters[revision, default: []].append(continuation)
+            startDrainingIfNeeded()
+        }
+    }
+
+    private func startDrainingIfNeeded() {
+        guard !isDraining else { return }
+        isDraining = true
+        Task { [weak self] in
+            await self?.drain()
+        }
+    }
+
+    private func drain() async {
+        while let request = latestRequest {
+            latestRequest = nil
+
+            do {
+                try await writer(request.value)
+            } catch {
+                if let newer = latestRequest, newer.revision > request.revision {
+                    finish(request.revision, with: .success(.superseded))
+                    continue
+                }
+
+                finish(request.revision, with: .failure(error))
+                isDraining = false
+                return
+            }
+
+            if let newer = latestRequest, newer.revision > request.revision {
+                finish(request.revision, with: .success(.superseded))
+                continue
+            }
+
+            finish(request.revision, with: .success(.persisted))
+            isDraining = false
+            return
+        }
+
+        isDraining = false
+    }
+
+    private func finish(
+        _ revision: UInt64,
+        with result: Result<LatestIntentWriteOutcome, Error>
+    ) {
+        guard let continuations = waiters.removeValue(forKey: revision) else { return }
+        continuations.forEach { $0.resume(with: result) }
+    }
+}
+
 actor CleanupIgnoreStore {
     private let fileURL: URL
 
@@ -504,14 +628,14 @@ struct CleanupPreferences: Codable, Equatable, Sendable {
     }
 }
 
-actor CleanupPreferencesStore {
+actor CleanupPreferencesStore: CleanupPreferencesPersisting {
     private let fileURL: URL
 
     init(fileURL: URL = CleanupPersistencePaths.preferencesFile) {
         self.fileURL = fileURL
     }
 
-    func load() throws -> CleanupPreferences {
+    func load() async throws -> CleanupPreferences {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return .defaults()
         }
@@ -534,7 +658,7 @@ actor CleanupPreferencesStore {
         }
     }
 
-    func save(_ preferences: CleanupPreferences) throws {
+    func save(_ preferences: CleanupPreferences) async throws {
         guard preferences.requestedRootPaths.allSatisfy(Self.isAbsolutePath),
               preferences.projectRootPaths.allSatisfy(Self.isAbsolutePath) else {
             throw CleanupPersistenceError.malformed(fileURL)

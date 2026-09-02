@@ -1,6 +1,6 @@
 import Foundation
 
-enum StorageHealthState: String, Equatable {
+enum StorageHealthState: String, Equatable, Sendable {
     case normal
     case warning
     case critical
@@ -14,7 +14,7 @@ enum StorageHealthState: String, Equatable {
     }
 }
 
-struct StorageVolumeSnapshot: Identifiable, Equatable {
+struct StorageVolumeSnapshot: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let mountPath: String

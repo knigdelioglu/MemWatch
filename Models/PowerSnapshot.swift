@@ -1,6 +1,6 @@
 import Foundation
 
-enum PowerSourceKind: String {
+enum PowerSourceKind: String, Sendable {
     case ac
     case battery
     case ups
@@ -16,7 +16,7 @@ enum PowerSourceKind: String {
     }
 }
 
-enum BatteryPowerFlow: String {
+enum BatteryPowerFlow: String, Sendable {
     case charging
     case discharging
     case idle
@@ -32,7 +32,7 @@ enum BatteryPowerFlow: String {
     }
 }
 
-enum PowerTelemetryCoverage: String {
+enum PowerTelemetryCoverage: String, Sendable {
     case detailed
     case derived
     case batteryOnly
@@ -48,7 +48,7 @@ enum PowerTelemetryCoverage: String {
     }
 }
 
-struct PowerHistoryPoint: Identifiable, Equatable {
+struct PowerHistoryPoint: Identifiable, Equatable, Sendable {
     let id: UUID
     let timestamp: Date
     let systemLoadWatts: Double?
@@ -73,7 +73,7 @@ struct PowerHistoryPoint: Identifiable, Equatable {
     }
 }
 
-struct PowerSnapshot: Equatable {
+struct PowerSnapshot: Equatable, Sendable {
     let timestamp: Date
     let source: PowerSourceKind
     let batteryPercent: Int?

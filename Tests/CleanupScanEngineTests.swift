@@ -83,7 +83,7 @@ struct CleanupScanEngineTests {
         guard let retained = result.items.first else {
             preconditionFailure("The more-specific cleanup target should remain")
         }
-        precondition(retained.url.standardizedFileURL.path == nestedPath.path)
+        precondition(retained.url.standardizedFileURL.path == nestedPath.standardizedFileURL.path)
         precondition(retained.safety == .review, "Coalescing must preserve the most restrictive safety level")
         precondition(retained.requirements.contains(.explicitConfirmation), "Coalescing must preserve confirmation requirements")
         precondition(result.issues.count >= 2, "Duplicate and overlapping targets must be reported as scan issues")

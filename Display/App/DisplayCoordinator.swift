@@ -29,6 +29,11 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     let hdrBrightnessDiagnostic = HDRBrightnessDiagnostic()
     let ddcBrightnessMaxDiagnostic = DDCBrightnessMaxDiagnostic()
     let ddcRawBrightnessProbeDiagnostic = DDCRawBrightnessProbeDiagnostic()
+    // Coordinator-owned debounce tasks are intentionally shared by every UI
+    // surface and input route. A view disappearing must not leave a stale
+    // task that can outlive a newer auto/mute/keyboard intent.
+    var manualBrightnessWriteTask: Task<Void, Never>?
+    var manualVolumeWriteTask: Task<Void, Never>?
 
     init(scheduler: PollingScheduler, capabilityRegistry: CapabilityRegistry? = nil) {
         DisplayPreferencesMigration.migrateIfNeeded()
@@ -140,6 +145,14 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         startGeneration += 1
         startupTask?.cancel()
         startupTask = nil
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = nil
+        invalidateManualBrightnessWrites()
+        brightnessState.pendingManualBrightnessPercent = nil
+        manualVolumeWriteTask?.cancel()
+        manualVolumeWriteTask = nil
+        invalidateManualVolumeWrites()
+        pendingVolumeIntent = nil
         // Migration is shared; cancel only the runtime startup waiter, not
         // the cleanup itself.
         legacyMigrationTask = nil
@@ -223,9 +236,16 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
 
     func refreshCurrentVolume(force: Bool = false) async {
         guard currentDisplayInfo != nil else {
+            invalidateManualVolumeWrites()
             currentVolume = nil
+            pendingVolumeIntent = nil
             return
         }
+
+        // A hardware readback that started before a newer user command must
+        // not replace the logical latest intent when it returns.
+        let writeGeneration = currentManualVolumeWriteGeneration
+        guard pendingVolumeIntent == nil else { return }
 
         let now = Date()
         if !force, now.timeIntervalSince(lastVolumeReadDate) < volumeReadInterval {
@@ -234,6 +254,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
 
         lastVolumeReadDate = now
         let readback = await brightnessCoordinator.writer.currentVolume()
+        guard currentDisplayInfo != nil,
+              acceptsManualVolumeWrite(writeGeneration),
+              pendingVolumeIntent == nil else { return }
         if let readback {
             currentVolume = readback
             volumeCoordinator.record(readback)

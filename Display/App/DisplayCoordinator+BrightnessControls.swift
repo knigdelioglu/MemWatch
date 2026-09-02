@@ -3,90 +3,71 @@ import Foundation
 
 extension DisplayCoordinator {
     func performMonitorVolumeKeyAction(_ action: MonitorVolumeKeyAction) -> Bool {
-        Task {
-            switch action {
-            case .increase:
-                await adjustMonitorVolume(by: 5)
-            case .decrease:
-                await adjustMonitorVolume(by: -5)
-            case .mute:
-                await toggleMuteForSettings()
-            }
+        switch action {
+        case .increase:
+            enqueueVolumeAdjustment(by: 5)
+        case .decrease:
+            enqueueVolumeAdjustment(by: -5)
+        case .mute:
+            enqueueMuteToggle()
         }
         return true
     }
 
     func adjustMonitorVolumeForSettings(by delta: Int) {
-        Task { await adjustMonitorVolume(by: delta) }
+        enqueueVolumeAdjustment(by: delta)
     }
 
     func toggleMuteForSettingsSync() {
-        Task { await toggleMuteForSettings() }
+        enqueueMuteToggle()
     }
 
     @discardableResult
     func adjustMonitorVolume(by delta: Int) async -> Bool {
-        let (success, _) = await brightnessCoordinator.writer.changeVolume(delta, preferredKey: activeDisplayKey)
-        if success {
-            let fallbackBase = monitorVolumeControlValue
-            currentVolume = min(100, max(0, fallbackBase + delta))
-            if let currentVolume {
-                volumeCoordinator.record(currentVolume)
-            }
-            if let currentVolume {
-                updateStatus("Volume \(currentVolume)%")
-            } else {
-                updateStatus("Volume changed")
-            }
-        } else {
-            updateStatus("Volume change failed")
-        }
-        return success
+        let previous = monitorVolumeControlValue
+        let target = min(100, max(0, previous + delta))
+        let generation = beginVolumeIntent(target: target)
+        return await performVolumeAdjustment(
+            by: delta,
+            target: target,
+            previous: previous,
+            generation: generation
+        )
     }
 
     @discardableResult
     func setMonitorVolume(_ percent: Int) async -> Bool {
-        await setMonitorVolume(percent, writeGeneration: nil)
-    }
-
-    @discardableResult
-    private func setMonitorVolume(_ percent: Int, writeGeneration: UInt64?) async -> Bool {
         let clamped = min(100, max(0, percent))
-        let (success, _) = await brightnessCoordinator.writer.setVolume(clamped, preferredKey: activeDisplayKey)
-        if let writeGeneration, !acceptsManualVolumeWrite(writeGeneration) {
-            return false
-        }
-        if success {
-            currentVolume = clamped
-            volumeCoordinator.record(clamped)
-            updateStatus("Volume \(clamped)%")
-        } else {
-            updateStatus("Volume set failed")
-        }
-        return success
+        let previous = monitorVolumeControlValue
+        let generation = beginVolumeIntent(target: clamped)
+        return await performVolumeSet(
+            clamped,
+            previous: previous,
+            generation: generation
+        )
     }
 
     @discardableResult
     func toggleMuteForSettings() async -> Bool {
-        let volume = monitorVolumeControlValue
-        let isMuted = volume == 0
+        let previous = monitorVolumeControlValue
+        let isMuted = previous == 0
         let targetVolume = isMuted ? max(1, volumeCoordinator.lastNonZeroVolume) : 0
-        let (success, _) = await brightnessCoordinator.writer.setMute(!isMuted, preferredKey: activeDisplayKey)
-        if success {
-            currentVolume = targetVolume
-            volumeCoordinator.record(targetVolume)
-            updateStatus(!isMuted ? "Muted" : "Unmuted")
-        } else {
-            updateStatus("Mute failed")
-        }
-        return success
+        let generation = beginVolumeIntent(target: targetVolume)
+        return await performMuteToggle(
+            isMuted: isMuted,
+            target: targetVolume,
+            previous: previous,
+            generation: generation
+        )
     }
 
     func setMonitorVolumeForSettings(_ percent: Int) {
-        let writeGeneration = startManualVolumeWrite()
-        Task { @MainActor [weak self] in
-            guard let self, self.acceptsManualVolumeWrite(writeGeneration) else { return }
-            _ = await self.setMonitorVolume(percent, writeGeneration: writeGeneration)
+        let clamped = min(100, max(0, percent))
+        let previous = monitorVolumeControlValue
+        let generation = beginVolumeIntent(target: clamped)
+        manualVolumeWriteTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.performVolumeSet(clamped, previous: previous, generation: generation)
         }
     }
 
@@ -94,44 +75,206 @@ extension DisplayCoordinator {
         let clamped = min(100, max(0, percent))
         pauseAutoBrightnessTemporarily()
         let writeGeneration = startManualBrightnessWrite()
-        Task { @MainActor [weak self] in
-            guard let self, self.acceptsManualBrightnessWrite(writeGeneration) else { return }
-            let result = await brightnessCoordinator.writer.setBrightness(clamped, preferredKey: activeDisplayKey)
-            guard acceptsManualBrightnessWrite(writeGeneration) else { return }
-            let actualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped
-            let matchedTarget = result.matchedTarget == true
-            print(
-                """
-                requestedUIPercent=\(clamped)
-                rawMax=\(result.rawMax.map(String.init) ?? "unavailable")
-                computedRawTarget=\(result.computedRawTarget.map(String.init) ?? "unavailable")
-                rawBefore=\(result.rawBefore.map(String.init) ?? "unavailable")
-                writeResult=\(result.status.rawValue)
-                rawAfter=\(result.rawAfter.map(String.init) ?? "unavailable")
-                actualUIPercentAfter=\(actualAfter)
-                matchedTarget=\(matchedTarget ? "YES" : "NO")
-                """
-            )
-            if result.status == .success || result.status == .writeAcceptedButReadbackLimited {
-                lastSentBrightness = clamped
-                lastWriteDate = Date()
-                beginManualBrightnessOverride()
-                if let readback = result.actualUIPercentAfter ?? result.readbackBrightnessPercent {
-                    lastBrightnessReadDate = lastWriteDate
-                    store.setLastBrightness(readback, for: activeDisplayKey)
-                } else {
-                    store.setLastBrightness(clamped, for: activeDisplayKey)
-                }
-                applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
-                if result.status == .writeAcceptedButReadbackLimited {
-                    updateStatus(result.message)
-                } else {
-                    updateStatus(result.actualUIPercentAfter.map { "Brightness \($0)%" } ?? "Brightness \(clamped)%")
-                }
-            } else {
-                applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
-                updateStatus(result.message.isEmpty ? "Parlaklık yazılamadı" : "Parlaklık yazılamadı: \(result.message)")
+        brightnessState.pendingManualBrightnessPercent = clamped
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performManualBrightnessWrite(clamped, generation: writeGeneration)
+        }
+    }
+
+    /// Owns the slider debounce so auto/mute/keyboard intents can cancel it
+    /// from the same coordinator that owns the latest-intent gate.
+    func scheduleMonitorBrightnessWrite(_ percent: Int) {
+        let clamped = min(100, max(0, percent))
+        pauseAutoBrightnessTemporarily()
+        let writeGeneration = startManualBrightnessWrite()
+        brightnessState.pendingManualBrightnessPercent = clamped
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds)
+            } catch {
+                return
             }
+            guard let self, self.acceptsManualBrightnessWrite(writeGeneration) else { return }
+            await self.performManualBrightnessWrite(clamped, generation: writeGeneration)
+        }
+    }
+
+    func scheduleMonitorVolumeWrite(_ percent: Int) {
+        let clamped = min(100, max(0, percent))
+        let previous = monitorVolumeControlValue
+        let generation = beginVolumeIntent(target: clamped)
+        manualVolumeWriteTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.volumeDebounceNanoseconds)
+            } catch {
+                return
+            }
+            guard let self, self.acceptsManualVolumeWrite(generation) else { return }
+            _ = await self.performVolumeSet(clamped, previous: previous, generation: generation)
+        }
+    }
+
+    func cancelPendingManualBrightnessWrite() {
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = nil
+        guard brightnessState.pendingManualBrightnessPercent != nil else { return }
+        invalidateManualBrightnessWrites()
+        brightnessState.pendingManualBrightnessPercent = nil
+    }
+
+    func cancelPendingManualVolumeWrite() {
+        manualVolumeWriteTask?.cancel()
+        manualVolumeWriteTask = nil
+        guard pendingVolumeIntent != nil else { return }
+        invalidateManualVolumeWrites()
+        pendingVolumeIntent = nil
+    }
+
+    private func beginVolumeIntent(target: Int?) -> UInt64 {
+        manualVolumeWriteTask?.cancel()
+        manualVolumeWriteTask = nil
+        let generation = startManualVolumeWrite()
+        pendingVolumeIntent = target
+        return generation
+    }
+
+    private func enqueueVolumeAdjustment(by delta: Int) {
+        let previous = monitorVolumeControlValue
+        let target = min(100, max(0, previous + delta))
+        let generation = beginVolumeIntent(target: target)
+        manualVolumeWriteTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.performVolumeAdjustment(
+                by: delta,
+                target: target,
+                previous: previous,
+                generation: generation
+            )
+        }
+    }
+
+    private func enqueueMuteToggle() {
+        let previous = monitorVolumeControlValue
+        let isMuted = previous == 0
+        let target = isMuted ? max(1, volumeCoordinator.lastNonZeroVolume) : 0
+        let generation = beginVolumeIntent(target: target)
+        manualVolumeWriteTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.performMuteToggle(
+                isMuted: isMuted,
+                target: target,
+                previous: previous,
+                generation: generation
+            )
+        }
+    }
+
+    private func performVolumeSet(
+        _ clamped: Int,
+        previous: Int,
+        generation: UInt64
+    ) async -> Bool {
+        guard acceptsManualVolumeWrite(generation) else { return false }
+        let (success, _) = await brightnessCoordinator.writer.setVolume(clamped, preferredKey: activeDisplayKey)
+        guard acceptsManualVolumeWrite(generation) else { return false }
+
+        pendingVolumeIntent = nil
+        if success {
+            currentVolume = clamped
+            volumeCoordinator.record(clamped)
+            updateStatus("Volume \(clamped)%")
+        } else {
+            currentVolume = previous
+            updateStatus("Volume set failed")
+        }
+        return success
+    }
+
+    private func performVolumeAdjustment(
+        by delta: Int,
+        target: Int,
+        previous: Int,
+        generation: UInt64
+    ) async -> Bool {
+        guard acceptsManualVolumeWrite(generation) else { return false }
+        let (success, _) = await brightnessCoordinator.writer.changeVolume(delta, preferredKey: activeDisplayKey)
+        guard acceptsManualVolumeWrite(generation) else { return false }
+
+        pendingVolumeIntent = nil
+        if success {
+            currentVolume = target
+            volumeCoordinator.record(target)
+            updateStatus("Volume \(target)%")
+        } else {
+            currentVolume = previous
+            updateStatus("Volume change failed")
+        }
+        return success
+    }
+
+    private func performMuteToggle(
+        isMuted: Bool,
+        target: Int,
+        previous: Int,
+        generation: UInt64
+    ) async -> Bool {
+        guard acceptsManualVolumeWrite(generation) else { return false }
+        let (success, _) = await brightnessCoordinator.writer.setMute(!isMuted, preferredKey: activeDisplayKey)
+        guard acceptsManualVolumeWrite(generation) else { return false }
+
+        pendingVolumeIntent = nil
+        if success {
+            currentVolume = target
+            volumeCoordinator.record(target)
+            updateStatus(isMuted ? "Unmuted" : "Muted")
+        } else {
+            currentVolume = previous
+            updateStatus("Mute failed")
+        }
+        return success
+    }
+
+    private func performManualBrightnessWrite(_ clamped: Int, generation: UInt64) async {
+        guard acceptsManualBrightnessWrite(generation) else { return }
+        let result = await brightnessCoordinator.writer.setBrightness(clamped, preferredKey: activeDisplayKey)
+        guard acceptsManualBrightnessWrite(generation) else { return }
+        brightnessState.pendingManualBrightnessPercent = nil
+        let actualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped
+        let matchedTarget = result.matchedTarget == true
+        print(
+            """
+            requestedUIPercent=\(clamped)
+            rawMax=\(result.rawMax.map(String.init) ?? "unavailable")
+            computedRawTarget=\(result.computedRawTarget.map(String.init) ?? "unavailable")
+            rawBefore=\(result.rawBefore.map(String.init) ?? "unavailable")
+            writeResult=\(result.status.rawValue)
+            rawAfter=\(result.rawAfter.map(String.init) ?? "unavailable")
+            actualUIPercentAfter=\(actualAfter)
+            matchedTarget=\(matchedTarget ? "YES" : "NO")
+            """
+        )
+        if result.status == .success || result.status == .writeAcceptedButReadbackLimited {
+            lastSentBrightness = clamped
+            lastWriteDate = Date()
+            beginManualBrightnessOverride()
+            if let readback = result.actualUIPercentAfter ?? result.readbackBrightnessPercent {
+                lastBrightnessReadDate = lastWriteDate
+                store.setLastBrightness(readback, for: activeDisplayKey)
+            } else {
+                store.setLastBrightness(clamped, for: activeDisplayKey)
+            }
+            applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
+            if result.status == .writeAcceptedButReadbackLimited {
+                updateStatus(result.message)
+            } else {
+                updateStatus(result.actualUIPercentAfter.map { "Brightness \($0)%" } ?? "Brightness \(clamped)%")
+            }
+        } else {
+            applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
+            updateStatus(result.message.isEmpty ? "Parlaklık yazılamadı" : "Parlaklık yazılamadı: \(result.message)")
         }
     }
 
@@ -173,6 +316,14 @@ extension DisplayCoordinator {
     }
 
     func setAutoBrightnessEnabled(_ enabled: Bool) {
+        // The mode toggle is itself a newer intent. Invalidate both pending
+        // manual debounce and auto completions before changing presentation
+        // state, so an older slider task cannot re-enable manual override.
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = nil
+        invalidateManualBrightnessWrites()
+        brightnessState.pendingManualBrightnessPercent = nil
+        manualBrightnessInteractionActive = false
         guard autoBrightnessEnabled != enabled else { return }
         autoBrightnessEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "AmbientSync.AutoBrightnessEnabled")

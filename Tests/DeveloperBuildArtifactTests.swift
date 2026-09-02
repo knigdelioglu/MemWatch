@@ -33,7 +33,7 @@ struct DeveloperBuildArtifactTests {
         let discovery = DeveloperProjectDiscovery()
         let manifests = try discovery.discover(in: [projectRoots])
         precondition(manifests.count == 2, "Only Cargo manifests outside excluded traversal directories should be discovered")
-        precondition(manifests.contains { $0.manifestURL.path == tauriManifest.path && $0.isTauriProject }, "Tauri Cargo manifest should be identified")
+        precondition(manifests.contains { $0.manifestURL.standardizedFileURL.path == tauriManifest.standardizedFileURL.path && $0.isTauriProject }, "Tauri Cargo manifest should be identified")
 
         let actualMetadata = try CargoMetadataResolver().resolve(manifestURL: manifest)
         precondition(actualMetadata.workspaceRoot.path == app.path, "Cargo must report the workspace root")

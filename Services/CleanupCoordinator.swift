@@ -20,6 +20,7 @@ final class CleanupCoordinator: ObservableObject {
     @Published private(set) var history: [CleanupHistoryEntry] = []
     @Published private(set) var ignoreRules: [CleanupIgnoreRule] = []
     @Published private(set) var preferences: CleanupPreferences = .defaults()
+    @Published private(set) var isPersistentStateLoaded = false
     @Published private(set) var snapshots: [PrivilegedScannedItem] = []
     @Published private(set) var storageSpaceIntelligence: StorageSpaceIntelligence? = .startupVolume()
     @Published private(set) var backendCapabilities: [CleanupBackendCapability] = CleanupBackendCatalog.current(privateBackendsEnabled: true)
@@ -33,9 +34,10 @@ final class CleanupCoordinator: ObservableObject {
 
     private let scanEngine = CleanupScanEngine()
     private let deletionEngine = CleanupDeletionEngine()
-    private let ignoreStore = CleanupIgnoreStore()
-    private let historyStore = CleanupHistoryStore()
-    private let preferencesStore = CleanupPreferencesStore()
+    private let ignoreStore: CleanupIgnoreStore
+    private let historyStore: CleanupHistoryStore
+    private let preferencesStore: any CleanupPreferencesPersisting
+    private let preferencesWritePipeline: LatestIntentWritePipeline<CleanupPreferences>
     private let timeMachineBackend = TimeMachineSnapshotBackend()
 
     private var scanTask: Task<Void, Never>?
@@ -45,9 +47,27 @@ final class CleanupCoordinator: ObservableObject {
     private var lastContext: CleanupScanContext?
     private let activityGuard = CleanupActivityGuard()
     private var operationGeneration = 0
+    private var preferenceRevisionState = CleanupPreferenceRevisionState()
+    private var lastPersistedPreferenceRevision: UInt64 = 0
+    private var lastPersistedPreferences: CleanupPreferences?
     private var childObservations = Set<AnyCancellable>()
 
-    init() {
+    private var preferenceRevision: UInt64 {
+        preferenceRevisionState.current
+    }
+
+    init(
+        preferencesStore: any CleanupPreferencesPersisting = CleanupPreferencesStore(),
+        ignoreStore: CleanupIgnoreStore = CleanupIgnoreStore(),
+        historyStore: CleanupHistoryStore = CleanupHistoryStore()
+    ) {
+        self.preferencesStore = preferencesStore
+        self.ignoreStore = ignoreStore
+        self.historyStore = historyStore
+        self.preferencesWritePipeline = LatestIntentWritePipeline { preferences in
+            try await preferencesStore.save(preferences)
+        }
+
         // The cleanup screen observes this coordinator, while permissions and
         // helper registration are owned by their own ObservableObjects. Forward
         // those changes so async install/approval/failure states are rendered
@@ -488,25 +508,43 @@ final class CleanupCoordinator: ObservableObject {
     }
 
     private func loadPersistentState() async {
+        let loadRevision = preferenceRevision
         do {
             let loadedHistory = try await historyStore.load()
             let loadedIgnores = try await ignoreStore.load()
             let loadedPreferences = try await preferencesStore.load()
             history = loadedHistory
             ignoreRules = loadedIgnores
-            preferences = loadedPreferences
-            backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: loadedPreferences.privateBackendEnabled)
+
+            // A user mutation can arrive while the initial load is suspended.
+            // The file is still the durable baseline for rollback, but it is
+            // not allowed to replace a newer in-memory intent.
+            if preferenceRevisionState.acceptsInitialLoad(startedAt: loadRevision) {
+                preferences = loadedPreferences
+                backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: loadedPreferences.privateBackendEnabled)
+            }
+            if lastPersistedPreferenceRevision <= loadRevision {
+                lastPersistedPreferenceRevision = loadRevision
+                lastPersistedPreferences = loadedPreferences
+            }
+            isPersistentStateLoaded = true
             storageSpaceIntelligence = .startupVolume()
             helperService.refreshStatus()
-            if loadedPreferences.privilegedOperationsEnabled {
+            if preferences.privilegedOperationsEnabled {
                 _ = await helperService.verifyConnection()
             }
         } catch {
-            preferences = .disabled()
-            scanResult = nil
-            snapshots = []
-            lastContext = nil
-            phase = .failed(error.localizedDescription)
+            if preferenceRevisionState.acceptsInitialLoad(startedAt: loadRevision) {
+                preferences = .disabled()
+                backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: false)
+                scanResult = nil
+                snapshots = []
+                lastContext = nil
+            }
+            isPersistentStateLoaded = true
+            if preferenceRevisionState.acceptsInitialLoad(startedAt: loadRevision) {
+                phase = .failed(error.localizedDescription)
+            }
         }
         fullDiskAccessService.refresh()
     }
@@ -520,19 +558,36 @@ final class CleanupCoordinator: ObservableObject {
         helperService.refreshStatus()
 
         let ignoreSnapshot: CleanupIgnoreSnapshot
-        let currentPreferences: CleanupPreferences
+        let loadedPreferences: CleanupPreferences
+        let preferenceRevisionAtLoad = preferenceRevision
         do {
             ignoreSnapshot = try await ignoreStore.snapshot()
-            currentPreferences = try await preferencesStore.load()
+            loadedPreferences = try await preferencesStore.load()
         } catch {
-            preferences = .disabled()
-            scanResult = nil
-            snapshots = []
-            lastContext = nil
-            phase = .failed(error.localizedDescription)
+            if preferenceRevision == preferenceRevisionAtLoad {
+                preferences = .disabled()
+                scanResult = nil
+                snapshots = []
+                lastContext = nil
+                phase = .failed(error.localizedDescription)
+            }
             return
         }
         guard generation == operationGeneration, !Task.isCancelled else { return }
+
+        // A scan started before a preference write completed must use the
+        // in-memory latest intent. Only a durable revision at or beyond the
+        // captured intent may replace it from disk.
+        let currentPreferences: CleanupPreferences
+        if preferenceRevision == preferenceRevisionAtLoad,
+           lastPersistedPreferenceRevision >= preferenceRevisionAtLoad {
+            currentPreferences = loadedPreferences
+            if lastPersistedPreferenceRevision == preferenceRevisionAtLoad {
+                lastPersistedPreferences = loadedPreferences
+            }
+        } else {
+            currentPreferences = preferences
+        }
         preferences = currentPreferences
         backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: currentPreferences.privateBackendEnabled)
 
@@ -737,21 +792,29 @@ final class CleanupCoordinator: ObservableObject {
         mutation(&updated)
         preferences = updated
         backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: updated.privateBackendEnabled)
+        let preferenceRevision = preferenceRevisionState.recordUserIntent()
         operationGeneration &+= 1
         let generation = operationGeneration
         scanTask?.cancel()
         executionTask?.cancel()
         applicationActionTask?.cancel()
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await preferencesStore.save(updated)
-                guard self.operationGeneration == generation else { return }
+                let outcome = try await self.preferencesWritePipeline.submit(updated, revision: preferenceRevision)
+                guard self.preferenceRevision == preferenceRevision,
+                      self.operationGeneration == generation else { return }
+                guard outcome == .persisted else { return }
+
+                self.lastPersistedPreferenceRevision = preferenceRevision
+                self.lastPersistedPreferences = updated
                 await self.runScan(generation: generation)
             } catch {
-                guard self.operationGeneration == generation else { return }
-                self.preferences = previous
-                self.backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: previous.privateBackendEnabled)
+                guard self.preferenceRevision == preferenceRevision,
+                      self.operationGeneration == generation else { return }
+                let rollback = self.lastPersistedPreferences ?? previous
+                self.preferences = rollback
+                self.backendCapabilities = CleanupBackendCatalog.current(privateBackendsEnabled: rollback.privateBackendEnabled)
                 self.phase = .failed(error.localizedDescription)
             }
         }

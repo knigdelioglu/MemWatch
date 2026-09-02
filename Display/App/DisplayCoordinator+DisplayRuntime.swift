@@ -3,6 +3,10 @@ import Foundation
 
 extension DisplayCoordinator {
     func applySoftwareDisconnectedDisplayStateIfNeeded() -> Bool {
+        invalidateManualBrightnessWrites()
+        invalidateManualVolumeWrites()
+        cancelPendingManualBrightnessWrite()
+        cancelPendingManualVolumeWrite()
         let connection = displayConnectionController.reconcileDesiredState()
         traceRuntime(
             "applySoftwareDisconnected result phase=\(connection.phase.rawValue) displayID=\(connection.displayID.map(String.init) ?? "nil") " +
@@ -13,6 +17,7 @@ extension DisplayCoordinator {
         publishCurrentDisplayInfo(nil, reason: "software disconnect state applied")
         currentBrightness = nil
         currentVolume = nil
+        pendingVolumeIntent = nil
         volumeKeyRouter?.setEnabled(false)
         availableModes = []
         isHiDPIActive = false
@@ -51,6 +56,10 @@ extension DisplayCoordinator {
             publishCurrentDisplayInfo(display, reason: "writer.refreshDisplay non-nil")
             store.setSelectedDisplayKey(display.displayKey)
             if display.displayKey != previousDisplayKey {
+                invalidateManualBrightnessWrites()
+                invalidateManualVolumeWrites()
+                cancelPendingManualBrightnessWrite()
+                cancelPendingManualVolumeWrite()
                 luxFilter.reset()
                 lastSentBrightness = store.lastBrightness(for: display.displayKey)
                 lastWriteDate = .distantPast
@@ -60,6 +69,7 @@ extension DisplayCoordinator {
                 brightnessLimiterCooldownDisplayKey = nil
                 brightnessLimiterCooldownUntil = .distantPast
                 currentVolume = nil
+                pendingVolumeIntent = nil
                 lastVolumeReadDate = .distantPast
                 hdrBrightnessDiagnosticSummary = nil
                 ddcBrightnessMaxDiagnosticSummary = nil
@@ -85,10 +95,15 @@ extension DisplayCoordinator {
                 await reloadDisplayModes()
             }
         } else {
+            invalidateManualBrightnessWrites()
+            invalidateManualVolumeWrites()
+            cancelPendingManualBrightnessWrite()
+            cancelPendingManualVolumeWrite()
             publishCurrentDisplayInfo(nil, reason: "writer.refreshDisplay returned nil")
             currentBrightness = nil
             clearManualBrightnessOverride()
             currentVolume = nil
+            pendingVolumeIntent = nil
             volumeKeyRouter?.setEnabled(false)
             self.availableModes = []
             self.isHiDPIActive = false
@@ -259,18 +274,18 @@ extension DisplayCoordinator {
     }
 
     @objc private func decreaseVolumeAction() {
-        Task { await adjustMonitorVolume(by: -5) }
+        adjustMonitorVolumeForSettings(by: -5)
     }
 
     @objc private func increaseVolumeAction() {
-        Task { await adjustMonitorVolume(by: 5) }
+        adjustMonitorVolumeForSettings(by: 5)
     }
 
     @objc private func setVolumeFiftyAction() {
-        Task { await setMonitorVolume(50) }
+        setMonitorVolumeForSettings(50)
     }
 
     @objc private func toggleMuteAction() {
-        Task { await toggleMuteForSettings() }
+        toggleMuteForSettingsSync()
     }
 }

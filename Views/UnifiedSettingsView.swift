@@ -5,7 +5,6 @@ struct UnifiedSettingsView: View {
     @ObservedObject var display: DisplayCoordinator
     @State private var brightnessDraft: Double = 0
     @State private var isAdjustingBrightness = false
-    @State private var brightnessTask: Task<Void, Never>?
 
     var body: some View {
         TabView {
@@ -32,10 +31,10 @@ struct UnifiedSettingsView: View {
             }
         }
         .onDisappear {
-            brightnessTask?.cancel()
             if isAdjustingBrightness {
                 display.endManualBrightnessInteraction()
             }
+            display.cancelPendingManualBrightnessWrite()
         }
     }
 
@@ -332,12 +331,7 @@ struct UnifiedSettingsView: View {
         brightnessDraft = newValue
         guard changed else { return }
 
-        brightnessTask?.cancel()
-        brightnessTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            display.setMonitorBrightness(intValue)
-        }
+        display.scheduleMonitorBrightnessWrite(intValue)
     }
 
     private func handleBrightnessEditingChanged(_ isEditing: Bool) {

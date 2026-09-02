@@ -20,7 +20,11 @@ struct CleanupFileSizer: @unchecked Sendable {
         (try? measureStrict(url)) ?? CleanupFileSize(logicalBytes: 0, allocatedBytes: 0)
     }
 
-    func measureStrict(_ url: URL) throws -> CleanupFileSize {
+    func measureStrict(
+        _ url: URL,
+        entryObserver: (@Sendable (Int) -> Void)? = nil
+    ) throws -> CleanupFileSize {
+        try Task.checkCancellation()
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .fileAllocatedSizeKey, .totalFileAllocatedSizeKey]
         let rootValues: URLResourceValues
         do {
@@ -48,7 +52,16 @@ struct CleanupFileSizer: @unchecked Sendable {
         var allocated: UInt64 = 0
         var hardlinks: [HardlinkKey: HardlinkAggregate] = [:]
 
+        var entriesSinceCancellationCheck = 0
+        var entryCount = 0
         while let childURL = enumerator.nextObject() as? URL {
+            entryCount &+= 1
+            entryObserver?(entryCount)
+            entriesSinceCancellationCheck &+= 1
+            if entriesSinceCancellationCheck >= 64 {
+                entriesSinceCancellationCheck = 0
+                try Task.checkCancellation()
+            }
             let values: URLResourceValues
             do {
                 values = try childURL.resourceValues(forKeys: keys)
@@ -78,6 +91,8 @@ struct CleanupFileSizer: @unchecked Sendable {
             logical = addingWithoutOverflow(logical, childSize.logicalBytes)
             allocated = addingWithoutOverflow(allocated, childSize.allocatedBytes)
         }
+
+        try Task.checkCancellation()
 
         for aggregate in hardlinks.values {
             logical = addingWithoutOverflow(logical, aggregate.logicalBytes)
@@ -522,7 +537,14 @@ struct SimilarImageScanner: CleanupScanner {
                 var matched: ImageFeatureRecord?
                 for representative in representatives {
                     var distance: Float = .greatestFiniteMagnitude
-                    if (try? record.feature.computeDistance(&distance, to: representative.feature)) != nil, distance <= similarityThreshold {
+                    let visionMatch: Bool
+                    if let recordFeature = record.feature,
+                       let representativeFeature = representative.feature {
+                        visionMatch = (try? recordFeature.computeDistance(&distance, to: representativeFeature)) != nil && distance <= similarityThreshold
+                    } else {
+                        visionMatch = record.contentHash != nil && record.contentHash == representative.contentHash
+                    }
+                    if visionMatch {
                         matched = representative
                         break
                     }
@@ -542,7 +564,8 @@ struct SimilarImageScanner: CleanupScanner {
 
     private struct ImageFeatureRecord {
         let url: URL
-        let feature: VNFeaturePrintObservation
+        let feature: VNFeaturePrintObservation?
+        let contentHash: Data?
         let aspectBucket: Int
     }
 
@@ -550,9 +573,23 @@ struct SimilarImageScanner: CleanupScanner {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any], let width = properties[kCGImagePropertyPixelWidth] as? NSNumber, let height = properties[kCGImagePropertyPixelHeight] as? NSNumber, height.doubleValue > 0 else { return nil }
         let request = VNGenerateImageFeaturePrintRequest()
         let handler = VNImageRequestHandler(url: url, options: [:])
-        guard (try? handler.perform([request])) != nil, let observation = request.results?.first as? VNFeaturePrintObservation else { return nil }
         let bucket = Int((width.doubleValue / height.doubleValue * 20).rounded())
-        return ImageFeatureRecord(url: url, feature: observation, aspectBucket: bucket)
+        if (try? handler.perform([request])) != nil,
+           let observation = request.results?.first as? VNFeaturePrintObservation {
+            return ImageFeatureRecord(url: url, feature: observation, contentHash: nil, aspectBucket: bucket)
+        }
+
+        // Vision can be unavailable in a headless session or for a codec that
+        // the OS cannot decode. Exact byte equality is still a conservative
+        // similarity signal and keeps identical rendered fixtures actionable
+        // without treating an unverified image as safe to delete.
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return ImageFeatureRecord(
+            url: url,
+            feature: nil,
+            contentHash: Data(SHA256.hash(data: data)),
+            aspectBucket: bucket
+        )
     }
 }
 

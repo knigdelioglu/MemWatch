@@ -8,10 +8,8 @@ struct DisplayFeatureView: View {
     @State private var showingDiagnostics = false
     @State private var brightnessDraft: Double = 0
     @State private var isAdjustingBrightness = false
-    @State private var brightnessTask: Task<Void, Never>?
     @State private var volumeDraft: Double = 0
     @State private var isAdjustingVolume = false
-    @State private var volumeTask: Task<Void, Never>?
 
     init(display: DisplayCoordinator, onBack: @escaping () -> Void = {}) {
         self.display = display
@@ -53,11 +51,11 @@ struct DisplayFeatureView: View {
             }
         }
         .onDisappear {
-            brightnessTask?.cancel()
-            volumeTask?.cancel()
             if isAdjustingBrightness {
                 display.endManualBrightnessInteraction()
             }
+            display.cancelPendingManualBrightnessWrite()
+            display.cancelPendingManualVolumeWrite()
         }
     }
 
@@ -235,7 +233,7 @@ struct DisplayFeatureView: View {
                     .frame(width: 40, alignment: .trailing)
 
                 Button {
-                    Task { await display.toggleMuteForSettings() }
+                    display.toggleMuteForSettingsSync()
                 } label: {
                     Label("Mute", systemImage: "speaker.slash")
                         .labelStyle(.iconOnly)
@@ -421,12 +419,7 @@ struct DisplayFeatureView: View {
         brightnessDraft = newValue
         guard changed else { return }
 
-        brightnessTask?.cancel()
-        brightnessTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            display.setMonitorBrightness(intValue)
-        }
+        display.scheduleMonitorBrightnessWrite(intValue)
     }
 
     private func handleBrightnessEditingChanged(_ isEditing: Bool) {
@@ -447,12 +440,7 @@ struct DisplayFeatureView: View {
         volumeDraft = newValue
         guard changed else { return }
 
-        volumeTask?.cancel()
-        volumeTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.volumeDebounceNanoseconds)
-            guard !Task.isCancelled else { return }
-            display.setMonitorVolumeForSettings(intValue)
-        }
+        display.scheduleMonitorVolumeWrite(intValue)
     }
 
     private var luxText: String {

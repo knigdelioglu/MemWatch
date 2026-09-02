@@ -107,18 +107,18 @@ enum CleanupSecureFileOperations {
 
             // Preflight the complete tree before mutating it so a symlink or
             // special file discovered deep in the tree cannot be silently
-            // traversed or removed.
+            // traversed or removed. Cancellation is honored throughout this
+            // read-only phase. Once it succeeds, the candidate is treated as
+            // one non-cancellable mutation boundary and is removed completely.
             try validateDirectoryTree(fd: targetFD, parentPath: path, cancellationCheck: cancellationCheck)
-            try removeDirectoryContents(fd: targetFD, parentPath: path, cancellationCheck: cancellationCheck)
+            try removeDirectoryContents(fd: targetFD, parentPath: path)
             // Directory metadata legitimately changes while its contents are
             // removed. Keep the stable inode/owner/mode check for the final
             // parent unlink, while file targets retain size/mtime checking.
             try verifyEntry(parentFD: parentFD, name: name, path: path, expected: stableIdentity(expectedIdentity))
-            try cancellationCheck()
             try unlink(parentFD: parentFD, name: name, flags: AT_REMOVEDIR, path: path)
         } else {
             try verifyEntry(parentFD: parentFD, name: name, path: path, expected: expectedIdentity)
-            try cancellationCheck()
             try unlink(parentFD: parentFD, name: name, flags: 0, path: path)
         }
 
@@ -314,18 +314,17 @@ enum CleanupSecureFileOperations {
                 try validateDirectoryTree(fd: childFD, parentPath: path, cancellationCheck: cancellationCheck)
             }
         }
+        try cancellationCheck()
     }
 
     private static func removeDirectoryContents(
         fd: Int32,
-        parentPath: String,
-        cancellationCheck: () throws -> Void
+        parentPath: String
     ) throws {
         var names: [String] = []
         try forEachEntry(in: fd) { names.append($0) }
 
         for name in names {
-            try cancellationCheck()
             let path = parentPath + "/" + name
             let child: CleanupSecureNodeIdentity
             do {
@@ -342,13 +341,11 @@ enum CleanupSecureFileOperations {
                 let childFD = try openDirectory(parentFD: fd, name: name, path: path)
                 defer { close(childFD) }
                 try verifyOpenedDirectory(childFD, expected: child, path: path)
-                try removeDirectoryContents(fd: childFD, parentPath: path, cancellationCheck: cancellationCheck)
+                try removeDirectoryContents(fd: childFD, parentPath: path)
                 try verifyEntry(parentFD: fd, name: name, path: path, expected: stableIdentity(child))
-                try cancellationCheck()
                 try unlink(parentFD: fd, name: name, flags: AT_REMOVEDIR, path: path)
             } else {
                 try verifyEntry(parentFD: fd, name: name, path: path, expected: child)
-                try cancellationCheck()
                 try unlink(parentFD: fd, name: name, flags: 0, path: path)
             }
         }

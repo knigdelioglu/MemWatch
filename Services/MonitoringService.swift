@@ -67,27 +67,45 @@ final class MonitoringService: ObservableObject {
     private static let powerHistoryLimit = 360
     private static let systemHistoryLimit = 120
 
-    private let collector = MemoryCollector()
-    private let storageCollector = StorageCollector()
-    private let powerCollector = PowerCollector()
-    private let diagnosticsCollector = SystemDiagnosticsCollector()
+    private struct PendingRefresh {
+        var forceStorage = false
+        var forceDiagnostics = false
+
+        mutating func merge(forceStorage: Bool, forceDiagnostics: Bool) {
+            self.forceStorage = self.forceStorage || forceStorage
+            self.forceDiagnostics = self.forceDiagnostics || forceDiagnostics
+        }
+    }
+
+    private let collector: any MonitoringCollecting
     private let launchAtLoginService = LaunchAtLoginService()
     private let pressureMonitor = NativeMemoryPressureMonitor()
     private let swapIntelligence = SwapIntelligenceEngine()
     private let notificationPolicy = NotificationPolicyEngine()
     private let storageNotificationPolicy = StorageNotificationPolicyEngine()
-    private let notificationService = NotificationService()
+    private let notificationService: NotificationService?
     private let scheduler: PollingScheduler
     private var isRunning = false
     private var lastStorageRefreshDate: Date?
     private var lastProcessRefreshDate: Date?
+    private var pendingRefresh: PendingRefresh?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration: UInt64 = 0
 
+    // These counters are interpreted only on MainActor, after the serialized
+    // worker has returned an immutable snapshot.
     private var previousSwapUsedBytes: UInt64?
     private var previousSwapInBytes: UInt64?
     private var previousSwapOutBytes: UInt64?
 
-    init(scheduler: PollingScheduler) {
+    init(
+        scheduler: PollingScheduler,
+        collector: any MonitoringCollecting = MonitoringCollector(),
+        notificationService: NotificationService? = NotificationService()
+    ) {
         self.scheduler = scheduler
+        self.collector = collector
+        self.notificationService = notificationService
 
         if UserDefaults.standard.object(forKey: Self.notificationsEnabledKey) != nil {
             notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledKey)
@@ -102,7 +120,7 @@ final class MonitoringService: ObservableObject {
         }
         pressureMonitor.start()
 
-        notificationService.onAuthorizationChange = { [weak self] state in
+        notificationService?.onAuthorizationChange = { [weak self] state in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let becameDeliverable = !self.notificationAuthorization.canDeliver && state.canDeliver
@@ -115,9 +133,9 @@ final class MonitoringService: ObservableObject {
                 }
             }
         }
-        notificationService.refreshAuthorizationStatus()
+        notificationService?.refreshAuthorizationStatus()
         if notificationsEnabled {
-            notificationService.requestAuthorization()
+            notificationService?.requestAuthorization()
         }
 
         refresh(forceStorage: true, forceDiagnostics: true)
@@ -132,7 +150,7 @@ final class MonitoringService: ObservableObject {
         storageNotificationPolicy.reset()
 
         if enabled {
-            notificationService.requestAuthorization()
+            notificationService?.requestAuthorization()
             refresh(forceStorage: true, forceDiagnostics: true)
         }
     }
@@ -161,17 +179,27 @@ final class MonitoringService: ObservableObject {
         )
     }
 
+    /// Enqueues one refresh request. Requests arriving while the worker is
+    /// busy are merged into one follow-up request, so timer ticks cannot form
+    /// an unbounded task backlog.
     func refresh(forceStorage: Bool = false, forceDiagnostics: Bool = false) {
-        refreshMemory()
-        refreshPower()
-        refreshDiagnostics(forceProcesses: forceDiagnostics)
-        refreshStorageIfNeeded(force: forceStorage)
         launchAtLoginState = launchAtLoginService.currentState()
+
+        var request = pendingRefresh ?? PendingRefresh()
+        request.merge(forceStorage: forceStorage, forceDiagnostics: forceDiagnostics)
+        pendingRefresh = request
+        startNextRefreshIfNeeded()
     }
 
     func stop() {
         isRunning = false
         scheduler.unregister(id: "system-health")
+        refreshGeneration &+= 1
+        pendingRefresh = nil
+        refreshTask?.cancel()
+        // Keep the in-flight task registered until its actor call returns. A
+        // subsequent start therefore cannot create a second collection while
+        // a cancellation-insensitive test/backend is still unwinding.
     }
 
     func start() {
@@ -180,9 +208,105 @@ final class MonitoringService: ObservableObject {
         startMonitoring()
     }
 
-    private func refreshMemory() {
-        let nextSnapshot = collector.collect()
+    private func startNextRefreshIfNeeded() {
+        guard refreshTask == nil, let pendingRefresh else { return }
+        self.pendingRefresh = nil
 
+        let startedAt = Date()
+        let includeProcesses = pendingRefresh.forceDiagnostics || shouldRefreshProcesses(at: startedAt)
+        let includeStorage = pendingRefresh.forceStorage || shouldRefreshStorage(at: startedAt)
+        let request = MonitoringCollectionRequest(
+            includeProcesses: includeProcesses,
+            includeStorage: includeStorage
+        )
+
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        let collector = self.collector
+
+        refreshTask = Task { @MainActor [weak self] in
+            let collected = await collector.collect(request)
+            guard let self else { return }
+
+            guard !Task.isCancelled, self.refreshGeneration == generation else {
+                self.finishRefresh(generation: generation)
+                return
+            }
+
+            self.apply(
+                collected,
+                request: request,
+                startedAt: startedAt
+            )
+            self.finishRefresh(generation: generation)
+        }
+    }
+
+    private func finishRefresh(generation: UInt64) {
+        // A stop can advance the generation while the worker is unwinding. It
+        // is still safe to release the in-flight marker here because no newer
+        // refresh task can exist while that marker was set.
+        guard refreshGeneration == generation || refreshTask != nil else { return }
+        refreshTask = nil
+        startNextRefreshIfNeeded()
+    }
+
+    private func shouldRefreshProcesses(at date: Date) -> Bool {
+        guard let lastProcessRefreshDate else { return true }
+        return date.timeIntervalSince(lastProcessRefreshDate) >= Self.processRefreshInterval
+    }
+
+    private func shouldRefreshStorage(at date: Date) -> Bool {
+        guard let lastStorageRefreshDate else { return true }
+        return date.timeIntervalSince(lastStorageRefreshDate) >= Self.storageRefreshInterval
+    }
+
+    private func apply(
+        _ collected: MonitoringCollectionSnapshot,
+        request: MonitoringCollectionRequest,
+        startedAt: Date
+    ) {
+        applyMemory(collected.memory)
+        applyPower(collected.power)
+
+        let diagnosticsSnapshot = SystemDiagnosticsSnapshot(
+            timestamp: collected.diagnostics.timestamp,
+            cpuUsagePercent: collected.diagnostics.cpuUsagePercent,
+            thermalState: collected.diagnostics.thermalState,
+            lowPowerModeEnabled: collected.diagnostics.lowPowerModeEnabled,
+            topProcesses: request.includeProcesses
+                ? collected.diagnostics.topProcesses
+                : diagnostics.topProcesses
+        )
+        diagnostics = diagnosticsSnapshot
+
+        if request.includeProcesses {
+            lastProcessRefreshDate = startedAt
+        }
+
+        if let cpuUsagePercent = diagnosticsSnapshot.cpuUsagePercent {
+            systemHistory.append(
+                SystemHistoryPoint(
+                    timestamp: diagnosticsSnapshot.timestamp,
+                    cpuUsagePercent: cpuUsagePercent,
+                    memoryUsagePercent: snapshot.usageRatio * 100,
+                    thermalSeverity: diagnosticsSnapshot.thermalState.severity
+                )
+            )
+
+            if systemHistory.count > Self.systemHistoryLimit {
+                systemHistory.removeFirst(systemHistory.count - Self.systemHistoryLimit)
+            }
+        }
+
+        if request.includeStorage, let volumes = collected.storageVolumes {
+            storageVolumes = volumes
+            lastStorageRefreshDate = startedAt
+            evaluateStorageNotifications(now: diagnosticsSnapshot.timestamp)
+        }
+    }
+
+    private func applyMemory(_ nextSnapshot: MemorySnapshot) {
         if let previousSwapUsedBytes {
             swapDeltaBytes = signedDelta(current: nextSnapshot.swapUsedBytes, previous: previousSwapUsedBytes)
         } else {
@@ -224,8 +348,7 @@ final class MonitoringService: ObservableObject {
         evaluateMemoryNotification()
     }
 
-    private func refreshPower() {
-        let nextSnapshot = powerCollector.collect()
+    private func applyPower(_ nextSnapshot: PowerSnapshot) {
         powerSnapshot = nextSnapshot
 
         let systemLoad = nextSnapshot.systemLoadWatts
@@ -251,60 +374,6 @@ final class MonitoringService: ObservableObject {
         }
     }
 
-    private func refreshDiagnostics(forceProcesses: Bool) {
-        let now = Date()
-        let shouldRefreshProcesses: Bool
-
-        if forceProcesses {
-            shouldRefreshProcesses = true
-        } else if let lastProcessRefreshDate {
-            shouldRefreshProcesses = now.timeIntervalSince(lastProcessRefreshDate) >= Self.processRefreshInterval
-        } else {
-            shouldRefreshProcesses = true
-        }
-
-        let collected = diagnosticsCollector.collect(includeProcesses: shouldRefreshProcesses)
-        diagnostics = SystemDiagnosticsSnapshot(
-            timestamp: collected.timestamp,
-            cpuUsagePercent: collected.cpuUsagePercent,
-            thermalState: collected.thermalState,
-            lowPowerModeEnabled: collected.lowPowerModeEnabled,
-            topProcesses: shouldRefreshProcesses ? collected.topProcesses : diagnostics.topProcesses
-        )
-
-        if shouldRefreshProcesses {
-            lastProcessRefreshDate = now
-        }
-
-        if let cpuUsagePercent = collected.cpuUsagePercent {
-            systemHistory.append(
-                SystemHistoryPoint(
-                    timestamp: collected.timestamp,
-                    cpuUsagePercent: cpuUsagePercent,
-                    memoryUsagePercent: snapshot.usageRatio * 100,
-                    thermalSeverity: collected.thermalState.severity
-                )
-            )
-
-            if systemHistory.count > Self.systemHistoryLimit {
-                systemHistory.removeFirst(systemHistory.count - Self.systemHistoryLimit)
-            }
-        }
-    }
-
-    private func refreshStorageIfNeeded(force: Bool) {
-        let now = Date()
-        if !force,
-           let lastStorageRefreshDate,
-           now.timeIntervalSince(lastStorageRefreshDate) < Self.storageRefreshInterval {
-            return
-        }
-
-        storageVolumes = storageCollector.collect()
-        lastStorageRefreshDate = now
-        evaluateStorageNotifications(now: now)
-    }
-
     private func evaluateMemoryNotification() {
         guard notificationsEnabled else {
             notificationPolicy.reset()
@@ -318,7 +387,7 @@ final class MonitoringService: ObservableObject {
             return
         }
 
-        notificationService.deliver(payload)
+        notificationService?.deliver(payload)
     }
 
     private func evaluateStorageNotifications(now: Date) {
@@ -333,7 +402,7 @@ final class MonitoringService: ObservableObject {
         )
 
         for payload in payloads {
-            notificationService.deliver(payload)
+            notificationService?.deliver(payload)
         }
     }
 

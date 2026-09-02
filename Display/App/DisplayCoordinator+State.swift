@@ -91,12 +91,18 @@ extension DisplayCoordinator {
     var currentManualBrightnessWriteGeneration: UInt64 {
         runtimeState.brightness.manualBrightnessWriteGate.generation
     }
+    var currentManualVolumeWriteGeneration: UInt64 {
+        runtimeState.volume.manualVolumeWriteGate.generation
+    }
     @discardableResult
     func startManualVolumeWrite() -> UInt64 {
         runtimeState.volume.manualVolumeWriteGate.startRequest()
     }
     func acceptsManualVolumeWrite(_ generation: UInt64) -> Bool {
         runtimeState.volume.manualVolumeWriteGate.accepts(generation)
+    }
+    func invalidateManualVolumeWrites() {
+        runtimeState.volume.manualVolumeWriteGate.invalidate()
     }
     var mismatchIntervalsCount: Int {
         get { runtimeState.mismatchIntervalsCount }
@@ -150,6 +156,10 @@ extension DisplayCoordinator {
     var currentVolume: Int? {
         get { runtimeState.currentVolume }
         set { runtimeState.currentVolume = newValue }
+    }
+    var pendingVolumeIntent: Int? {
+        get { runtimeState.volume.pendingVolumeIntent }
+        set { runtimeState.volume.pendingVolumeIntent = newValue }
     }
     var currentDisplayInfo: ExternalDisplayInfo? {
         get { runtimeState.currentDisplayInfo }

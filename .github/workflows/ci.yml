@@ -55,6 +55,16 @@ jobs:
       - name: Run merged display feature smoke tests
         run: Scripts/run_display_feature_tests.sh
 
+      - name: Run display latest-intent concurrency tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift \
+            Display/DisplayControl/Brightness/BrightnessState.swift \
+            Tests/DisplayLatestIntentTests.swift \
+            -o /tmp/memwatch-display-latest-intent-tests
+          /tmp/memwatch-display-latest-intent-tests
+
       - name: Run merge architecture contract tests
         run: |
           xcrun swiftc \
@@ -352,6 +362,150 @@ jobs:
             -o /tmp/memwatch-cleanup-persistence-tests
           /tmp/memwatch-cleanup-persistence-tests
 
+      - name: Run cleanup preference and initial-load concurrency tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupSecureRemoval.swift \
+            Cleanup/Core/CleanupDeletionEngine.swift \
+            Cleanup/Persistence/CleanupStores.swift \
+            Tests/CleanupPreferenceConcurrencyTests.swift \
+            -framework AppKit \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Security \
+            -framework Vision \
+            -o /tmp/memwatch-cleanup-preference-concurrency-tests
+          /tmp/memwatch-cleanup-preference-concurrency-tests
+
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Cleanup/Core/PrivilegedSystemScanner.swift \
+            Cleanup/Core/CleanupScanEngine.swift \
+            PrivilegedHelper/HelperProtocol.swift \
+            Services/PrivilegedHelperInstallerScript.swift \
+            Services/PrivilegedHelperService.swift \
+            Services/FullDiskAccessService.swift \
+            Cleanup/Core/CleanupSecureRemoval.swift \
+            Cleanup/Core/CleanupDeletionEngine.swift \
+            Cleanup/Persistence/CleanupStores.swift \
+            Services/CleanupCoordinator.swift \
+            Tests/CleanupInitialLoadRaceTests.swift \
+            -framework AppKit \
+            -framework Combine \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Security \
+            -framework Vision \
+            -o /tmp/memwatch-cleanup-initial-load-race-tests
+          /tmp/memwatch-cleanup-initial-load-race-tests
+
+      - name: Run cleanup file-sizer cancellation stress tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            Tests/CleanupFileSizerStressTests.swift \
+            -framework AppKit \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Vision \
+            -o /tmp/memwatch-cleanup-file-sizer-stress-tests
+          /tmp/memwatch-cleanup-file-sizer-stress-tests
+
+      - name: Run cleanup deletion cancellation stress tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/CleanupModels.swift \
+            Cleanup/Core/CleanupRuleCatalog.swift \
+            Cleanup/Core/CleanupPathValidator.swift \
+            Cleanup/Core/CleanupSafetyEngine.swift \
+            Cleanup/Core/CleanupScanner.swift \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Cleanup/Core/CargoMetadataResolver.swift \
+            Cleanup/Core/DeveloperBuildActivityGuard.swift \
+            Cleanup/Core/DeveloperBuildArtifactScanner.swift \
+            Cleanup/Core/CleanupFileSizer.swift \
+            PrivilegedHelper/HelperProtocol.swift \
+            Cleanup/Core/CleanupSecureRemoval.swift \
+            Cleanup/Core/CleanupDeletionEngine.swift \
+            Tests/CleanupCancellationStressTests.swift \
+            -framework AppKit \
+            -framework CoreGraphics \
+            -framework ImageIO \
+            -framework Security \
+            -framework Vision \
+            -o /tmp/memwatch-cleanup-deletion-stress-tests
+          /tmp/memwatch-cleanup-deletion-stress-tests
+
+      - name: Run developer-project discovery resilience tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Cleanup/Core/DeveloperProjectDiscovery.swift \
+            Tests/DeveloperProjectDiscoveryResilienceTests.swift \
+            -o /tmp/memwatch-developer-project-discovery-resilience-tests
+          /tmp/memwatch-developer-project-discovery-resilience-tests
+
+      - name: Run monitoring serialization and responsiveness tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/MemorySnapshot.swift \
+            Models/PowerSnapshot.swift \
+            Models/SystemDiagnosticsSnapshot.swift \
+            Models/StorageSnapshot.swift \
+            Core/Power/PowerSourceReader.swift \
+            Collectors/MemoryCollector.swift \
+            Collectors/PowerCollector.swift \
+            Collectors/SystemDiagnosticsCollector.swift \
+            Collectors/StorageCollector.swift \
+            Services/SwapIntelligenceEngine.swift \
+            Services/NotificationPolicyEngine.swift \
+            Services/StorageNotificationPolicyEngine.swift \
+            Services/NotificationService.swift \
+            Services/LaunchAtLoginService.swift \
+            Services/MonitoringCollector.swift \
+            Services/MonitoringService.swift \
+            Core/Polling/PollingScheduler.swift \
+            Tests/MonitoringConcurrencyTests.swift \
+            -framework AppKit \
+            -framework IOKit \
+            -framework ServiceManagement \
+            -framework UserNotifications \
+            -o /tmp/memwatch-monitoring-concurrency-tests
+          /tmp/memwatch-monitoring-concurrency-tests
+
       - name: Run privileged helper protocol tests
         run: |
           xcrun swiftc \
@@ -423,6 +577,16 @@ jobs:
             Tests/BackgroundCadenceTests.swift \
             -o /tmp/memwatch-cadence-tests
           /tmp/memwatch-cadence-tests
+
+      - name: Build MemWatch Release
+        run: |
+          xcodebuild \
+            -project MemWatch.xcodeproj \
+            -scheme MemWatch \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
       - name: Build and verify universal Release DMG
         run: |

@@ -78,9 +78,13 @@ struct BrightnessState: Sendable {
     var suppressionReason: String?
     var manualOverridePausedUntil: Date?
     var showMismatchWarning: Bool = false
+    /// Latest manual slider intent that is waiting for its DDC write or
+    /// readback. Backend refreshes must not replace this draft.
+    var pendingManualBrightnessPercent: Int?
 
     var uiSliderBrightnessPercent: Int {
-        return actualDDCBrightnessPercent
+        return pendingManualBrightnessPercent
+            ?? actualDDCBrightnessPercent
             ?? lastDDCReadbackPercent
             ?? requestedDDCBrightnessPercent
             ?? autoTargetBrightnessPercent

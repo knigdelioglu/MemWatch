@@ -71,6 +71,9 @@ extension DisplayCoordinator {
     }
 
     func applyBrightnessReadback(_ readback: Int?, requestedFallback: Int? = nil) {
+        // A refresh/readback can overlap a manual DDC write. Keep the latest
+        // user draft authoritative until that write completes or fails.
+        guard brightnessState.pendingManualBrightnessPercent == nil else { return }
         updateBrightnessState { state in
             if let requestedFallback {
                 state.requestedDDCBrightnessPercent = requestedFallback
@@ -178,7 +181,7 @@ extension DisplayCoordinator {
     }
 
     var monitorVolumeControlValue: Int {
-        currentVolume ?? volumeCoordinator.lastNonZeroVolume
+        pendingVolumeIntent ?? currentVolume ?? volumeCoordinator.lastNonZeroVolume
     }
 
     var monitorBrightnessControlValue: Int {
@@ -190,6 +193,9 @@ extension DisplayCoordinator {
     }
 
     var brightnessActualText: String {
+        if let pending = brightnessState.pendingManualBrightnessPercent {
+            return String(pending) + "%"
+        }
         if brightnessState.isDDCReadbackAvailable {
             if let actual = brightnessState.actualDDCBrightnessPercent {
                 return "\(actual)%"

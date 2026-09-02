@@ -39,6 +39,7 @@ final class DisplayBrightnessRuntimeState: ObservableObject {
 @MainActor
 final class DisplayVolumeRuntimeState: ObservableObject {
     @Published var currentVolume: Int?
+    var pendingVolumeIntent: Int?
     var lastVolumeReadDate = Date.distantPast
     let volumeReadInterval: TimeInterval = 5.0
     var manualVolumeWriteGate = LatestValueWriteGate()
