@@ -46,8 +46,16 @@ extension DisplayCoordinator {
 
     @discardableResult
     func setMonitorVolume(_ percent: Int) async -> Bool {
+        await setMonitorVolume(percent, writeGeneration: nil)
+    }
+
+    @discardableResult
+    private func setMonitorVolume(_ percent: Int, writeGeneration: UInt64?) async -> Bool {
         let clamped = min(100, max(0, percent))
         let (success, _) = await brightnessCoordinator.writer.setVolume(clamped, preferredKey: activeDisplayKey)
+        if let writeGeneration, !acceptsManualVolumeWrite(writeGeneration) {
+            return false
+        }
         if success {
             currentVolume = clamped
             volumeCoordinator.record(clamped)
@@ -75,14 +83,21 @@ extension DisplayCoordinator {
     }
 
     func setMonitorVolumeForSettings(_ percent: Int) {
-        Task { await setMonitorVolume(percent) }
+        let writeGeneration = startManualVolumeWrite()
+        Task { @MainActor [weak self] in
+            guard let self, self.acceptsManualVolumeWrite(writeGeneration) else { return }
+            _ = await self.setMonitorVolume(percent, writeGeneration: writeGeneration)
+        }
     }
 
     func setMonitorBrightness(_ percent: Int) {
         let clamped = min(100, max(0, percent))
         pauseAutoBrightnessTemporarily()
-        Task {
+        let writeGeneration = startManualBrightnessWrite()
+        Task { @MainActor [weak self] in
+            guard let self, self.acceptsManualBrightnessWrite(writeGeneration) else { return }
             let result = await brightnessCoordinator.writer.setBrightness(clamped, preferredKey: activeDisplayKey)
+            guard acceptsManualBrightnessWrite(writeGeneration) else { return }
             let actualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped
             let matchedTarget = result.matchedTarget == true
             print(
@@ -139,7 +154,22 @@ extension DisplayCoordinator {
     }
 
     func pauseAutoBrightnessTemporarily(for duration: TimeInterval = 20) {
+        invalidateManualBrightnessWrites()
         beginManualBrightnessOverride(fallbackDuration: duration)
+    }
+
+    /// Marks the beginning of a real slider interaction. The override is
+    /// established before the debounced DDC write can be scheduled, and any
+    /// auto write already in flight becomes a stale completion.
+    func beginManualBrightnessInteraction() {
+        pauseAutoBrightnessTemporarily()
+        manualBrightnessInteractionActive = true
+        pendingTargetCandidate = nil
+        pendingTargetCandidateSince = .distantPast
+    }
+
+    func endManualBrightnessInteraction() {
+        manualBrightnessInteractionActive = false
     }
 
     func setAutoBrightnessEnabled(_ enabled: Bool) {

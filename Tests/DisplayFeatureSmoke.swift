@@ -12,6 +12,8 @@ struct DisplayFeatureSmoke {
         testAutomaticBrightnessPlanning()
         testDisplayConnectionPolicy()
         testDisplayIdentity()
+        testExternalSliderInteractionPolicy()
+        testLatestValueWriteGate()
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
@@ -76,6 +78,46 @@ struct DisplayFeatureSmoke {
         precondition(DisplayCapability.degraded("limited").isAvailable)
         precondition(!DisplayCapabilities.unavailable.ddc.isAvailable)
         precondition(DisplayCapabilities.unavailable.keepAwake.isAvailable)
+    }
+
+    private static func testLatestValueWriteGate() {
+        var gate = LatestValueWriteGate()
+        let autoGeneration = gate.startRequest()
+        precondition(gate.accepts(autoGeneration))
+
+        // Beginning a manual interaction invalidates an already-running auto
+        // completion before the first manual DDC write is issued.
+        gate.invalidate()
+        precondition(!gate.accepts(autoGeneration))
+
+        let firstManualGeneration = gate.startRequest()
+        let latestManualGeneration = gate.startRequest()
+        precondition(!gate.accepts(firstManualGeneration))
+        precondition(gate.accepts(latestManualGeneration))
+    }
+
+    private static func testExternalSliderInteractionPolicy() {
+        precondition(ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds == 150_000_000)
+        precondition(ExternalSliderInteractionPolicy.volumeDebounceNanoseconds == 120_000_000)
+
+        var draft = 20.0
+        var pendingWrite: Int?
+        for value in [20.0, 19.0, 18.0, 17.0, 16.0, 15.0] {
+            if ExternalSliderInteractionPolicy.shouldSchedule(newValue: value, previousDraft: draft) {
+                pendingWrite = ExternalSliderInteractionPolicy.roundedValue(value)
+            }
+            draft = value
+        }
+        // Each new setter cancels the prior debounce task, so only the final
+        // value remains eligible to reach DDC.
+        precondition(pendingWrite == 15)
+
+        var localDraft = 15.0
+        if ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: true) {
+            localDraft = 20
+        }
+        precondition(localDraft == 15)
+        precondition(ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: false))
     }
 
     private static func testCapabilityProvider() {

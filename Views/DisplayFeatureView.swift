@@ -6,6 +6,12 @@ struct DisplayFeatureView: View {
 
     let onBack: () -> Void
     @State private var showingDiagnostics = false
+    @State private var brightnessDraft: Double = 0
+    @State private var isAdjustingBrightness = false
+    @State private var brightnessTask: Task<Void, Never>?
+    @State private var volumeDraft: Double = 0
+    @State private var isAdjustingVolume = false
+    @State private var volumeTask: Task<Void, Never>?
 
     init(display: DisplayCoordinator, onBack: @escaping () -> Void = {}) {
         self.display = display
@@ -32,6 +38,27 @@ struct DisplayFeatureView: View {
             }
         }
         .frame(width: 430, height: 640)
+        .onAppear {
+            brightnessDraft = Double(display.monitorBrightnessControlValue)
+            volumeDraft = Double(display.monitorVolumeControlValue)
+        }
+        .onChange(of: display.monitorBrightnessControlValue) { newValue in
+            if ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: isAdjustingBrightness) {
+                brightnessDraft = Double(newValue)
+            }
+        }
+        .onChange(of: display.monitorVolumeControlValue) { newValue in
+            if ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: isAdjustingVolume) {
+                volumeDraft = Double(newValue)
+            }
+        }
+        .onDisappear {
+            brightnessTask?.cancel()
+            volumeTask?.cancel()
+            if isAdjustingBrightness {
+                display.endManualBrightnessInteraction()
+            }
+        }
     }
 
     private var header: some View {
@@ -138,18 +165,19 @@ struct DisplayFeatureView: View {
                     HStack {
                         Text("External display")
                         Spacer()
-                        Text(display.brightnessActualText)
+                        Text(externalBrightnessText)
                             .font(.caption.monospacedDigit().weight(.semibold))
                     }
                     .font(.caption)
 
                     Slider(
                         value: Binding(
-                            get: { Double(display.monitorBrightnessControlValue) },
-                            set: { display.setMonitorBrightness(Int($0.rounded())) }
+                            get: { brightnessDraft },
+                            set: { newValue in scheduleBrightnessWrite(newValue) }
                         ),
                         in: 0...100,
-                        step: 1
+                        step: 1,
+                        onEditingChanged: handleBrightnessEditingChanged
                     )
                     .accessibilityLabel("External display brightness")
 
@@ -191,15 +219,18 @@ struct DisplayFeatureView: View {
 
                 Slider(
                     value: Binding(
-                        get: { Double(display.monitorVolumeControlValue) },
-                        set: { display.setMonitorVolumeForSettings(Int($0.rounded())) }
+                        get: { volumeDraft },
+                        set: { newValue in scheduleVolumeWrite(newValue) }
                     ),
                     in: 0...100,
-                    step: 1
+                    step: 1,
+                    onEditingChanged: { isEditing in
+                        isAdjustingVolume = isEditing
+                    }
                 )
                 .accessibilityLabel("External display volume")
 
-                Text("\(display.monitorVolumeControlValue)%")
+                Text(volumeText)
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .frame(width: 40, alignment: .trailing)
 
@@ -367,6 +398,61 @@ struct DisplayFeatureView: View {
             return display.autoBrightnessEnabled ? "Automatic brightness is active" : "Manual brightness is active"
         }
         return display.capabilities.externalDisplay.reason ?? "Waiting for a supported external display"
+    }
+
+    private var externalBrightnessText: String {
+        isAdjustingBrightness
+            ? "\(Int(brightnessDraft.rounded()))%"
+            : display.brightnessActualText
+    }
+
+    private var volumeText: String {
+        isAdjustingVolume
+            ? "\(Int(volumeDraft.rounded()))%"
+            : "\(display.monitorVolumeControlValue)%"
+    }
+
+    private func scheduleBrightnessWrite(_ newValue: Double) {
+        let intValue = ExternalSliderInteractionPolicy.roundedValue(newValue)
+        let changed = ExternalSliderInteractionPolicy.shouldSchedule(
+            newValue: newValue,
+            previousDraft: brightnessDraft
+        )
+        brightnessDraft = newValue
+        guard changed else { return }
+
+        brightnessTask?.cancel()
+        brightnessTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            display.setMonitorBrightness(intValue)
+        }
+    }
+
+    private func handleBrightnessEditingChanged(_ isEditing: Bool) {
+        if isEditing {
+            display.beginManualBrightnessInteraction()
+        } else {
+            display.endManualBrightnessInteraction()
+        }
+        isAdjustingBrightness = isEditing
+    }
+
+    private func scheduleVolumeWrite(_ newValue: Double) {
+        let intValue = ExternalSliderInteractionPolicy.roundedValue(newValue)
+        let changed = ExternalSliderInteractionPolicy.shouldSchedule(
+            newValue: newValue,
+            previousDraft: volumeDraft
+        )
+        volumeDraft = newValue
+        guard changed else { return }
+
+        volumeTask?.cancel()
+        volumeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.volumeDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            display.setMonitorVolumeForSettings(intValue)
+        }
     }
 
     private var luxText: String {

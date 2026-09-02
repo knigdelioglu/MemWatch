@@ -1,5 +1,24 @@
 import Foundation
 
+/// Invalidates completions from older brightness requests without trying to
+/// terminate a DDC transaction that may already be in progress.
+struct LatestValueWriteGate: Equatable, Sendable {
+    private(set) var generation: UInt64 = 0
+
+    mutating func invalidate() {
+        generation &+= 1
+    }
+
+    mutating func startRequest() -> UInt64 {
+        generation &+= 1
+        return generation
+    }
+
+    func accepts(_ requestGeneration: UInt64) -> Bool {
+        requestGeneration == generation
+    }
+}
+
 enum BrightnessSource: String, Codable, Sendable {
     case ambientComputed
     case autoDDCWrite

@@ -7,6 +7,13 @@ extension DisplayCoordinator {
         isTickRunning = true
         defer { isTickRunning = false }
 
+        // Treat the current manual-write generation as the tick's epoch. Any
+        // manual interaction that starts while this tick is suspended makes
+        // the rest of this auto pass stale, even if the drag ends before the
+        // next await resumes.
+        let tickBrightnessWriteGeneration = currentManualBrightnessWriteGeneration
+        guard !manualBrightnessInteractionActive else { return }
+
         traceRuntime("tick entered currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")")
 
         ddcAvailable = await brightnessCoordinator.isDDCAvailable()
@@ -27,6 +34,15 @@ extension DisplayCoordinator {
             refreshSharedRuntimeFeatures()
         }
 
+        if manualBrightnessInteractionActive {
+            updateBrightnessState { state in
+                state.isManualOverrideActive = true
+                state.isAutoBrightnessEnabled = false
+                state.suppressionReason = "Manual brightness interaction active"
+            }
+            return
+        }
+
         guard let reader = brightnessCoordinator.reader else {
             updateStatus("Işık sensörü bulunamadı")
             updateBrightnessState { state in
@@ -40,6 +56,10 @@ extension DisplayCoordinator {
             updateBrightnessState { state in
                 state.suppressionReason = "Sensör bekleniyor"
             }
+            return
+        }
+
+        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
             return
         }
 
@@ -123,6 +143,9 @@ extension DisplayCoordinator {
 
         if currentBrightness == nil {
             let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+            guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
+                return
+            }
             applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
             lastBrightnessReadDate = now
         }
@@ -165,6 +188,10 @@ extension DisplayCoordinator {
             )
         )
 
+        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
+            return
+        }
+
         let writeCandidate: Int
         switch preflight {
         case .suppressed(let reason, let source, let statusText, _, _):
@@ -203,7 +230,13 @@ extension DisplayCoordinator {
             manualBrightnessOverrideUntil = .distantPast
         }
 
+        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
+            return
+        }
         let result = await brightnessCoordinator.writer.setBrightness(writeCandidate, preferredKey: display.displayKey)
+        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
+            return
+        }
 
         if result.status == .success || result.status == .writeAcceptedButReadbackLimited {
             handleAutoBrightnessWriteSuccess(

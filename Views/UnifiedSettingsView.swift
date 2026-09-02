@@ -3,6 +3,9 @@ import SwiftUI
 struct UnifiedSettingsView: View {
     @ObservedObject var monitor: MonitoringService
     @ObservedObject var display: DisplayCoordinator
+    @State private var brightnessDraft: Double = 0
+    @State private var isAdjustingBrightness = false
+    @State private var brightnessTask: Task<Void, Never>?
 
     var body: some View {
         TabView {
@@ -20,6 +23,20 @@ struct UnifiedSettingsView: View {
         }
         .frame(minWidth: 680, minHeight: 520)
         .padding(20)
+        .onAppear {
+            brightnessDraft = Double(display.monitorBrightnessControlValue)
+        }
+        .onChange(of: display.monitorBrightnessControlValue) { newValue in
+            if ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: isAdjustingBrightness) {
+                brightnessDraft = Double(newValue)
+            }
+        }
+        .onDisappear {
+            brightnessTask?.cancel()
+            if isAdjustingBrightness {
+                display.endManualBrightnessInteraction()
+            }
+        }
     }
 
     private var systemTab: some View {
@@ -177,16 +194,17 @@ struct UnifiedSettingsView: View {
                 HStack {
                     Text("External display")
                     Spacer()
-                    Text(display.brightnessActualText)
+                    Text(settingsExternalBrightnessText)
                         .font(.caption.monospacedDigit())
                 }
                 Slider(
                     value: Binding(
-                        get: { Double(display.monitorBrightnessControlValue) },
-                        set: { display.setMonitorBrightness(Int($0.rounded())) }
+                        get: { brightnessDraft },
+                        set: { newValue in scheduleBrightnessWrite(newValue) }
                     ),
                     in: 0...100,
-                    step: 1
+                    step: 1,
+                    onEditingChanged: handleBrightnessEditingChanged
                 )
                 .accessibilityLabel("External display brightness")
             }
@@ -297,6 +315,38 @@ struct UnifiedSettingsView: View {
     private func diagnosticButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
             .buttonStyle(.bordered)
+    }
+
+    private var settingsExternalBrightnessText: String {
+        isAdjustingBrightness
+            ? "\(Int(brightnessDraft.rounded()))%"
+            : display.brightnessActualText
+    }
+
+    private func scheduleBrightnessWrite(_ newValue: Double) {
+        let intValue = ExternalSliderInteractionPolicy.roundedValue(newValue)
+        let changed = ExternalSliderInteractionPolicy.shouldSchedule(
+            newValue: newValue,
+            previousDraft: brightnessDraft
+        )
+        brightnessDraft = newValue
+        guard changed else { return }
+
+        brightnessTask?.cancel()
+        brightnessTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: ExternalSliderInteractionPolicy.brightnessDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            display.setMonitorBrightness(intValue)
+        }
+    }
+
+    private func handleBrightnessEditingChanged(_ isEditing: Bool) {
+        if isEditing {
+            display.beginManualBrightnessInteraction()
+        } else {
+            display.endManualBrightnessInteraction()
+        }
+        isAdjustingBrightness = isEditing
     }
 
     private var canUseAutomaticBrightness: Bool {

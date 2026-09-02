@@ -28,6 +28,8 @@ final class DisplayBrightnessRuntimeState: ObservableObject {
     var brightnessLimiterCooldownUntil = Date.distantPast
     var brightnessLimiterCooldownDisplayKey: String?
     let brightnessLimiterCooldownDuration: TimeInterval = 120.0
+    var manualBrightnessWriteGate = LatestValueWriteGate()
+    var manualBrightnessInteractionActive = false
 
     init(autoBrightnessEnabled: Bool) {
         self.autoBrightnessEnabled = autoBrightnessEnabled
@@ -39,6 +41,7 @@ final class DisplayVolumeRuntimeState: ObservableObject {
     @Published var currentVolume: Int?
     var lastVolumeReadDate = Date.distantPast
     let volumeReadInterval: TimeInterval = 5.0
+    var manualVolumeWriteGate = LatestValueWriteGate()
 }
 
 @MainActor

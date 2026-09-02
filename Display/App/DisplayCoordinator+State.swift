@@ -74,6 +74,30 @@ extension DisplayCoordinator {
         get { runtimeState.pendingTargetCandidateSince }
         set { runtimeState.pendingTargetCandidateSince = newValue }
     }
+    var manualBrightnessInteractionActive: Bool {
+        get { runtimeState.brightness.manualBrightnessInteractionActive }
+        set { runtimeState.brightness.manualBrightnessInteractionActive = newValue }
+    }
+    func invalidateManualBrightnessWrites() {
+        runtimeState.brightness.manualBrightnessWriteGate.invalidate()
+    }
+    @discardableResult
+    func startManualBrightnessWrite() -> UInt64 {
+        runtimeState.brightness.manualBrightnessWriteGate.startRequest()
+    }
+    func acceptsManualBrightnessWrite(_ generation: UInt64) -> Bool {
+        runtimeState.brightness.manualBrightnessWriteGate.accepts(generation)
+    }
+    var currentManualBrightnessWriteGeneration: UInt64 {
+        runtimeState.brightness.manualBrightnessWriteGate.generation
+    }
+    @discardableResult
+    func startManualVolumeWrite() -> UInt64 {
+        runtimeState.volume.manualVolumeWriteGate.startRequest()
+    }
+    func acceptsManualVolumeWrite(_ generation: UInt64) -> Bool {
+        runtimeState.volume.manualVolumeWriteGate.accepts(generation)
+    }
     var mismatchIntervalsCount: Int {
         get { runtimeState.mismatchIntervalsCount }
         set { runtimeState.mismatchIntervalsCount = newValue }

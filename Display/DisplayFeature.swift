@@ -47,6 +47,23 @@ struct DisplayCapabilities: Equatable {
     )
 }
 
+enum ExternalSliderInteractionPolicy {
+    static let brightnessDebounceNanoseconds: UInt64 = 150_000_000
+    static let volumeDebounceNanoseconds: UInt64 = 120_000_000
+
+    static func roundedValue(_ value: Double) -> Int {
+        Int(value.rounded())
+    }
+
+    static func shouldSchedule(newValue: Double, previousDraft: Double) -> Bool {
+        roundedValue(newValue) != roundedValue(previousDraft)
+    }
+
+    static func shouldSynchronizeFromBackend(isAdjusting: Bool) -> Bool {
+        !isAdjusting
+    }
+}
+
 @MainActor
 protocol DisplayFeatureControlling: AnyObject {
     var capabilities: DisplayCapabilities { get }
