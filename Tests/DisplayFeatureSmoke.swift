@@ -20,6 +20,7 @@ struct DisplayFeatureSmoke {
         testM1DDCExecutableLocator()
         await testM1DDCRuntimeAvailabilityRefresh()
         testCoreGraphicsDisplayFingerprint()
+        testDisplayDiscoveryParserAndClassification()
         testHiDPIReapplyLifecycle()
         await testLegacyMigration()
         print("Display feature smoke tests passed")
@@ -184,6 +185,97 @@ struct DisplayFeatureSmoke {
             productID: 0x0001,
             isBuiltin: false
         ))
+    }
+
+    private static func testDisplayDiscoveryParserAndClassification() {
+        let rawOutput = """
+        [0]
+        - Product name: Color LCD
+        - Display ID: 1
+        - Serial: INTERNAL
+        - System UUID: internal-uuid
+        - IO Location: IOService:/AppleACPIPlatformExpert/Disp0
+
+        [1]
+        - Product name: Samsung S60UD
+        - Display ID: 42
+        - Serial: S60UD-serial
+        - System UUID: s60ud-uuid
+        - IO Location: IOService:/AppleACPIPlatformExpert/Disp1
+        """
+        let parsed = M1DDCWriter.parseDisplaysForDiagnostics(rawOutput)
+        precondition(parsed.allDisplays.count == 2)
+        precondition(parsed.externalDisplays.count == 1)
+        precondition(parsed.samsungFilteredDisplays.count == 1)
+        precondition(parsed.samsungFilteredDisplays[0].displayKey == "Samsung S60UD|S60UD-serial")
+        precondition(parsed.samsungFilteredDisplays[0].displayID == 42)
+
+        func input(
+            executableSelected: Bool = true,
+            processRan: Bool = true,
+            processSucceeded: Bool = true,
+            timedOut: Bool = false,
+            outputEmpty: Bool = false,
+            rawCount: Int = 1,
+            allParsed: Int = 1,
+            externalParsed: Int = 1,
+            samsungFiltered: Int = 1,
+            coreGraphicsExternal: Int = 1,
+            coreGraphicsFingerprint: Int = 1,
+            softwareDisconnect: Bool = false,
+            legacyConflict: Bool = false,
+            productionDisplay: Bool = true
+        ) -> DisplayDiscoveryClassificationInput {
+            DisplayDiscoveryClassificationInput(
+                m1ddcExecutableSelected: executableSelected,
+                m1ddcProcessRan: processRan,
+                m1ddcProcessSucceeded: processSucceeded,
+                m1ddcTimedOut: timedOut,
+                m1ddcOutputEmpty: outputEmpty,
+                rawDisplayCount: rawCount,
+                allParsedDisplayCount: allParsed,
+                externalParsedDisplayCount: externalParsed,
+                samsungFilteredDisplayCount: samsungFiltered,
+                coreGraphicsExternalDisplayCount: coreGraphicsExternal,
+                coreGraphicsFingerprintMatchCount: coreGraphicsFingerprint,
+                softwareDisconnectStatePersisted: softwareDisconnect,
+                legacyRuntimeConflict: legacyConflict,
+                productionWriterReturnedDisplay: productionDisplay
+            )
+        }
+
+        precondition(
+            DisplayDiscoveryPipelineClassifier.classify(input()) ==
+                [.displayDiscoverySucceeded]
+        )
+        precondition(
+            DisplayDiscoveryPipelineClassifier.classify(
+                input(
+                    outputEmpty: true,
+                    rawCount: 0,
+                    allParsed: 0,
+                    externalParsed: 0,
+                    samsungFiltered: 0
+                )
+            ) == [.m1ddcOutputEmpty, .displayDiscoverySucceeded]
+        )
+        precondition(
+            DisplayDiscoveryPipelineClassifier.classify(
+                input(
+                    rawCount: 1,
+                    allParsed: 1,
+                    externalParsed: 0,
+                    samsungFiltered: 0,
+                    coreGraphicsFingerprint: 0,
+                    productionDisplay: false
+                )
+            ) == [.coreGraphicsFingerprintMismatch]
+        )
+        precondition(
+            DisplayDiscoveryPipelineClassifier.classify(
+                input(productionDisplay: false)
+            ) == [.productionWriterReturnedNilDespiteDiscovery]
+        )
     }
 
     private static func testHiDPIReapplyLifecycle() {

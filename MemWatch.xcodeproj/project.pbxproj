@@ -113,6 +113,7 @@
 			F10000000000000000000108 /* Display/App/DisplayCoordinator+HiDPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000108 /* Display/App/DisplayCoordinator+HiDPI.swift */; };
 			F10000000000000000000109 /* Display/App/DisplayRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000109 /* Display/App/DisplayRuntimeState.swift */; };
 			F10000000000000000000110 /* Display/App/DisplayCoordinator+State.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000110 /* Display/App/DisplayCoordinator+State.swift */; };
+			F10000000000000000000111 /* Display/DisplayControl/DisplayDiscoveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000111 /* Display/DisplayControl/DisplayDiscoveryDiagnostic.swift */; };
 			F10000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift */; };
 			F10000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift */; };
 			F10000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift */; };
@@ -282,6 +283,7 @@
 			F20000000000000000000108 /* Display/App/DisplayCoordinator+HiDPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DisplayCoordinator+HiDPI.swift"; sourceTree = "<group>"; };
 			F20000000000000000000109 /* Display/App/DisplayRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayRuntimeState.swift; sourceTree = "<group>"; };
 			F20000000000000000000110 /* Display/App/DisplayCoordinator+State.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DisplayCoordinator+State.swift"; sourceTree = "<group>"; };
+			F20000000000000000000111 /* Display/DisplayControl/DisplayDiscoveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayDiscoveryDiagnostic.swift; sourceTree = "<group>"; };
 			F20000000000000000000056 /* Display/DisplayControl/HiDPIRefreshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIRefreshService.swift; sourceTree = "<group>"; };
 			F20000000000000000000057 /* Display/DisplayControl/HiDPIReportPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIReportPaths.swift; sourceTree = "<group>"; };
 			F20000000000000000000058 /* Display/DisplayControl/HiDPIStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiDPIStateStore.swift; sourceTree = "<group>"; };
@@ -535,6 +537,7 @@
 				F20000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift */,
 				F20000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift */,
 				F20000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift */,
+				F20000000000000000000111 /* Display/DisplayControl/DisplayDiscoveryDiagnostic.swift */,
 				F20000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift */,
 				F20000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift */,
 			);
@@ -866,6 +869,7 @@
 				F10000000000000000000060 /* Display/DisplayControl/HiDPITargetDisplayResolver.swift in Sources */,
 				F10000000000000000000061 /* Display/DisplayControl/InternalDisplayBrightnessController.swift in Sources */,
 				F10000000000000000000062 /* Display/DisplayControl/M1DDCDisplayController.swift in Sources */,
+				F10000000000000000000111 /* Display/DisplayControl/DisplayDiscoveryDiagnostic.swift in Sources */,
 				F10000000000000000000063 /* Display/DisplayControl/NativeDisplayModeReader.swift in Sources */,
 				F10000000000000000000064 /* Display/DisplayControl/PrivateDisplayConnectionBackend.swift in Sources */,
 				F10000000000000000000065 /* Display/DisplayFeature.swift in Sources */,

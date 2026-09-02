@@ -64,6 +64,12 @@ struct M1DDCExecutableLocator {
     }
 }
 
+struct M1DDCDisplayParseResult: Equatable, Sendable {
+    let allDisplays: [ExternalDisplayInfo]
+    let externalDisplays: [ExternalDisplayInfo]
+    let samsungFilteredDisplays: [ExternalDisplayInfo]
+}
+
 actor M1DDCWriter {
     private static let targetMonitorNames = ["S60UD", "LS32D60", "LS32D60xU"]
     private static let fallbackMonitorName = "Samsung"
@@ -292,6 +298,13 @@ actor M1DDCWriter {
         isBuiltin: Bool
     ) -> Bool {
         !isBuiltin && vendorID == targetVendorID && productID == targetProductID
+    }
+
+    static var targetVendorIDForDiagnostics: UInt32 { targetVendorID }
+    static var targetProductIDForDiagnostics: UInt32 { targetProductID }
+
+    static func parseDisplaysForDiagnostics(_ output: String) -> M1DDCDisplayParseResult {
+        parseDisplayStages(output)
     }
 
     private static func discoverCoreGraphicsDisplays() -> [ExternalDisplayInfo] {
@@ -579,6 +592,10 @@ actor M1DDCWriter {
     }
 
     private static func parseDisplays(_ output: String) -> [ExternalDisplayInfo] {
+        parseDisplayStages(output).samsungFilteredDisplays
+    }
+
+    private static func parseDisplayStages(_ output: String) -> M1DDCDisplayParseResult {
         struct Partial {
             var displayIndex: String = ""
             var displayID: UInt32?
@@ -657,12 +674,18 @@ actor M1DDCWriter {
                 display.productName.localizedCaseInsensitiveContains(fallbackMonitorName)
         }
         
-        return samsungDisplays.sorted { a, b in
+        let sortedSamsungDisplays = samsungDisplays.sorted { a, b in
             let aIsS60 = targetMonitorNames.contains { a.productName.localizedCaseInsensitiveContains($0) }
             let bIsS60 = targetMonitorNames.contains { b.productName.localizedCaseInsensitiveContains($0) }
             if aIsS60 != bIsS60 { return aIsS60 } 
             return a.displayIndex < b.displayIndex
         }
+
+        return M1DDCDisplayParseResult(
+            allDisplays: allDisplays,
+            externalDisplays: externalDisplays,
+            samsungFilteredDisplays: sortedSamsungDisplays
+        )
     }
 
 }

@@ -100,7 +100,7 @@ struct CalibrationSession: Hashable {
     }
 }
 
-struct ExternalDisplayInfo: Hashable {
+struct ExternalDisplayInfo: Hashable, Sendable {
     var displayIndex: String
     var displayID: UInt32?
     var productName: String
@@ -303,4 +303,3 @@ final class AmbientSyncStore: ObservableObject {
         return didChange ? updated : preferences
     }
 }
-

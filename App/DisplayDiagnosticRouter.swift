@@ -11,6 +11,11 @@ enum DisplayDiagnosticRouter {
             return true
         }
 
+        if arguments.contains("--display-discovery-diagnostic") {
+            await DisplayDiscoveryDiagnostic.run()
+            return true
+        }
+
         if arguments.contains("--diagnostic") {
             HiDPIDiagnostic.run()
             exit(0)
