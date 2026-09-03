@@ -154,13 +154,21 @@ final class CGSModeSwitcher {
     private var cachedCandidates: [CGSDisplayModeCandidate] = []
     private var cachedSelectionState: CGSDynamicModeSelectionState?
     private let operationGate: DisplayPowerOperationGate
+    private let targetOperationGate: TargetDisplayOperationGate
 
-    init(operationGate: DisplayPowerOperationGate = .shared) {
+    init(
+        operationGate: DisplayPowerOperationGate = .shared,
+        targetOperationGate: TargetDisplayOperationGate = .shared
+    ) {
         self.operationGate = operationGate
+        self.targetOperationGate = targetOperationGate
     }
 
     func refreshCGSModes(displayID: CGDirectDisplayID) -> CGSModeSwitcherStatus {
-        guard operationGate.isAllowed(), isDisplayOnlineAndActive(displayID) else {
+        let targetSnapshot = targetOperationGate.snapshot()
+        guard operationGate.isAllowed(),
+              targetOperationGate.accepts(targetSnapshot.generation, displayID: displayID),
+              isSamsungTargetIdentity(displayID) else {
             return unavailableStatus(displayID: displayID)
         }
         cachedDisplayID = displayID
@@ -195,6 +203,11 @@ final class CGSModeSwitcher {
             reportTitle: "CGS Manual Mode Switch"
         )
 
+        guard targetOperationGate.accepts(targetSnapshot.generation, displayID: displayID),
+              isDisplayOnlineAndActive(displayID) else {
+            return unavailableStatus(displayID: displayID)
+        }
+
         guard summary.targetDisplay?.displayID == displayID else {
             let status = CGSModeSwitcherStatus(
                 displayID: displayID,
@@ -227,7 +240,10 @@ final class CGSModeSwitcher {
     }
 
     func scanCGSModes(displayID: CGDirectDisplayID) -> [CGSDisplayModeCandidate] {
-        guard operationGate.isAllowed(), isDisplayOnlineAndActive(displayID) else {
+        let targetSnapshot = targetOperationGate.snapshot()
+        guard operationGate.isAllowed(),
+              targetOperationGate.accepts(targetSnapshot.generation, displayID: displayID),
+              isSamsungTargetIdentity(displayID) else {
             cachedCandidates = []
             cachedSelectionState = nil
             return []
@@ -472,28 +488,33 @@ final class CGSModeSwitcher {
     }
 
     func readCurrentCGSMode() -> Int32? {
-        guard operationGate.isAllowed() else { return nil }
-        guard let displayID = cachedDisplayID ?? resolveExactSamsungDisplay()?.displayID else {
-            return nil
-        }
-        guard isDisplayOnlineAndActive(displayID) else { return nil }
+        guard operationGate.isAllowed(),
+              let targetDisplayID = targetOperationGate.snapshot().displayID,
+              cachedDisplayID == nil || cachedDisplayID == targetDisplayID,
+              isSamsungTargetIdentity(targetDisplayID) else { return nil }
+        let displayID = targetDisplayID
         return readCurrentCGSMode(displayID: displayID)
     }
 
     func readActiveModeFingerprint() -> CGSActiveModeFingerprint? {
-        guard operationGate.isAllowed() else { return nil }
-        guard let displayID = cachedDisplayID ?? resolveExactSamsungDisplay()?.displayID else {
-            return nil
-        }
-        guard isDisplayOnlineAndActive(displayID) else { return nil }
+        guard operationGate.isAllowed(),
+              let targetDisplayID = targetOperationGate.snapshot().displayID,
+              cachedDisplayID == nil || cachedDisplayID == targetDisplayID,
+              isSamsungTargetIdentity(targetDisplayID) else { return nil }
+        let displayID = targetDisplayID
         return readActiveModeFingerprint(displayID: displayID)
     }
 
     func applyCGSMode(modeID: Int) async -> CGSManualModeSwitchReport {
         let reportURL = HiDPIReportPaths.reportURL(Self.reportPath)
         let operationGeneration = operationGate.currentGeneration()
+        let targetSnapshot = targetOperationGate.snapshot()
+        let targetOperationGeneration = targetSnapshot.generation
 
-        guard operationGate.accepts(operationGeneration) else {
+        guard operationGate.accepts(operationGeneration),
+              let targetDisplayID = targetSnapshot.displayID,
+              targetOperationGate.accepts(targetOperationGeneration, displayID: targetDisplayID),
+              isSamsungTargetIdentity(targetDisplayID) else {
             let report = unavailableApplyReport(
                 modeID: modeID,
                 reportURL: reportURL,
@@ -505,7 +526,11 @@ final class CGSModeSwitcher {
 
         let target = resolveExactSamsungDisplay()
 
-        guard let target, target.isOnline, target.isActive else {
+        guard let target,
+              target.displayID == targetDisplayID,
+              target.isOnline,
+              target.isActive,
+              targetOperationGate.accepts(targetOperationGeneration, displayID: targetDisplayID) else {
             let report = CGSManualModeSwitchReport(
                 requestedModeID: modeID,
                 beforeModeID: nil,
@@ -525,7 +550,10 @@ final class CGSModeSwitcher {
         }
 
         let status = refreshCGSModes(displayID: target.displayID)
-        guard status.isSamsungFingerprintMatched, !status.isBuiltin else {
+        guard operationGate.accepts(operationGeneration),
+              targetOperationGate.accepts(targetOperationGeneration, displayID: targetDisplayID),
+              status.isSamsungFingerprintMatched,
+              !status.isBuiltin else {
             let report = CGSManualModeSwitchReport(
                 requestedModeID: modeID,
                 beforeModeID: nil,
@@ -566,7 +594,9 @@ final class CGSModeSwitcher {
         let beforeModeID = readCurrentCGSMode(displayID: target.displayID)
         let beforeFingerprint = readActiveModeFingerprint(displayID: target.displayID)
 
-        guard operationGate.accepts(operationGeneration), let beforeModeID else {
+        guard operationGate.accepts(operationGeneration),
+              targetOperationGate.accepts(targetOperationGeneration, displayID: targetDisplayID),
+              let beforeModeID else {
             let report = CGSManualModeSwitchReport(
                 requestedModeID: modeID,
                 beforeModeID: nil,
@@ -599,7 +629,12 @@ final class CGSModeSwitcher {
             configureResult = "not attempted"
             completeResult = "not attempted"
 
-            guard self.operationGate.accepts(operationGeneration) else {
+            guard self.operationGate.accepts(operationGeneration),
+                  self.targetOperationGate.accepts(
+                      targetOperationGeneration,
+                      displayID: targetDisplayID
+                  ),
+                  self.isSamsungTargetIdentity(targetDisplayID) else {
                 failureReason = "Display runtime generation changed before CGS mode apply."
                 return
             }
@@ -610,6 +645,16 @@ final class CGSModeSwitcher {
                 afterModeID = readCurrentCGSMode(displayID: target.displayID)
                 afterFingerprint = readActiveModeFingerprint(displayID: target.displayID)
                 success = true
+                return
+            }
+
+            guard self.operationGate.accepts(operationGeneration),
+                  self.targetOperationGate.accepts(
+                      targetOperationGeneration,
+                      displayID: targetDisplayID
+                  ),
+                  self.isSamsungTargetIdentity(targetDisplayID) else {
+                failureReason = "Samsung target changed before CGS configuration."
                 return
             }
 
@@ -629,6 +674,17 @@ final class CGSModeSwitcher {
                 return
             }
 
+            guard self.operationGate.accepts(operationGeneration),
+                  self.targetOperationGate.accepts(
+                      targetOperationGeneration,
+                      displayID: targetDisplayID
+                  ),
+                  self.isSamsungTargetIdentity(targetDisplayID) else {
+                CGCancelDisplayConfiguration(config)
+                failureReason = "Samsung target changed before CGS configure."
+                return
+            }
+
             let configureValue = configure(config, target.displayID, requestedMode.modeNumber)
             if configureValue != 0 {
                 CGCancelDisplayConfiguration(config)
@@ -639,13 +695,28 @@ final class CGSModeSwitcher {
 
             configureResult = "CGSConfigureDisplayMode(\(requestedMode.modeNumber)) succeeded."
 
+            guard self.operationGate.accepts(operationGeneration),
+                  self.targetOperationGate.accepts(
+                      targetOperationGeneration,
+                      displayID: targetDisplayID
+                  ),
+                  self.isSamsungTargetIdentity(targetDisplayID) else {
+                CGCancelDisplayConfiguration(config)
+                failureReason = "Samsung target changed before CGS completion."
+                return
+            }
+
             let completeValue = CGCompleteDisplayConfiguration(config, .forSession)
             completeResult = "CGCompleteDisplayConfiguration(option: 2) returned \(completeValue.rawValue)"
             if completeValue != .success {
                 CGCancelDisplayConfiguration(config)
                 failureReason = completeResult
                 rollbackAttempted = true
-                rollbackResult = rollback(to: beforeModeID, displayID: target.displayID)
+                rollbackResult = rollback(
+                    to: beforeModeID,
+                    displayID: target.displayID,
+                    targetOperationGeneration: targetOperationGeneration
+                )
                 afterModeID = readCurrentCGSMode(displayID: target.displayID)
                 afterFingerprint = readActiveModeFingerprint(displayID: target.displayID)
                 return
@@ -657,7 +728,13 @@ final class CGSModeSwitcher {
                 failureReason = "CGS mode verification cancelled."
                 return
             }
-            guard !Task.isCancelled, self.operationGate.accepts(operationGeneration) else {
+            guard !Task.isCancelled,
+                  self.operationGate.accepts(operationGeneration),
+                  self.targetOperationGate.accepts(
+                      targetOperationGeneration,
+                      displayID: targetDisplayID
+                  ),
+                  self.isSamsungTargetIdentity(targetDisplayID) else {
                 failureReason = "Display runtime suspended during CGS mode verification."
                 return
             }
@@ -671,7 +748,11 @@ final class CGSModeSwitcher {
 
             failureReason = "Active CGS mode could not be verified after switch."
             rollbackAttempted = true
-            rollbackResult = rollback(to: beforeModeID, displayID: target.displayID)
+            rollbackResult = rollback(
+                to: beforeModeID,
+                displayID: target.displayID,
+                targetOperationGeneration: targetOperationGeneration
+            )
             afterModeID = readCurrentCGSMode(displayID: target.displayID)
             afterFingerprint = readActiveModeFingerprint(displayID: target.displayID)
         }
@@ -691,18 +772,23 @@ final class CGSModeSwitcher {
             reportURL: reportURL
         )
         _ = try? writeReport(report)
-        if operationGate.accepts(operationGeneration) {
+        if operationGate.accepts(operationGeneration),
+           targetOperationGate.accepts(targetOperationGeneration, displayID: targetDisplayID) {
             cachedStatus = refreshCGSModes(displayID: target.displayID)
         }
         return report
     }
 
     private func resolveExactSamsungDisplay() -> TargetDisplayInfo? {
+        guard let targetDisplayID = targetOperationGate.snapshot().displayID else {
+            return nil
+        }
         guard let display = try? HiDPITargetDisplayResolver.resolveTargets(spec: .samsungQHD, allowUnreadableSerial: false).first(where: {
             !$0.isBuiltin &&
                 $0.vendorID == Self.expectedVendorID &&
                 $0.productID == Self.expectedProductID &&
-                $0.serialNumber == Self.expectedSerial
+                $0.serialNumber == Self.expectedSerial &&
+                $0.displayID == targetDisplayID
         }) else {
             return nil
         }
@@ -727,6 +813,14 @@ final class CGSModeSwitcher {
         displayID != 0 &&
             CGDisplayIsOnline(displayID) != 0 &&
             CGDisplayIsActive(displayID) != 0
+    }
+
+    private func isSamsungTargetIdentity(_ displayID: CGDirectDisplayID) -> Bool {
+        CGDisplayIsBuiltin(displayID) == 0 &&
+            CGDisplayVendorNumber(displayID) == Self.expectedVendorID &&
+            CGDisplayModelNumber(displayID) == Self.expectedProductID &&
+            CGDisplaySerialNumber(displayID) == Self.expectedSerial &&
+            isDisplayOnlineAndActive(displayID)
     }
 
     private func unavailableApplyReport(
@@ -934,9 +1028,19 @@ final class CGSModeSwitcher {
         return unsafeBitCast(symbol.pointer, to: CGSConfigureDisplayModeFunc.self)
     }
 
-    private func rollback(to modeID: Int32, displayID: CGDirectDisplayID) -> String {
+    private func rollback(
+        to modeID: Int32,
+        displayID: CGDirectDisplayID,
+        targetOperationGeneration: UInt64
+    ) -> String {
         guard modeID >= 0 else {
             return "Rollback skipped: previous mode unavailable."
+        }
+
+        guard operationGate.isAllowed(),
+              targetOperationGate.accepts(targetOperationGeneration, displayID: displayID),
+              isSamsungTargetIdentity(displayID) else {
+            return "Rollback skipped: Samsung target changed."
         }
 
         guard let configure = resolveConfigureSymbol() else {

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 @main
@@ -56,7 +57,53 @@ struct DisplayLatestIntentTests {
         precondition(!brightnessGate.accepts(autoGeneration), "A manual slider interaction must invalidate an older auto write")
         precondition(brightnessGate.accepts(secondManualGeneration), "The latest manual brightness intent must remain eligible")
 
-        print("PASS display latest-intent volume and brightness completion ordering")
+        testDisplayOperationGatesAndTargetEpoch()
+
+        print("PASS display latest-intent ordering and target-operation gates")
+    }
+
+    private static func testDisplayOperationGatesAndTargetEpoch() {
+        let targetGate = TargetDisplayOperationGate()
+        let targetID: CGDirectDisplayID = 4242
+        let unavailable = targetGate.snapshot()
+
+        precondition(!DisplayOperationPolicy.externalReadOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            targetReadiness: unavailable.readiness
+        ), "External reads must fail closed before target readiness")
+        precondition(!DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: true,
+            targetReadiness: unavailable.readiness
+        ), "Post-wake user input must remain blocked before target readiness")
+
+        let targetGeneration = targetGate.markReady(displayID: targetID)
+        let ready = targetGate.snapshot()
+        precondition(ready.generation == targetGeneration && ready.displayID == targetID)
+        precondition(DisplayOperationPolicy.externalReadOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            targetReadiness: ready.readiness
+        ), "Controlled reads may run after target readiness")
+        precondition(!DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: true,
+            targetReadiness: ready.readiness
+        ), "Interactive DDC must remain blocked during controlled refresh")
+        precondition(DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: false,
+            targetReadiness: ready.readiness
+        ), "Interactive DDC may resume after controlled refresh")
+
+        targetGate.invalidate()
+        precondition(!targetGate.accepts(targetGeneration, displayID: targetID),
+                     "A target transition must invalidate a queued external intent")
+        precondition(!targetGate.snapshot().isReady, "Target invalidation must close external operations")
     }
 
     private static func apply(

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Compatibility-facing state accessors. Storage and observation live in
@@ -25,11 +26,66 @@ extension DisplayCoordinator {
     }
     var displayPowerState: DisplayPowerState { runtimeState.powerLifecycle.state }
     var displayPowerGeneration: UInt64 { runtimeState.powerLifecycle.generation }
+    var targetDisplayReadiness: TargetDisplayReadiness {
+        let snapshot = targetDisplayOperationGate.snapshot()
+        guard let displayID = snapshot.displayID else { return snapshot.readiness }
+
+        // A ready enum value is not enough to authorize a new external
+        // operation. Revalidate the live identity at the coordinator boundary
+        // so an offline/inactive display cannot leave a stale ready state.
+        guard CGDisplayIsBuiltin(displayID) == 0,
+              CGDisplayVendorNumber(displayID) == TargetDisplaySpec.samsungQHD.vendorID,
+              CGDisplayModelNumber(displayID) == TargetDisplaySpec.samsungQHD.productID,
+              CGDisplayIsOnline(displayID) != 0,
+              CGDisplayIsActive(displayID) != 0 else {
+            targetDisplayOperationGate.invalidate()
+            return .unavailable
+        }
+        return snapshot.readiness
+    }
+    var targetDisplayID: CGDirectDisplayID? {
+        targetDisplayReadiness.displayID
+    }
+    var displayReadOperationsAllowed: Bool {
+        DisplayOperationPolicy.readOperationsAllowed(
+            isRunning: isRunning,
+            powerState: displayPowerState
+        )
+    }
+    var displayInteractiveOperationsAllowed: Bool {
+        DisplayOperationPolicy.interactiveOperationsAllowed(
+            isRunning: isRunning,
+            powerState: displayPowerState,
+            isPostWakeRefreshInProgress: isPostWakeRefreshInProgress
+        )
+    }
+    var externalDisplayReadOperationsAllowed: Bool {
+        DisplayOperationPolicy.externalReadOperationsAllowed(
+            isRunning: isRunning,
+            powerState: displayPowerState,
+            targetReadiness: targetDisplayReadiness
+        )
+    }
+    var externalDisplayInteractiveOperationsAllowed: Bool {
+        DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: isRunning,
+            powerState: displayPowerState,
+            isPostWakeRefreshInProgress: isPostWakeRefreshInProgress,
+            targetReadiness: targetDisplayReadiness
+        )
+    }
+
+    // Compatibility alias for internal display/runtime callers. External
+    // operations use one of the semantic gates above instead.
     var displayOperationsAllowed: Bool {
-        isRunning && runtimeState.powerLifecycle.allowsDisplayOperations
+        displayReadOperationsAllowed
     }
     func acceptsDisplayPowerGeneration(_ generation: UInt64) -> Bool {
         !Task.isCancelled && isRunning && runtimeState.powerLifecycle.accepts(generation)
+    }
+    func acceptsTargetDisplayOperation(_ snapshot: TargetDisplayOperationSnapshot) -> Bool {
+        guard let displayID = snapshot.displayID else { return false }
+        return targetDisplayOperationGate.accepts(snapshot.generation, displayID: displayID)
     }
     var capabilities: DisplayCapabilities { runtimeState.capabilities }
     var autoBrightnessEnabled: Bool {

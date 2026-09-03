@@ -2,7 +2,7 @@ import Foundation
 
 extension DisplayCoordinator {
     func tick(allowDuringPostWake: Bool = false) async {
-        guard displayOperationsAllowed,
+        guard displayReadOperationsAllowed,
               allowDuringPostWake || !isPostWakeRefreshInProgress else { return }
         guard !isTickRunning else { return }
         isTickRunning = true
@@ -26,6 +26,13 @@ extension DisplayCoordinator {
         updateCapabilities()
         refreshSharedRuntimeFeatures()
 
+        guard externalDisplayReadOperationsAllowed else {
+            beginTargetDisplayReadinessRecoveryIfNeeded(for: tickPowerGeneration)
+            return
+        }
+        let tickTargetSnapshot = targetDisplayOperationGate.snapshot()
+        guard tickTargetSnapshot.isReady else { return }
+
         if applySoftwareDisconnectedDisplayStateIfNeeded() {
             return
         }
@@ -36,8 +43,9 @@ extension DisplayCoordinator {
         // the external display and its capabilities.
         if currentDisplayInfo == nil, Date().timeIntervalSince(lastDisplaySearchDate) >= displaySearchInterval {
             lastDisplaySearchDate = Date()
-            await reloadDisplayInfo()
-            guard acceptsDisplayPowerGeneration(tickPowerGeneration) else { return }
+            await reloadDisplayInfo(allowDuringPostWake: allowDuringPostWake)
+            guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+                  acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
             refreshSharedRuntimeFeatures()
         }
 
@@ -151,6 +159,7 @@ extension DisplayCoordinator {
         if currentBrightness == nil {
             let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
             guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+                  acceptsTargetDisplayOperation(tickTargetSnapshot),
                   acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
                   !manualBrightnessInteractionActive else {
                 return
@@ -159,7 +168,8 @@ extension DisplayCoordinator {
             lastBrightnessReadDate = now
         }
         await refreshCurrentVolume()
-        guard acceptsDisplayPowerGeneration(tickPowerGeneration) else { return }
+        guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
         refreshSharedRuntimeFeatures()
 
         let target = autoTargetBrightnessPercent
@@ -180,7 +190,8 @@ extension DisplayCoordinator {
 
         let smoothedCandidate = smoothedRequestedPercent
         let preflightDDCAvailable = await brightnessCoordinator.isDDCAvailable()
-        guard acceptsDisplayPowerGeneration(tickPowerGeneration) else { return }
+        guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
 
         let preflight = brightnessAutoLoopPlanner.preflight(
             context: BrightnessAutoLoopPreflightContext(
@@ -202,6 +213,7 @@ extension DisplayCoordinator {
         )
 
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return
@@ -246,12 +258,14 @@ extension DisplayCoordinator {
         }
 
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return
         }
         let result = await brightnessCoordinator.writer.setBrightness(writeCandidate, preferredKey: display.displayKey)
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return

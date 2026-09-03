@@ -4,10 +4,14 @@ import Foundation
 
 extension DisplayCoordinator {
     func displayPowerLifecycleSnapshot() -> DisplayPowerLifecycleSnapshot {
-        runtimeState.powerLifecycle.snapshot(
+        _ = targetDisplayReadiness
+        let targetSnapshot = targetDisplayOperationGate.snapshot()
+        return runtimeState.powerLifecycle.snapshot(
             isHiDPIAllowed: isRunning &&
                 runtimeState.powerLifecycle.allowsDisplayOperations &&
-                !isPostWakeRefreshInProgress
+                !isPostWakeRefreshInProgress,
+            targetDisplayReadiness: targetSnapshot.readiness,
+            targetDisplayGeneration: targetSnapshot.generation
         )
     }
 
@@ -39,6 +43,7 @@ extension DisplayCoordinator {
             runtimeState.powerLifecycle.beginWaking(now: now)
         }
 
+        targetDisplayOperationGate.beginStabilizing()
         isPostWakeRefreshInProgress = false
         let generation = displayPowerGeneration
         updateStatus("Display wake stabilization in progress")
@@ -46,15 +51,16 @@ extension DisplayCoordinator {
     }
 
     func notifyDisplayPowerLifecycleChanged() {
-        guard displayPowerState == .active else { return }
+        guard externalDisplayReadOperationsAllowed,
+              !isPostWakeRefreshInProgress else { return }
         HiDPIReapplyService.shared.notifyPowerStateChanged()
     }
 
     func refreshHiDPIStateAfterAutomaticReapply() {
-        guard displayOperationsAllowed, !isPostWakeRefreshInProgress else { return }
+        guard externalDisplayReadOperationsAllowed, !isPostWakeRefreshInProgress else { return }
         Task { @MainActor [weak self] in
-            guard let self, self.displayOperationsAllowed else { return }
-            await self.reloadDisplayModes()
+            guard let self, self.externalDisplayReadOperationsAllowed else { return }
+            await self.reloadDisplayModes(allowDuringPostWake: true)
         }
     }
 
@@ -62,6 +68,10 @@ extension DisplayCoordinator {
         wakeStabilizationTask?.cancel()
         wakeStabilizationTask = nil
         wakeStabilizationRetryCount = 0
+        targetReadinessTask?.cancel()
+        targetReadinessRetryCount = 0
+        targetRecoveryToken &+= 1
+        targetDisplayOperationGate.invalidate()
         isPostWakeRefreshInProgress = false
         displayTickTask?.cancel()
         displayTickTask = nil
@@ -135,10 +145,13 @@ extension DisplayCoordinator {
             return
         }
 
+        let targetExpected = isTargetSamsungExpected()
+        var targetReadyDisplayID: CGDirectDisplayID?
+
         if TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(
-            isTargetExpected: isTargetSamsungExpected(),
+            isTargetExpected: targetExpected,
             retryCount: wakeStabilizationRetryCount
-        ) {
+        ), wakeStabilizationRetryCount < TargetDisplayWakeStabilizationPolicy.maxRetries {
             guard let initialCandidate = targetSamsungCandidate(),
                   initialCandidate.isOnline,
                   initialCandidate.isActive else {
@@ -169,35 +182,314 @@ extension DisplayCoordinator {
                 armWakeStabilizationTask(for: generation, retryAfter: 1.0)
                 return
             }
+
+            targetReadyDisplayID = initialCandidate.displayID
+        }
+
+        if targetExpected, let targetReadyDisplayID {
+            _ = targetDisplayOperationGate.markReady(displayID: targetReadyDisplayID)
+        } else if targetExpected {
+            // The aggressive phase is bounded, but this is deliberately not
+            // a success path. Global runtime may activate while the target
+            // remains blocked in stabilizing state.
+            targetDisplayOperationGate.beginStabilizing()
+            targetReadinessRetryCount = max(
+                targetReadinessRetryCount,
+                wakeStabilizationRetryCount
+            )
+        } else {
+            targetDisplayOperationGate.invalidate()
         }
 
         guard runtimeState.powerLifecycle.activateIfReady() else { return }
         let activeGeneration = displayPowerGeneration
         DisplayPowerOperationGate.shared.activate(generation: activeGeneration)
-        isPostWakeRefreshInProgress = true
         wakeStabilizationTask = nil
         wakeStabilizationRetryCount = 0
 
-        defer { isPostWakeRefreshInProgress = false }
+        if let targetReadyDisplayID {
+            await performControlledTargetRecovery(
+                powerGeneration: activeGeneration,
+                targetDisplayID: targetReadyDisplayID,
+                targetOperationGeneration: targetDisplayOperationGate.currentGeneration()
+            )
+        } else {
+            // Keep the global runtime usable for the built-in display even
+            // when Samsung has not become ready yet.
+            refreshInternalBrightness()
+            updateCapabilities()
+            volumeKeyRouter?.setEnabled(false)
+            keepAwakeCoordinator.refreshKeepAwakeLifecycleIfNeeded()
 
-        await reloadDisplayInfo(reloadModes: false)
-        guard acceptsDisplayPowerGeneration(activeGeneration) else { return }
-        await reloadDisplayModes()
-        guard acceptsDisplayPowerGeneration(activeGeneration) else { return }
+            if targetExpected {
+                beginTargetDisplayReadinessRecovery(
+                    for: activeGeneration,
+                    initialDelay: TargetDisplayWakeStabilizationPolicy.retryDelay(
+                        afterRetryCount: targetReadinessRetryCount
+                    ),
+                    preserveRetryCount: true
+                )
+            }
+        }
+    }
+
+    func beginTargetDisplayReadinessRecoveryIfNeeded(for powerGeneration: UInt64) {
+        guard !targetDisplayReadiness.isReady else { return }
+        beginTargetDisplayReadinessRecovery(for: powerGeneration, initialDelay: 0)
+    }
+
+    func restartTargetDisplayReadinessRecovery(for powerGeneration: UInt64) {
+        beginTargetDisplayReadinessRecovery(
+            for: powerGeneration,
+            initialDelay: 0,
+            forceRestart: true
+        )
+    }
+
+    private func beginTargetDisplayReadinessRecovery(
+        for powerGeneration: UInt64,
+        initialDelay: TimeInterval? = nil,
+        preserveRetryCount: Bool = false,
+        forceRestart: Bool = false
+    ) {
+        guard isRunning,
+              displayPowerState == .active,
+              displayPowerGeneration == powerGeneration else { return }
+        guard isTargetSamsungExpected() else {
+            targetDisplayOperationGate.invalidate()
+            return
+        }
+
+        // A single task owns target confirmation and recovery. A display
+        // parameter callback may restart that one task to invalidate an
+        // in-flight sample window, but it never creates a parallel chain.
+        if targetReadinessTask != nil {
+            guard forceRestart else { return }
+            targetReadinessTask?.cancel()
+            targetReadinessTask = nil
+        }
+
+        if !preserveRetryCount {
+            targetReadinessRetryCount = 0
+        }
+        targetRecoveryToken &+= 1
+        let token = targetRecoveryToken
+        targetDisplayOperationGate.beginStabilizing()
+        // Any active controlled refresh is stale once the target epoch is
+        // restarted. A new refresh will raise this flag again only after the
+        // target reaches ready state.
+        isPostWakeRefreshInProgress = false
+        volumeKeyRouter?.setEnabled(false)
+        cancelTargetInteractiveWork()
+        HiDPIReapplyService.shared.suspendForTargetTransition()
+        armTargetReadinessTask(
+            for: powerGeneration,
+            token: token,
+            retryAfter: initialDelay
+        )
+    }
+
+    private func armTargetReadinessTask(
+        for powerGeneration: UInt64,
+        token: Int,
+        retryAfter delay: TimeInterval? = nil
+    ) {
+        targetReadinessTask?.cancel()
+        let wait = max(
+            0.1,
+            delay ?? TargetDisplayWakeStabilizationPolicy.retryDelay(
+                afterRetryCount: targetReadinessRetryCount
+            )
+        )
+        let nanoseconds = UInt64((wait * 1_000_000_000).rounded())
+        targetReadinessTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                return
+            }
+
+            guard let self,
+                  self.isRunning,
+                  self.displayPowerState == .active,
+                  self.displayPowerGeneration == powerGeneration,
+                  self.targetRecoveryToken == token else { return }
+            await self.finishTargetDisplayReadinessRecovery(
+                for: powerGeneration,
+                token: token
+            )
+        }
+    }
+
+    private func finishTargetDisplayReadinessRecovery(
+        for powerGeneration: UInt64,
+        token: Int
+    ) async {
+        guard isRunning,
+              displayPowerState == .active,
+              displayPowerGeneration == powerGeneration,
+              targetRecoveryToken == token,
+              !targetDisplayReadiness.isReady else {
+            return
+        }
+
+        guard isTargetSamsungExpected() else {
+            targetReadinessTask = nil
+            targetDisplayOperationGate.invalidate()
+            return
+        }
+
+        guard let initialCandidate = targetSamsungCandidate(),
+              initialCandidate.isOnline,
+              initialCandidate.isActive else {
+            retryTargetDisplayReadiness(
+                for: powerGeneration,
+                token: token,
+                status: "Samsung S60UD is unavailable; retrying readiness"
+            )
+            return
+        }
+
+        do {
+            try await Task.sleep(
+                nanoseconds: TargetDisplayWakeStabilizationPolicy.confirmationNanoseconds
+            )
+        } catch {
+            return
+        }
+
+        guard isRunning,
+              displayPowerState == .active,
+              displayPowerGeneration == powerGeneration,
+              targetRecoveryToken == token else { return }
+
+        let confirmedCandidate = targetSamsungCandidate()
+        guard TargetDisplayWakeStabilizationPolicy.isCandidateValid(
+            initial: initialCandidate,
+            confirmed: confirmedCandidate
+        ), let targetDisplayID = confirmedCandidate?.displayID else {
+            retryTargetDisplayReadiness(
+                for: powerGeneration,
+                token: token,
+                status: "Samsung S60UD is restabilizing"
+            )
+            return
+        }
+
+        let targetOperationGeneration = targetDisplayOperationGate.markReady(
+            displayID: targetDisplayID
+        )
+        targetReadinessRetryCount = 0
+        await performControlledTargetRecovery(
+            powerGeneration: powerGeneration,
+            targetDisplayID: targetDisplayID,
+            targetOperationGeneration: targetOperationGeneration
+        )
+        if targetRecoveryToken == token {
+            targetReadinessTask = nil
+        }
+    }
+
+    private func retryTargetDisplayReadiness(
+        for powerGeneration: UInt64,
+        token: Int,
+        status: String
+    ) {
+        guard isRunning,
+              displayPowerState == .active,
+              displayPowerGeneration == powerGeneration,
+              targetRecoveryToken == token else { return }
+        targetReadinessRetryCount += 1
+        targetDisplayOperationGate.beginStabilizing()
+        updateStatus(status)
+        armTargetReadinessTask(
+            for: powerGeneration,
+            token: token,
+            retryAfter: TargetDisplayWakeStabilizationPolicy.retryDelay(
+                afterRetryCount: targetReadinessRetryCount
+            )
+        )
+    }
+
+    private func performControlledTargetRecovery(
+        powerGeneration: UInt64,
+        targetDisplayID: CGDirectDisplayID,
+        targetOperationGeneration: UInt64
+    ) async {
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              targetDisplayOperationGate.accepts(
+                  targetOperationGeneration,
+                  displayID: targetDisplayID
+              ) else { return }
+
+        let recoveryToken = targetRecoveryToken
+        isPostWakeRefreshInProgress = true
+        defer {
+            if targetRecoveryToken == recoveryToken {
+                isPostWakeRefreshInProgress = false
+            }
+        }
+
+        await reloadDisplayInfo(reloadModes: false, allowDuringPostWake: true)
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              targetDisplayOperationGate.accepts(
+                  targetOperationGeneration,
+                  displayID: targetDisplayID
+              ) else { return }
+
+        await reloadDisplayModes(allowDuringPostWake: true)
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              targetDisplayOperationGate.accepts(
+                  targetOperationGeneration,
+                  displayID: targetDisplayID
+              ) else { return }
 
         refreshInternalBrightness()
         updateCapabilities()
-        volumeKeyRouter?.setEnabled(currentDisplayInfo != nil)
+        volumeKeyRouter?.setEnabled(currentDisplayInfo?.displayID == targetDisplayID)
         await tick(allowDuringPostWake: true)
-        guard acceptsDisplayPowerGeneration(activeGeneration) else { return }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              targetDisplayOperationGate.accepts(
+                  targetOperationGeneration,
+                  displayID: targetDisplayID
+              ) else { return }
 
-        // The refresh above is the last private/display read in this wake
-        // cycle. Only now may the HiDPI service observe an active lifecycle;
-        // publishing the transition earlier would let it apply while the
-        // post-wake readback is still in flight.
-        isPostWakeRefreshInProgress = false
+        guard targetSamsungCandidate()?.displayID == targetDisplayID else {
+            targetDisplayOperationGate.beginStabilizing()
+            restartTargetDisplayReadinessRecovery(
+                for: powerGeneration
+            )
+            return
+        }
+
+        // This is the final controlled readback/mode step for this target
+        // epoch. HiDPI can observe it only after the refresh is complete.
+        if targetRecoveryToken == recoveryToken {
+            isPostWakeRefreshInProgress = false
+        }
         keepAwakeCoordinator.refreshKeepAwakeLifecycleIfNeeded()
         notifyDisplayPowerLifecycleChanged()
+    }
+
+    private func cancelTargetInteractiveWork() {
+        displayTickTask?.cancel()
+        displayTickTask = nil
+        displayTickTaskToken &+= 1
+
+        manualBrightnessWriteTask?.cancel()
+        manualBrightnessWriteTask = nil
+        invalidateManualBrightnessWrites()
+        brightnessState.pendingManualBrightnessPercent = nil
+
+        manualVolumeWriteTask?.cancel()
+        manualVolumeWriteTask = nil
+        invalidateManualVolumeWrites()
+        pendingVolumeIntent = nil
+
+        // Do not clear isTickRunning here. An already-running tick owns it
+        // until its defer executes, while the target gate invalidates its
+        // in-flight DDC side effects.
+        Task { await brightnessCoordinator.writer.cancelInFlightOperations() }
     }
 
     private func targetSamsungCandidate() -> TargetDisplayWakeCandidate? {

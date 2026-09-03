@@ -6,7 +6,7 @@ extension DisplayCoordinator {
     }
 
     func refreshDisplayConnectionState() {
-        guard displayOperationsAllowed else { return }
+        guard displayReadOperationsAllowed else { return }
         let result = displayConnectionController.reconcileDesiredState()
         if result.phase == .softwareDisconnected {
             _ = applySoftwareDisconnectedDisplayStateIfNeeded()
@@ -14,9 +14,12 @@ extension DisplayCoordinator {
     }
 
     func toggleExternalDisplayConnection() {
-        guard displayOperationsAllowed else { return }
+        // Connection recovery is the transition that can make the target
+        // ready again, so it cannot require the already-ready target gate.
+        // It is still blocked across sleep/wake and controlled post-wake work.
+        guard displayInteractiveOperationsAllowed else { return }
         Task { @MainActor in
-            guard displayOperationsAllowed else { return }
+            guard displayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             let result = await displayConnectionController.toggle()
             guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
@@ -26,6 +29,7 @@ extension DisplayCoordinator {
             case .connected:
                 // Reuse the existing DDC/HiDPI rediscovery pipeline after reconnect.
                 refreshDisplay()
+                beginTargetDisplayReadinessRecoveryIfNeeded(for: powerGeneration)
                 HiDPIReapplyService.shared.triggerReapplyDebounced()
             case .softwareDisconnected:
                 // Do not run normal DDC discovery for an intentionally disabled display.

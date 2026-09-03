@@ -8,10 +8,36 @@ enum DisplayPowerState: String, Equatable, Sendable {
     case waking
 }
 
+enum TargetDisplayReadiness: Equatable, Sendable {
+    case unavailable
+    case stabilizing
+    case ready(displayID: CGDirectDisplayID)
+
+    var isReady: Bool {
+        if case .ready = self { return true }
+        return false
+    }
+
+    var displayID: CGDirectDisplayID? {
+        guard case let .ready(displayID) = self else { return nil }
+        return displayID
+    }
+}
+
+struct TargetDisplayOperationSnapshot: Equatable, Sendable {
+    let readiness: TargetDisplayReadiness
+    let generation: UInt64
+
+    var isReady: Bool { readiness.isReady }
+    var displayID: CGDirectDisplayID? { readiness.displayID }
+}
+
 struct DisplayPowerLifecycleSnapshot: Equatable, Sendable {
     let state: DisplayPowerState
     let generation: UInt64
     let isHiDPIAllowed: Bool
+    let targetDisplayReadiness: TargetDisplayReadiness
+    let targetDisplayGeneration: UInt64
 
     var isActive: Bool {
         state == .active
@@ -20,7 +46,9 @@ struct DisplayPowerLifecycleSnapshot: Equatable, Sendable {
     static let blocked = DisplayPowerLifecycleSnapshot(
         state: .systemSleeping,
         generation: 0,
-        isHiDPIAllowed: false
+        isHiDPIAllowed: false,
+        targetDisplayReadiness: .unavailable,
+        targetDisplayGeneration: 0
     )
 }
 
@@ -97,11 +125,17 @@ struct DisplayPowerLifecycle: Equatable, Sendable {
         return !requiringActive || allowsDisplayOperations
     }
 
-    func snapshot(isHiDPIAllowed: Bool) -> DisplayPowerLifecycleSnapshot {
+    func snapshot(
+        isHiDPIAllowed: Bool,
+        targetDisplayReadiness: TargetDisplayReadiness = .unavailable,
+        targetDisplayGeneration: UInt64 = 0
+    ) -> DisplayPowerLifecycleSnapshot {
         DisplayPowerLifecycleSnapshot(
             state: state,
             generation: generation,
-            isHiDPIAllowed: isHiDPIAllowed && allowsDisplayOperations
+            isHiDPIAllowed: isHiDPIAllowed && allowsDisplayOperations,
+            targetDisplayReadiness: targetDisplayReadiness,
+            targetDisplayGeneration: targetDisplayGeneration
         )
     }
 
@@ -118,6 +152,118 @@ struct DisplayPowerLifecycle: Equatable, Sendable {
         if nextState != .waking {
             wakeStabilizationDeadline = nil
         }
+    }
+}
+
+/// Synchronous target-side boundary shared by DDC and private CGS callers.
+/// The coordinator owns transitions; this gate makes every low-level caller
+/// prove that it still belongs to the current ready display epoch.
+final class TargetDisplayOperationGate: @unchecked Sendable {
+    static let shared = TargetDisplayOperationGate()
+
+    private let lock = NSLock()
+    private var readiness: TargetDisplayReadiness = .unavailable
+    private var generation: UInt64 = 0
+
+    func snapshot() -> TargetDisplayOperationSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+        return TargetDisplayOperationSnapshot(readiness: readiness, generation: generation)
+    }
+
+    func currentGeneration() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return generation
+    }
+
+    @discardableResult
+    func invalidate() -> UInt64 {
+        lock.lock()
+        if readiness != .unavailable {
+            readiness = .unavailable
+            generation &+= 1
+        }
+        let nextGeneration = generation
+        lock.unlock()
+        return nextGeneration
+    }
+
+    @discardableResult
+    func beginStabilizing() -> UInt64 {
+        lock.lock()
+        if readiness != .stabilizing {
+            readiness = .stabilizing
+            generation &+= 1
+        }
+        let currentGeneration = generation
+        lock.unlock()
+        return currentGeneration
+    }
+
+    @discardableResult
+    func markReady(displayID: CGDirectDisplayID) -> UInt64 {
+        lock.lock()
+        if readiness != .ready(displayID: displayID) {
+            readiness = .ready(displayID: displayID)
+            generation &+= 1
+        }
+        let currentGeneration = generation
+        lock.unlock()
+        return currentGeneration
+    }
+
+    func accepts(
+        _ candidateGeneration: UInt64,
+        displayID: CGDirectDisplayID? = nil
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == candidateGeneration,
+              case let .ready(readyDisplayID) = readiness else {
+            return false
+        }
+        return displayID == nil || displayID == readyDisplayID
+    }
+}
+
+enum DisplayOperationPolicy {
+    static func readOperationsAllowed(
+        isRunning: Bool,
+        powerState: DisplayPowerState
+    ) -> Bool {
+        isRunning && powerState == .active
+    }
+
+    static func interactiveOperationsAllowed(
+        isRunning: Bool,
+        powerState: DisplayPowerState,
+        isPostWakeRefreshInProgress: Bool
+    ) -> Bool {
+        readOperationsAllowed(isRunning: isRunning, powerState: powerState) &&
+            !isPostWakeRefreshInProgress
+    }
+
+    static func externalReadOperationsAllowed(
+        isRunning: Bool,
+        powerState: DisplayPowerState,
+        targetReadiness: TargetDisplayReadiness
+    ) -> Bool {
+        readOperationsAllowed(isRunning: isRunning, powerState: powerState) &&
+            targetReadiness.isReady
+    }
+
+    static func externalInteractiveOperationsAllowed(
+        isRunning: Bool,
+        powerState: DisplayPowerState,
+        isPostWakeRefreshInProgress: Bool,
+        targetReadiness: TargetDisplayReadiness
+    ) -> Bool {
+        interactiveOperationsAllowed(
+            isRunning: isRunning,
+            powerState: powerState,
+            isPostWakeRefreshInProgress: isPostWakeRefreshInProgress
+        ) && targetReadiness.isReady
     }
 }
 
@@ -173,6 +319,8 @@ struct TargetDisplayWakeCandidate: Equatable, Sendable {
 enum TargetDisplayWakeStabilizationPolicy {
     static let confirmationNanoseconds: UInt64 = 750_000_000
     static let maxRetries: Int = 5
+    static let aggressiveRetryDelay: TimeInterval = 1.0
+    static let backgroundRetryDelay: TimeInterval = 3.0
 
     static func isCandidateValid(
         initial: TargetDisplayWakeCandidate?,
@@ -187,7 +335,13 @@ enum TargetDisplayWakeStabilizationPolicy {
         isTargetExpected: Bool,
         retryCount: Int
     ) -> Bool {
-        isTargetExpected && retryCount < maxRetries
+        // maxRetries only separates the initial aggressive phase from the
+        // background phase. It must never turn a missing target into a
+        // successful-looking ready state.
+        isTargetExpected
+    }
+
+    static func retryDelay(afterRetryCount retryCount: Int) -> TimeInterval {
+        retryCount < maxRetries ? aggressiveRetryDelay : backgroundRetryDelay
     }
 }
-

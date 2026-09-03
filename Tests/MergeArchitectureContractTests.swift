@@ -65,12 +65,13 @@ struct MergeArchitectureContractTests {
         expect(displayFeatures.contains("extension DisplayCoordinator")
             && displayBrightnessRuntime.contains("extension DisplayCoordinator"),
                "Display feature implementation must be separated from lifecycle composition")
-        expect(displayCoordinator.contains("await self.reloadDisplayInfo(reloadModes: false)")
-            && displayCoordinator.firstRange(of: "await self.reloadDisplayInfo(reloadModes: false)")!.lowerBound
-                < displayCoordinator.firstRange(of: "await self.reloadDisplayModes()")!.lowerBound
-            && displayRuntime.contains("func reloadDisplayInfo(reloadModes: Bool = true)")
+        expect(displayPowerLifecycle.contains("await reloadDisplayInfo(reloadModes: false, allowDuringPostWake: true)")
+            && displayPowerLifecycle.firstRange(of: "await reloadDisplayInfo(reloadModes: false, allowDuringPostWake: true)")!.lowerBound
+                < displayPowerLifecycle.firstRange(of: "await reloadDisplayModes(allowDuringPostWake: true)")!.lowerBound
+            && displayRuntime.contains("func reloadDisplayInfo(")
+            && displayRuntime.contains("allowDuringPostWake")
             && displayRuntime.contains("updateCapabilities()"),
-               "External display discovery must publish before the synchronous HiDPI scan")
+               "Controlled target recovery must publish display discovery before its HiDPI scan")
         expect(displayComposition.contains("final class DisplayBrightnessCoordinator")
             && displayComposition.contains("final class DisplayVolumeCoordinator")
             && displayComposition.contains("final class DisplayHiDPICoordinator"),
@@ -199,7 +200,9 @@ struct MergeArchitectureContractTests {
             && displayPowerModel.contains("case systemSleeping")
             && displayPowerModel.contains("case waking")
             && displayPowerModel.contains("generation")
-            && displayPowerModel.contains("DisplayPowerOperationGate"),
+            && displayPowerModel.contains("DisplayPowerOperationGate")
+            && displayPowerModel.contains("TargetDisplayReadiness")
+            && displayPowerModel.contains("TargetDisplayOperationGate"),
                "Display power state must have explicit, generation-based lifecycle ownership")
         expect(displayCoordinator.contains("willSleepNotification")
             && displayCoordinator.contains("screensDidSleepNotification")
@@ -211,15 +214,21 @@ struct MergeArchitectureContractTests {
         expect(displayPowerLifecycle.contains("suspendDisplayRuntimeWork()")
             && displayPowerLifecycle.contains("Task.sleep")
             && displayPowerLifecycle.contains("displayStackIsOnlineAndActive")
-            && displayPowerLifecycle.contains("DisplayPowerOperationGate.shared.activate"),
+            && displayPowerLifecycle.contains("DisplayPowerOperationGate.shared.activate")
+            && displayPowerLifecycle.contains("beginTargetDisplayReadinessRecovery")
+            && displayPowerLifecycle.contains("retryDelay(")
+            && displayPowerLifecycle.contains("afterRetryCount:"),
                "Wake must use an asynchronous stabilization phase before display operations resume")
-        expect(displayBrightnessRuntime.contains("guard displayOperationsAllowed")
+        expect(displayBrightnessRuntime.contains("guard displayReadOperationsAllowed")
+            && displayBrightnessRuntime.contains("externalDisplayReadOperationsAllowed")
             && displayBrightnessRuntime.contains("acceptsDisplayPowerGeneration(tickPowerGeneration)"),
-               "Display ticks must be power-gated before and after awaited hardware work")
+               "Display ticks must separate read-side work and power/target epochs")
         expect(hiDPIReapply.contains("pendingTriggerWhilePowerBlocked")
             && hiDPIReapply.contains("beginExecution(for:")
             && hiDPIReapply.contains("performWithoutReapplyInterventionAsync")
             && hiDPIReapply.contains("reapplyCompletionHandler")
+            && hiDPIReapply.contains("targetDisplayReadiness")
+            && hiDPIReapply.contains("suspendForTargetTransition")
             && !hiDPIReapply.contains("DispatchWorkItem")
             && hiDPILifecycle.contains("case scheduled")
             && hiDPILifecycle.contains("case executing")
@@ -236,7 +245,10 @@ struct MergeArchitectureContractTests {
             && m1DDC.contains("operationGate")
             && m1DDC.contains("guard !selector.isEmpty")
             && m1DDC.contains("cancelInFlightOperations")
-            && m1DDC.contains("inFlightProcessHandles"),
+            && m1DDC.contains("inFlightProcessHandles")
+            && m1DDC.contains("targetOperationGate")
+            && m1DDC.contains("targetContext")
+            && m1DDC.contains("CGDisplayIsActive(targetDisplayID)"),
                "DDC subprocesses must retain timeout/cancellation safety and reject empty selectors")
         expect(displayConnection.contains("DisplayPowerOperationGate")
             && displayConnection.contains("operationGate.accepts(expectedGeneration)")

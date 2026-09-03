@@ -16,6 +16,8 @@ struct DisplayFeatureSmoke {
         testLatestValueWriteGate()
         testDisplayPowerLifecycle()
         testTargetDisplayWakeStabilizationPolicy()
+        testTargetDisplayReadinessFailClosed()
+        testDisplayOperationGates()
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
@@ -142,6 +144,7 @@ struct DisplayFeatureSmoke {
         let wakingSnapshot = lifecycle.snapshot(isHiDPIAllowed: true)
         precondition(wakingSnapshot.state == .waking)
         precondition(!wakingSnapshot.isHiDPIAllowed)
+        precondition(!wakingSnapshot.targetDisplayReadiness.isReady)
 
         precondition(lifecycle.activateIfReady(now: wakeStart.addingTimeInterval(6)))
 
@@ -173,8 +176,148 @@ struct DisplayFeatureSmoke {
         // Retry limit policy
         precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 0))
         precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 4))
-        precondition(!TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 5))
+        precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 5))
+        precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 20))
         precondition(!TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: false, retryCount: 0))
+        precondition(TargetDisplayWakeStabilizationPolicy.retryDelay(afterRetryCount: 0) == 1)
+        precondition(TargetDisplayWakeStabilizationPolicy.retryDelay(afterRetryCount: 4) == 1)
+        precondition(TargetDisplayWakeStabilizationPolicy.retryDelay(afterRetryCount: 5) == 3)
+        precondition(TargetDisplayWakeStabilizationPolicy.retryDelay(afterRetryCount: 20) == 3)
+    }
+
+    private static func testTargetDisplayReadinessFailClosed() {
+        let gate = TargetDisplayOperationGate()
+        let initial = TargetDisplayWakeCandidate(displayID: 42, isOnline: true, isActive: true)
+        let sameID = TargetDisplayWakeCandidate(displayID: 42, isOnline: true, isActive: true)
+        let changedID = TargetDisplayWakeCandidate(displayID: 43, isOnline: true, isActive: true)
+
+        // A. Missing target and B/C. Five or twenty failed retries never
+        // become an external-operation success.
+        gate.beginStabilizing()
+        for retryCount in [0, 5, 20] {
+            precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(
+                isTargetExpected: true,
+                retryCount: retryCount
+            ))
+            precondition(!gate.snapshot().isReady)
+        }
+        var ddcWrites = 0
+        var cgsApplies = 0
+        if gate.snapshot().isReady {
+            ddcWrites += 1
+            cgsApplies += 1
+        }
+        precondition(ddcWrites == 0)
+        precondition(cgsApplies == 0)
+
+        // D. Two matching samples make one readiness/recovery epoch.
+        precondition(TargetDisplayWakeStabilizationPolicy.isCandidateValid(
+            initial: initial,
+            confirmed: sameID
+        ))
+        let firstReadyGeneration = gate.markReady(displayID: sameID.displayID)
+        precondition(gate.accepts(firstReadyGeneration, displayID: sameID.displayID))
+        var recoveryChains = 1
+        let duplicateGeneration = gate.markReady(displayID: sameID.displayID)
+        if duplicateGeneration != firstReadyGeneration {
+            recoveryChains += 1
+        }
+        precondition(recoveryChains == 1)
+
+        // E. A display ID change in the confirmation window is not ready.
+        gate.beginStabilizing()
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(
+            initial: initial,
+            confirmed: changedID
+        ))
+        precondition(!gate.snapshot().isReady)
+
+        // F/G. Offline/invalidation blocks the old epoch; the same stable
+        // target can later reappear and produce exactly one new chain.
+        gate.invalidate()
+        gate.beginStabilizing()
+        precondition(!gate.snapshot().isReady)
+        let reappearedGeneration = gate.markReady(displayID: sameID.displayID)
+        precondition(gate.accepts(reappearedGeneration, displayID: sameID.displayID))
+        precondition(!gate.accepts(firstReadyGeneration, displayID: sameID.displayID))
+        precondition(gate.markReady(displayID: sameID.displayID) == reappearedGeneration)
+        precondition(TargetDisplayWakeStabilizationPolicy.isCandidateValid(
+            initial: initial,
+            confirmed: sameID
+        ))
+    }
+
+    private static func testDisplayOperationGates() {
+        let ready = TargetDisplayReadiness.ready(displayID: 42)
+        let unavailable = TargetDisplayReadiness.unavailable
+
+        // H/J. Slider, volume-key, and mute-style interactive writes are all
+        // blocked during controlled post-wake refresh.
+        precondition(DisplayOperationPolicy.readOperationsAllowed(
+            isRunning: true,
+            powerState: .active
+        ))
+        precondition(!DisplayOperationPolicy.interactiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: true
+        ))
+        precondition(!DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: true,
+            targetReadiness: ready
+        ))
+
+        // L/M. Controlled reads and the internal scheduler's read-side work
+        // remain allowed while the interactive side is closed.
+        precondition(DisplayOperationPolicy.externalReadOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            targetReadiness: ready
+        ))
+        precondition(DisplayOperationPolicy.readOperationsAllowed(
+            isRunning: true,
+            powerState: .active
+        ))
+
+        // A. Target readiness independently blocks external DDC/CGS work,
+        // while the global runtime can remain active for built-in features.
+        precondition(DisplayOperationPolicy.readOperationsAllowed(
+            isRunning: true,
+            powerState: .active
+        ))
+        precondition(!DisplayOperationPolicy.externalReadOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            targetReadiness: unavailable
+        ))
+        precondition(!DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: false,
+            targetReadiness: unavailable
+        ))
+        for powerState in [DisplayPowerState.screenSleeping, .systemSleeping, .waking] {
+            precondition(!DisplayOperationPolicy.interactiveOperationsAllowed(
+                isRunning: true,
+                powerState: powerState,
+                isPostWakeRefreshInProgress: false
+            ))
+        }
+
+        // K/N. Once refresh completes, user intent is eligible again; a
+        // stale queued command is still rejected by the latest-intent gate.
+        precondition(DisplayOperationPolicy.externalInteractiveOperationsAllowed(
+            isRunning: true,
+            powerState: .active,
+            isPostWakeRefreshInProgress: false,
+            targetReadiness: ready
+        ))
+        var latestIntent = LatestValueWriteGate()
+        let queuedGeneration = latestIntent.startRequest()
+        latestIntent.invalidate()
+        precondition(!latestIntent.accepts(queuedGeneration))
     }
 
     private static func testExternalSliderInteractionPolicy() {

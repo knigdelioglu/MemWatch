@@ -4,12 +4,20 @@ import Foundation
 extension DisplayCoordinator {
     @discardableResult
     func setHiDPIEnabled(_ enabled: Bool) async -> Bool {
-        guard displayOperationsAllowed else { return false }
+        guard externalDisplayInteractiveOperationsAllowed else { return false }
         let powerGeneration = displayPowerGeneration
+        let targetSnapshot = targetDisplayOperationGate.snapshot()
+        guard let targetDisplayID = targetSnapshot.displayID else { return false }
         do {
             let target = try HiDPITargetDisplayResolver.resolveSamsungS60UD()
             guard target.isOnline, target.isActive,
-                  acceptsDisplayPowerGeneration(powerGeneration) else { return false }
+                  target.displayID == targetDisplayID,
+                  externalDisplayInteractiveOperationsAllowed,
+                  acceptsDisplayPowerGeneration(powerGeneration),
+                  targetDisplayOperationGate.accepts(
+                      targetSnapshot.generation,
+                      displayID: targetDisplayID
+                  ) else { return false }
             let _ = hiDPICoordinator.modeSwitcher.scanCGSModes(displayID: target.displayID)
             let status = hiDPICoordinator.modeSwitcher.refreshCGSModes(displayID: target.displayID)
             cgsManualModeSwitcherSummary = status
@@ -68,13 +76,24 @@ extension DisplayCoordinator {
             }
 
             let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: Int(selectedCandidate.modeID))
-            guard acceptsDisplayPowerGeneration(powerGeneration) else { return false }
+            guard externalDisplayInteractiveOperationsAllowed,
+                  acceptsDisplayPowerGeneration(powerGeneration),
+                  targetDisplayOperationGate.accepts(
+                      targetSnapshot.generation,
+                      displayID: targetDisplayID
+                  ) else { return false }
             if report.success {
+                await reloadDisplayModes()
+                guard externalDisplayInteractiveOperationsAllowed,
+                      acceptsDisplayPowerGeneration(powerGeneration),
+                      targetDisplayOperationGate.accepts(
+                          targetSnapshot.generation,
+                          displayID: targetDisplayID
+                      ) else { return false }
                 persistHiDPIState(enabled: enabled)
                 hiDPIStatusText = "Mevcut Mod: \(selectedCandidate.logicalWidth)x\(selectedCandidate.logicalHeight) / \(selectedCandidate.pixelWidth)x\(selectedCandidate.pixelHeight) @\(Int(selectedCandidate.refreshRate.rounded()))Hz"
                 isHiDPIActive = enabled
                 updateStatus(selection.updateMessage)
-                await reloadDisplayModes()
                 return true
             }
 
@@ -115,7 +134,7 @@ extension DisplayCoordinator {
 
     @objc func runHiDPIModePoolDiagnosticAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             HiDPIDiagnostic.runModePoolDiagnostic()
             guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
@@ -125,7 +144,7 @@ extension DisplayCoordinator {
 
     @objc func runExperimentalHiDPIActivationAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             hiDPIActivationStatusText = "Private SLS transaction activation çalışıyor..."
             updateStatus("Private SLS transaction running")
@@ -138,7 +157,7 @@ extension DisplayCoordinator {
 
     @objc func runCGSModeEnumerationAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             do {
                 let summary = try CGSModeEnumerationDiagnostic.runEnumeration()
@@ -158,7 +177,7 @@ extension DisplayCoordinator {
 
     @objc func runCGSMode74WithoutBetterDisplayCheckAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             do {
                 let summary = try CGSModeEnumerationDiagnostic.runWithoutBetterDisplayVerification()
@@ -178,7 +197,7 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode56Action() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             guard let summary = cgsManualModeSwitcherSummary, summary.canApplyMode56 else {
                 cgsManualModeSwitcherStatusText = "Current CGS Mode: unavailable"
                 updateStatus("CGS mode 56 apply blocked")
@@ -186,8 +205,15 @@ extension DisplayCoordinator {
             }
 
             let powerGeneration = displayPowerGeneration
+            let targetSnapshot = targetDisplayOperationGate.snapshot()
+            guard let targetDisplayID = targetSnapshot.displayID else { return }
             let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 56)
-            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
+            guard externalDisplayInteractiveOperationsAllowed,
+                  acceptsDisplayPowerGeneration(powerGeneration),
+                  targetDisplayOperationGate.accepts(
+                      targetSnapshot.generation,
+                      displayID: targetDisplayID
+                  ) else { return }
             refreshCGSModeSwitcherState()
             if report.success {
                 updateStatus("CGS mode 56 applied")
@@ -199,7 +225,7 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode74Action() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             guard let summary = cgsManualModeSwitcherSummary, summary.canApplyMode74 else {
                 cgsManualModeSwitcherStatusText = "Current CGS Mode: unavailable"
                 updateStatus("CGS mode 74 apply blocked")
@@ -207,8 +233,15 @@ extension DisplayCoordinator {
             }
 
             let powerGeneration = displayPowerGeneration
+            let targetSnapshot = targetDisplayOperationGate.snapshot()
+            guard let targetDisplayID = targetSnapshot.displayID else { return }
             let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 74)
-            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
+            guard externalDisplayInteractiveOperationsAllowed,
+                  acceptsDisplayPowerGeneration(powerGeneration),
+                  targetDisplayOperationGate.accepts(
+                      targetSnapshot.generation,
+                      displayID: targetDisplayID
+                  ) else { return }
             refreshCGSModeSwitcherState()
             if report.success {
                 updateStatus("CGS mode 74 applied")
@@ -220,7 +253,7 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode56NormalQHDTransactionAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             guard let summary = cgsModeEnumerationSummary else {
                 cgsModeApplyExperimentStatusText = "CGS enumeration önce çalıştırılmalı."
@@ -253,7 +286,7 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode74TransactionAction() {
         Task {
-            guard displayOperationsAllowed else { return }
+            guard externalDisplayInteractiveOperationsAllowed else { return }
             let powerGeneration = displayPowerGeneration
             guard let summary = cgsModeEnumerationSummary else {
                 cgsModeApplyExperimentStatusText = "CGS enumeration önce çalıştırılmalı."

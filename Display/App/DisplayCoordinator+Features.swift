@@ -8,11 +8,20 @@ extension DisplayCoordinator {
         hiDPIActivationStatusText = enabled ? "HiDPI enabled" : "HiDPI disabled"
     }
 
-    func reloadDisplayModes() async {
-        guard displayOperationsAllowed else { return }
+    func reloadDisplayModes(allowDuringPostWake: Bool = false) async {
+        let operationsAllowed = allowDuringPostWake
+            ? externalDisplayReadOperationsAllowed
+            : externalDisplayInteractiveOperationsAllowed
+        guard operationsAllowed else { return }
         let powerGeneration = displayPowerGeneration
+        let targetSnapshot = targetDisplayOperationGate.snapshot()
+        guard let targetDisplayID = targetSnapshot.displayID else { return }
         let snapshot = await hiDPICoordinator.refreshService.reloadDisplayModes(currentActivationStatusText: hiDPIActivationStatusText)
-        guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              targetDisplayOperationGate.accepts(
+                  targetSnapshot.generation,
+                  displayID: targetDisplayID
+              ) else { return }
         availableModes = snapshot.availableModes
         cgsManualModeSwitcherSummary = snapshot.manualModeSwitcherSummary
         cgsManualModeSwitcherStatusText = snapshot.manualModeSwitcherStatusText
@@ -34,7 +43,7 @@ extension DisplayCoordinator {
     }
 
     func refreshCGSModeSwitcherState() {
-        guard displayOperationsAllowed else { return }
+        guard externalDisplayReadOperationsAllowed else { return }
         let summary = hiDPICoordinator.refreshService.refreshCGSModeSwitcherState()
         cgsManualModeSwitcherSummary = summary
         cgsManualModeSwitcherStatusText = summary?.currentModeText ?? "Current CGS Mode: unavailable"

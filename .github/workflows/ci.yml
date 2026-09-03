@@ -59,6 +59,7 @@ jobs:
         run: |
           xcrun swiftc \
             -parse-as-library \
+            Display/App/DisplayPowerLifecycle.swift \
             Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift \
             Display/DisplayControl/Brightness/BrightnessState.swift \
             Tests/DisplayLatestIntentTests.swift \

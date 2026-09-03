@@ -15,6 +15,11 @@ Build/
 .build/
 .swiftpm/
 
+# Distribution / Releases
+dist/
+*.dmg
+*.dmg.sha256
+
 # Local settings
 *.local
 .env
