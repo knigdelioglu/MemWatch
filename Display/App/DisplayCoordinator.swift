@@ -201,8 +201,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         let taskToken = displayTickTaskToken
         displayTickTask = Task { @MainActor [weak self] in
             defer {
-                guard let self, self.displayTickTaskToken == taskToken else { return }
-                self.displayTickTask = nil
+                if let self, self.displayTickTaskToken == taskToken {
+                    self.displayTickTask = nil
+                }
             }
             await self?.tick()
         }
