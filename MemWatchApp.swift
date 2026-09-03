@@ -534,7 +534,6 @@ private struct SmartMenuBarRootView: View {
     private var overview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                healthCard
                 keepAwakeCard
                 memoryFocusCard
                 displayCard
@@ -544,34 +543,6 @@ private struct SmartMenuBarRootView: View {
                 controlsRow
             }
             .padding(16)
-        }
-    }
-
-    private var healthCard: some View {
-        HStack(alignment: .top, spacing: 13) {
-            Image(systemName: healthSymbol)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(healthColor)
-                .frame(width: 34)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(healthTitle)
-                    .font(.title2.weight(.semibold))
-
-                Text(healthMessage)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 4)
-        }
-        .padding(15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(healthColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(healthColor.opacity(0.28), lineWidth: 1)
         }
     }
 
@@ -840,75 +811,6 @@ private struct SmartMenuBarRootView: View {
             .buttonStyle(.bordered)
             .help("Refresh")
         }
-    }
-
-    private var healthTitle: String {
-        if isCritical { return "Mac needs attention" }
-        if needsAttention { return "Keep an eye on this" }
-        return "Mac is doing well"
-    }
-
-    private var healthMessage: String {
-        if monitor.diagnostics.thermalState == .critical {
-            return "The system thermal state is critical. Reduce sustained load and let the Mac cool down."
-        }
-        if let volume = monitor.storageVolumes.first(where: { $0.health == .critical }) {
-            return "\(volume.name) is critically low on free space. Freeing storage should be the next action."
-        }
-
-        switch intelligence.state {
-        case .critical:
-            return "Memory pressure and swap activity are critical. If the Mac is slowing down, close one heavy app first."
-        case .pressure:
-            return "Memory pressure is elevated. The heaviest apps below are the first place to look if responsiveness drops."
-        case .activeSwap:
-            return "macOS is actively moving memory to disk. No action is needed unless this persists or the Mac starts to feel slow."
-        case .readback:
-            return "macOS is bringing previously swapped data back into RAM. This is informational, not an alert."
-        case .idleSwap:
-            return "Swap contains older data, but there is no current memory pressure. No action is needed."
-        case .stable:
-            if monitor.diagnostics.thermalState == .serious {
-                return "Memory is healthy, but the Mac is running hot."
-            }
-            if let volume = monitor.storageVolumes.first(where: { $0.health == .warning }) {
-                return "Memory is healthy. \(volume.name) is starting to run low on free space."
-            }
-            return "No action is needed. MemWatch will become noticeable only when something deserves attention."
-        }
-    }
-
-    private var healthSymbol: String {
-        if monitor.diagnostics.thermalState == .critical { return "thermometer.high" }
-        if monitor.storageVolumes.contains(where: { $0.health == .critical }) {
-            return "externaldrive.badge.exclamationmark"
-        }
-        switch intelligence.state {
-        case .stable, .idleSwap: return "checkmark.circle.fill"
-        case .readback: return "arrow.down.circle.fill"
-        case .activeSwap: return "arrow.left.arrow.right.circle.fill"
-        case .pressure: return "exclamationmark.triangle.fill"
-        case .critical: return "exclamationmark.octagon.fill"
-        }
-    }
-
-    private var healthColor: Color {
-        if isCritical { return .red }
-        if needsAttention { return .orange }
-        return .green
-    }
-
-    private var isCritical: Bool {
-        monitor.diagnostics.thermalState == .critical ||
-            intelligence.state == .critical ||
-            monitor.storageVolumes.contains(where: { $0.health == .critical })
-    }
-
-    private var needsAttention: Bool {
-        monitor.diagnostics.thermalState == .serious ||
-            intelligence.state == .activeSwap ||
-            intelligence.state == .pressure ||
-            monitor.storageVolumes.contains(where: { $0.health == .warning })
     }
 
     private var memoryStateLabel: String {
