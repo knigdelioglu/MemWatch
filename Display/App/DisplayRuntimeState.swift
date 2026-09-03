@@ -87,6 +87,7 @@ final class DisplayRuntimeState: ObservableObject {
     let diagnostics: DisplayDiagnosticsRuntimeState
     let hiDPI: DisplayHiDPIRuntimeState
 
+    @Published var powerLifecycle = DisplayPowerLifecycle()
     @Published var keepAwakeState: KeepAwakeState
     @Published var currentIdleTimeString = "00:00"
     @Published var remainingIdleTimeString = "--:--"

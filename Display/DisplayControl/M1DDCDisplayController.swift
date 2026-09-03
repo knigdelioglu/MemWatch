@@ -42,6 +42,43 @@ private final class ResumeGuard: @unchecked Sendable {
     }
 }
 
+private final class M1DDCProcessHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var cancelled = false
+
+    func install(_ process: Process) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !cancelled else { return false }
+        self.process = process
+        return true
+    }
+
+    func isCancelled() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let process = self.process
+        lock.unlock()
+
+        if process?.isRunning == true {
+            process?.terminate()
+        }
+    }
+
+    func clear() {
+        lock.lock()
+        process = nil
+        lock.unlock()
+    }
+}
+
 struct M1DDCExecutableLocator {
     static let defaultCandidates = [
         "/opt/homebrew/bin/m1ddc",
@@ -77,6 +114,8 @@ actor M1DDCWriter {
     private static let targetProductID: UInt32 = 0x76AB
     private static let processTimeout: TimeInterval = 5.0
     private let workQueue = DispatchQueue(label: "com.ambientsync.m1ddc-worker")
+    private let operationGate: DisplayPowerOperationGate
+    private var inFlightProcessHandles: [ObjectIdentifier: M1DDCProcessHandle] = [:]
 
     private let executableLocator: M1DDCExecutableLocator
     private var executableURL: URL?
@@ -89,22 +128,43 @@ actor M1DDCWriter {
     private let discoveryCacheInterval: TimeInterval = 6.0
     private let executableCacheInterval: TimeInterval = 5.0
 
-    init(executableLocator: M1DDCExecutableLocator = M1DDCExecutableLocator()) {
+    init(
+        executableLocator: M1DDCExecutableLocator = M1DDCExecutableLocator(),
+        operationGate: DisplayPowerOperationGate = .shared
+    ) {
         self.executableLocator = executableLocator
+        self.operationGate = operationGate
         executableURL = nil
         currentDisplayInfo = nil 
     }
 
     func isAvailable(refresh: Bool = false) -> Bool {
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return false }
         refreshExecutableAvailability(force: refresh)
-        return executableURL != nil
+        return operationGate.accepts(operationGeneration) && executableURL != nil
+    }
+
+    /// Terminates every DDC subprocess owned by this writer at a power
+    /// boundary. This complements cancellation of coordinator-owned tasks and
+    /// prevents a diagnostic or refresh task from leaving m1ddc running into
+    /// sleep.
+    func cancelInFlightOperations() {
+        inFlightProcessHandles.values.forEach { $0.cancel() }
     }
 
     func refreshDisplay(preferredKey: String?) async -> ExternalDisplayInfo? {
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return nil }
         refreshExecutableAvailability(force: true)
 
         if executableURL != nil {
-            if let display = await selectDisplay(preferredKey: preferredKey, forceRefresh: true) {
+            if let display = await selectDisplay(
+                preferredKey: preferredKey,
+                forceRefresh: true,
+                expectedGeneration: operationGeneration
+            ) {
+                guard operationGate.accepts(operationGeneration) else { return nil }
                 currentDisplayInfo = display
                 return display
             }
@@ -114,15 +174,23 @@ actor M1DDCWriter {
         // for whether a supported monitor is physically connected. On newer
         // macOS/display-driver combinations its list command can be empty while
         // CoreGraphics still exposes the online monitor and its fingerprint.
+        guard operationGate.accepts(operationGeneration) else { return nil }
         let fallbackDisplays = Self.discoverCoreGraphicsDisplays()
         let display = Self.selectDisplay(fallbackDisplays, preferredKey: preferredKey)
+        guard operationGate.accepts(operationGeneration) else { return nil }
         currentDisplayInfo = display
         return display
     }
 
     func currentBrightness() async -> Int? {
-        guard let display = await selectDisplay(preferredKey: nil) else { return nil }
-        if let sample = await readBrightnessRaw(displayIndex: Self.ddcSelector(for: display)),
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return nil }
+        guard let display = await selectDisplay(preferredKey: nil, expectedGeneration: operationGeneration) else { return nil }
+        if let sample = await readBrightnessRaw(
+            displayIndex: Self.ddcSelector(for: display),
+            expectedGeneration: operationGeneration
+        ),
+           operationGate.accepts(operationGeneration),
            let rawCurrent = sample.rawCurrent,
            let rawMax = sample.rawMax
         {
@@ -130,22 +198,41 @@ actor M1DDCWriter {
             lastKnownBrightnessByDisplay[display.displayKey] = value
             return value
         }
+        guard operationGate.accepts(operationGeneration) else { return nil }
         return lastKnownBrightnessByDisplay[display.displayKey]
     }
 
     func readBrightness(preferredKey: String? = nil) async -> Int? {
-        guard let display = await selectDisplay(preferredKey: preferredKey) else { return nil }
-        return await readBrightness(displayIndex: Self.ddcSelector(for: display))
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return nil }
+        guard let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration) else { return nil }
+        return await readBrightness(
+            displayIndex: Self.ddcSelector(for: display),
+            expectedGeneration: operationGeneration
+        )
     }
 
     func readBrightnessRaw(preferredKey: String? = nil) async -> DDCBrightnessRawSample? {
-        guard let display = await selectDisplay(preferredKey: preferredKey) else { return nil }
-        return await readBrightnessRaw(displayIndex: Self.ddcSelector(for: display))
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return nil }
+        guard let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration) else { return nil }
+        return await readBrightnessRaw(
+            displayIndex: Self.ddcSelector(for: display),
+            expectedGeneration: operationGeneration
+        )
     }
 
     func currentVolume() async -> Int? {
-        guard let display = await selectDisplay(preferredKey: nil) else { return nil }
-        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "get", "volume"])
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return nil }
+        guard let display = await selectDisplay(preferredKey: nil, expectedGeneration: operationGeneration) else { return nil }
+        let selector = Self.ddcSelector(for: display)
+        guard !selector.isEmpty else { return nil }
+        let result = await run(
+            arguments: ["display", selector, "get", "volume"],
+            expectedGeneration: operationGeneration
+        )
+        guard operationGate.accepts(operationGeneration) else { return nil }
         if result.success, let value = Self.parsePercent(from: result.output) {
             lastKnownVolumeByDisplay[display.displayKey] = value
             return value
@@ -154,8 +241,15 @@ actor M1DDCWriter {
     }
 
     func setBrightness(_ percent: Int, preferredKey: String? = nil) async -> M1DDCBrightnessWriteResult {
-        let display = await selectDisplay(preferredKey: preferredKey)
         let clamped = min(100, max(0, percent))
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
+        let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration)
+        guard operationGate.accepts(operationGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
         guard let display else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -172,22 +266,62 @@ actor M1DDCWriter {
                 matchedTarget: nil
             )
         }
-        let firstResult = await setBrightness(clamped, for: display)
+        let firstResult = await setBrightness(
+            clamped,
+            for: display,
+            expectedGeneration: operationGeneration
+        )
         if firstResult.success {
             return firstResult
         }
 
-        guard let refreshed = await selectDisplay(preferredKey: preferredKey, forceRefresh: true) else {
+        guard operationGate.accepts(operationGeneration) else { return firstResult }
+
+        guard let refreshed = await selectDisplay(
+            preferredKey: preferredKey,
+            forceRefresh: true,
+            expectedGeneration: operationGeneration
+        ) else {
             return firstResult
         }
-        return await setBrightness(clamped, for: refreshed)
+        return await setBrightness(
+            clamped,
+            for: refreshed,
+            expectedGeneration: operationGeneration
+        )
+    }
+
+    private static func suspendedBrightnessWriteResult(for percent: Int) -> M1DDCBrightnessWriteResult {
+        M1DDCBrightnessWriteResult(
+            success: false,
+            status: .writeFailed,
+            message: "Display runtime suspended",
+            requestedUIPercent: percent,
+            rawMax: nil,
+            computedRawTarget: nil,
+            rawBefore: nil,
+            rawAfter: nil,
+            actualUIPercentAfter: nil,
+            readbackBrightnessPercent: nil,
+            readbackAvailable: false,
+            matchedTarget: nil
+        )
     }
 
     func setVolume(_ percent: Int, preferredKey: String? = nil) async -> (Bool, String) {
-        let display = await selectDisplay(preferredKey: preferredKey)
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
+        let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration)
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         guard let display else { return (false, "Samsung S60UD display not found") }
         let clamped = min(100, max(0, percent))
-        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "set", "volume", "\(clamped)"])
+        let selector = Self.ddcSelector(for: display)
+        guard !selector.isEmpty else { return (false, "DDC selector unavailable") }
+        let result = await run(
+            arguments: ["display", selector, "set", "volume", "\(clamped)"],
+            expectedGeneration: operationGeneration
+        )
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         if result.success {
             lastKnownVolumeByDisplay[display.displayKey] = clamped
         }
@@ -195,9 +329,18 @@ actor M1DDCWriter {
     }
 
     func changeVolume(_ delta: Int, preferredKey: String? = nil) async -> (Bool, String) {
-        let display = await selectDisplay(preferredKey: preferredKey)
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
+        let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration)
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         guard let display else { return (false, "Samsung S60UD display not found") }
-        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "chg", "volume", "\(delta)"])
+        let selector = Self.ddcSelector(for: display)
+        guard !selector.isEmpty else { return (false, "DDC selector unavailable") }
+        let result = await run(
+            arguments: ["display", selector, "chg", "volume", "\(delta)"],
+            expectedGeneration: operationGeneration
+        )
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         if result.success {
             let base = lastKnownVolumeByDisplay[display.displayKey] ?? 50
             lastKnownVolumeByDisplay[display.displayKey] = min(100, max(0, base + delta))
@@ -206,16 +349,30 @@ actor M1DDCWriter {
     }
 
     func setMute(_ enabled: Bool, preferredKey: String? = nil) async -> (Bool, String) {
-        let display = await selectDisplay(preferredKey: preferredKey)
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
+        let display = await selectDisplay(preferredKey: preferredKey, expectedGeneration: operationGeneration)
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         guard let display else { return (false, "Samsung S60UD display not found") }
-        let result = await run(arguments: ["display", Self.ddcSelector(for: display), "set", "mute", enabled ? "on" : "off"])
+        let selector = Self.ddcSelector(for: display)
+        guard !selector.isEmpty else { return (false, "DDC selector unavailable") }
+        let result = await run(
+            arguments: ["display", selector, "set", "mute", enabled ? "on" : "off"],
+            expectedGeneration: operationGeneration
+        )
+        guard operationGate.accepts(operationGeneration) else { return (false, "Display runtime suspended") }
         if result.success {
             lastKnownVolumeByDisplay[display.displayKey] = enabled ? 0 : (lastKnownVolumeByDisplay[display.displayKey] ?? 50)
         }
         return (result.success, result.output)
     }
 
-    private func selectDisplay(preferredKey: String?, forceRefresh: Bool = false) async -> ExternalDisplayInfo? {
+    private func selectDisplay(
+        preferredKey: String?,
+        forceRefresh: Bool = false,
+        expectedGeneration: UInt64? = nil
+    ) async -> ExternalDisplayInfo? {
+        guard acceptsOperation(expectedGeneration) else { return nil }
         if
             !forceRefresh,
             let currentDisplayInfo,
@@ -224,7 +381,11 @@ actor M1DDCWriter {
             return currentDisplayInfo
         }
 
-        let displays = await discoverDisplays(forceRefresh: forceRefresh || preferredKey != nil)
+        let displays = await discoverDisplays(
+            forceRefresh: forceRefresh || preferredKey != nil,
+            expectedGeneration: expectedGeneration
+        )
+        guard acceptsOperation(expectedGeneration) else { return nil }
         guard !displays.isEmpty else {
             currentDisplayInfo = nil
             return nil
@@ -279,7 +440,11 @@ actor M1DDCWriter {
         ddcSelector(for: display)
     }
 
-    private func discoverDisplays(forceRefresh: Bool) async -> [ExternalDisplayInfo] {
+    private func discoverDisplays(
+        forceRefresh: Bool,
+        expectedGeneration: UInt64? = nil
+    ) async -> [ExternalDisplayInfo] {
+        guard acceptsOperation(expectedGeneration) else { return [] }
         refreshExecutableAvailability(force: forceRefresh)
         guard executableURL != nil else {
             cachedDisplays = []
@@ -295,7 +460,11 @@ actor M1DDCWriter {
             return cachedDisplays
         }
 
-        let result = await run(arguments: ["display", "list", "detailed"])
+        let result = await run(
+            arguments: ["display", "list", "detailed"],
+            expectedGeneration: expectedGeneration
+        )
+        guard acceptsOperation(expectedGeneration) else { return [] }
         lastDiscoveryDate = now
         guard result.success else { return cachedDisplays }
         let parsed = Self.parseDisplays(result.output)
@@ -305,6 +474,13 @@ actor M1DDCWriter {
             cachedDisplays = []
         }
         return cachedDisplays
+    }
+
+    private func acceptsOperation(_ expectedGeneration: UInt64?) -> Bool {
+        if let expectedGeneration {
+            return operationGate.accepts(expectedGeneration)
+        }
+        return operationGate.isAllowed()
     }
 
     static func isSupportedTargetDisplay(
@@ -393,9 +569,22 @@ actor M1DDCWriter {
         }
     }
 
-    private func setBrightness(_ clamped: Int, for display: ExternalDisplayInfo) async -> M1DDCBrightnessWriteResult {
+    private func setBrightness(
+        _ clamped: Int,
+        for display: ExternalDisplayInfo,
+        expectedGeneration: UInt64
+    ) async -> M1DDCBrightnessWriteResult {
         let selector = Self.ddcSelector(for: display)
-        let beforeSample = await readBrightnessSample(displayIndex: selector)
+        guard operationGate.accepts(expectedGeneration), !selector.isEmpty else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
+        let beforeSample = await readBrightnessSample(
+            displayIndex: selector,
+            expectedGeneration: expectedGeneration
+        )
+        guard operationGate.accepts(expectedGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
         guard let rawMax = beforeSample?.rawMax else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -415,7 +604,13 @@ actor M1DDCWriter {
 
         let rawBefore = beforeSample?.rawCurrent
         let computedRawTarget = DDCBrightnessScale.rawTarget(forUIPercent: clamped, rawMax: rawMax)
-        let result = await run(arguments: ["display", selector, "set", "luminance", "\(computedRawTarget)"])
+        let result = await run(
+            arguments: ["display", selector, "set", "luminance", "\(computedRawTarget)"],
+            expectedGeneration: expectedGeneration
+        )
+        guard operationGate.accepts(expectedGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
         guard result.success else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -432,9 +627,21 @@ actor M1DDCWriter {
                 matchedTarget: nil
             )
         }
-
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        let afterSample = await readBrightnessSample(displayIndex: selector)
+        do {
+            try await Task.sleep(nanoseconds: 500_000_000)
+        } catch {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
+        guard !Task.isCancelled, operationGate.accepts(expectedGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
+        let afterSample = await readBrightnessSample(
+            displayIndex: selector,
+            expectedGeneration: expectedGeneration
+        )
+        guard operationGate.accepts(expectedGeneration) else {
+            return Self.suspendedBrightnessWriteResult(for: clamped)
+        }
         guard let rawAfter = afterSample?.rawCurrent else {
             return M1DDCBrightnessWriteResult(
                 success: false,
@@ -489,79 +696,135 @@ actor M1DDCWriter {
         )
     }
 
-    private func run(arguments: [String]) async -> M1DDCCommandResult {
+    private func run(
+        arguments: [String],
+        expectedGeneration: UInt64? = nil
+    ) async -> M1DDCCommandResult {
+        let operationGeneration = expectedGeneration ?? operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else {
+            return M1DDCCommandResult(success: false, output: "Display runtime suspended")
+        }
         guard let executableURL = self.executableURL else {
             return M1DDCCommandResult(success: false, output: "m1ddc not found")
         }
 
-        return await withCheckedContinuation { continuation in
-            let rGuard = ResumeGuard()
-            
-            @Sendable func safeResume(with result: M1DDCCommandResult) {
-                if rGuard.shouldResume() {
-                    continuation.resume(returning: result)
-                }
-            }
+        let processHandle = M1DDCProcessHandle()
+        let processHandleID = ObjectIdentifier(processHandle)
+        inFlightProcessHandles[processHandleID] = processHandle
+        defer { inFlightProcessHandles.removeValue(forKey: processHandleID) }
+        let workQueue = self.workQueue
+        let operationGate = self.operationGate
 
-            workQueue.async {
-                let process = Process()
-                process.executableURL = executableURL
-                process.arguments = arguments
-                let stdout = Pipe()
-                let stderr = Pipe()
-                process.standardOutput = stdout
-                process.standardError = stderr
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                let rGuard = ResumeGuard()
 
-                do {
-                    try process.run()
-                    
-                    let timer = DispatchSource.makeTimerSource(queue: .global())
-                    timer.schedule(deadline: .now() + Self.processTimeout)
-                    timer.setEventHandler {
-                        if process.isRunning {
-                            process.terminate()
-                        }
+                @Sendable func safeResume(with result: M1DDCCommandResult) {
+                    if rGuard.shouldResume() {
+                        continuation.resume(returning: result)
                     }
-                    timer.resume()
+                }
 
-                    process.waitUntilExit()
-                    timer.cancel()
+                workQueue.async {
+                    guard operationGate.accepts(operationGeneration), !processHandle.isCancelled() else {
+                        safeResume(with: M1DDCCommandResult(success: false, output: "Display runtime suspended"))
+                        return
+                    }
 
-                    let outputData = stdout.fileHandleForReading.readDataToEndOfFile() + stderr.fileHandleForReading.readDataToEndOfFile()
-                    let output = (String(data: outputData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    let success = process.terminationStatus == 0
-                    let result = M1DDCCommandResult(
-                        success: success, 
-                        output: output.isEmpty ? (success ? "ok" : "m1ddc command failed") : output
-                    )
-                    safeResume(with: result)
-                } catch {
-                    safeResume(with: M1DDCCommandResult(success: false, output: error.localizedDescription))
+                    let process = Process()
+                    process.executableURL = executableURL
+                    process.arguments = arguments
+                    let stdout = Pipe()
+                    let stderr = Pipe()
+                    process.standardOutput = stdout
+                    process.standardError = stderr
+
+                    guard processHandle.install(process), operationGate.accepts(operationGeneration) else {
+                        safeResume(with: M1DDCCommandResult(success: false, output: "Display runtime suspended"))
+                        return
+                    }
+                    defer { processHandle.clear() }
+
+                    do {
+                        try process.run()
+
+                        let timer = DispatchSource.makeTimerSource(queue: .global())
+                        timer.schedule(deadline: .now() + Self.processTimeout)
+                        timer.setEventHandler {
+                            if process.isRunning {
+                                process.terminate()
+                            }
+                        }
+                        timer.resume()
+
+                        process.waitUntilExit()
+                        timer.cancel()
+
+                        let outputData = stdout.fileHandleForReading.readDataToEndOfFile() + stderr.fileHandleForReading.readDataToEndOfFile()
+                        let output = (String(data: outputData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+                        let success = process.terminationStatus == 0 &&
+                            operationGate.accepts(operationGeneration) &&
+                            !processHandle.isCancelled()
+                        let result = M1DDCCommandResult(
+                            success: success,
+                            output: output.isEmpty ? (success ? "ok" : "m1ddc command failed") : output
+                        )
+                        safeResume(with: result)
+                    } catch {
+                        safeResume(with: M1DDCCommandResult(success: false, output: error.localizedDescription))
+                    }
                 }
             }
-        }
+        }, onCancel: {
+            processHandle.cancel()
+        })
     }
 
-    private func readBrightness(displayIndex: String) async -> Int? {
-        guard let sample = await readBrightnessRaw(displayIndex: displayIndex) else { return nil }
+    private func readBrightness(
+        displayIndex: String,
+        expectedGeneration: UInt64
+    ) async -> Int? {
+        guard let sample = await readBrightnessRaw(
+            displayIndex: displayIndex,
+            expectedGeneration: expectedGeneration
+        ) else { return nil }
+        guard operationGate.accepts(expectedGeneration) else { return nil }
         guard let rawCurrent = sample.rawCurrent, let rawMax = sample.rawMax else { return nil }
         return DDCBrightnessScale.uiPercent(fromRawCurrent: rawCurrent, rawMax: rawMax)
     }
 
-    private func readBrightnessSample(displayIndex: String) async -> DDCBrightnessRawSample? {
-        await readBrightnessRaw(displayIndex: displayIndex)
+    private func readBrightnessSample(
+        displayIndex: String,
+        expectedGeneration: UInt64
+    ) async -> DDCBrightnessRawSample? {
+        await readBrightnessRaw(
+            displayIndex: displayIndex,
+            expectedGeneration: expectedGeneration
+        )
     }
 
-    private func readBrightnessRaw(displayIndex: String) async -> DDCBrightnessRawSample? {
-        let result = await run(arguments: ["display", displayIndex, "get", "luminance"])
+    private func readBrightnessRaw(
+        displayIndex: String,
+        expectedGeneration: UInt64
+    ) async -> DDCBrightnessRawSample? {
+        guard operationGate.accepts(expectedGeneration), !displayIndex.isEmpty else { return nil }
+        let result = await run(
+            arguments: ["display", displayIndex, "get", "luminance"],
+            expectedGeneration: expectedGeneration
+        )
+        guard operationGate.accepts(expectedGeneration) else { return nil }
         guard result.success else { return nil }
         let sample = DDCBrightnessParsing.parseRawSample(from: result.output)
         if sample.rawMax != nil {
             return sample
         }
 
-        let maxResult = await run(arguments: ["display", displayIndex, "max", "luminance"])
+        let maxResult = await run(
+            arguments: ["display", displayIndex, "max", "luminance"],
+            expectedGeneration: expectedGeneration
+        )
+        guard operationGate.accepts(expectedGeneration) else { return nil }
         guard maxResult.success, let rawMax = DDCBrightnessParsing.parseSingleRawValue(from: maxResult.output) else {
             return sample
         }

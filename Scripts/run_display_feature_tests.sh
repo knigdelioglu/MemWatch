@@ -25,10 +25,12 @@ swiftc \
     "$ROOT_DIR/Display/DisplayControl/DisplayConnectionState.swift" \
     "$ROOT_DIR/Display/DisplayControl/DisplayConnectionBackend.swift" \
     "$ROOT_DIR/Display/DisplayControl/PrivateDisplayConnectionBackend.swift" \
+    "$ROOT_DIR/Display/DisplayControl/DisplayConnectionController.swift" \
     "$ROOT_DIR/Display/DisplayControl/M1DDCDisplayController.swift" \
     "$ROOT_DIR/Display/DisplayControl/HiDPIReportPaths.swift" \
     "$ROOT_DIR/Display/DisplayControl/DisplayDiscoveryDiagnostic.swift" \
     "$ROOT_DIR/Display/DisplayControl/HiDPIReapplyLifecycle.swift" \
+    "$ROOT_DIR/Display/App/DisplayPowerLifecycle.swift" \
     "$ROOT_DIR/Display/DisplayFeature.swift" \
     "$ROOT_DIR/Display/System/KeepAwakeController.swift" \
     "$ROOT_DIR/Display/System/KeepAwakeFeatureController.swift" \

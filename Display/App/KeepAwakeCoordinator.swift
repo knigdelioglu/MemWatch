@@ -28,6 +28,14 @@ final class KeepAwakeCoordinator {
         }
     }
 
+    func handleSystemSleep() {
+        clearAssertions(reason: "systemSleep")
+    }
+
+    func handleDisplaySleep() {
+        clearAssertions(reason: "screenSleep")
+    }
+
     func startDefaultAfterWakeSession() {
         startSessionWithDefault()
     }
@@ -129,6 +137,15 @@ final class KeepAwakeCoordinator {
     }
 
     func refreshKeepAwakeLifecycleIfNeeded() {
+        guard app.isRunning, app.displayPowerState == .active else {
+            keepAwakeController.stop()
+            updateKeepAwakeStateIDs()
+            app.currentIdleTimeString = "00:00"
+            app.remainingIdleTimeString = "--:--"
+            updateKeepAwakeTitle()
+            return
+        }
+
         guard app.keepAwakeState.featureEnabled else {
             if keepAwakeController.isActive {
                 keepAwakeController.stop()
@@ -195,6 +212,18 @@ final class KeepAwakeCoordinator {
 
     func stop() {
         keepAwakeController.stop()
+        updateKeepAwakeStateIDs()
+    }
+
+    private func clearAssertions(reason: String) {
+        keepAwakeController.stop()
+        var state = app.keepAwakeState
+        state.idleSleepAssertionID = 0
+        state.displaySleepAssertionID = 0
+        state.lastStopReason = reason
+        app.keepAwakeState = state
+        featureController.persistState(state)
+        updateKeepAwakeTitle()
     }
 
     private func updateKeepAwakeTitle() {

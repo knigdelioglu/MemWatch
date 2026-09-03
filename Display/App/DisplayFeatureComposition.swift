@@ -7,15 +7,18 @@ import Foundation
 final class DisplayBrightnessCoordinator {
     let reader: AmbientLightReader?
     let writer: M1DDCWriter
+    let operationGate: DisplayPowerOperationGate
     let internalDisplayController: InternalDisplayBrightnessController?
 
     init(
         reader: AmbientLightReader? = AmbientLightReader(),
-        writer: M1DDCWriter = M1DDCWriter(),
+        writer: M1DDCWriter? = nil,
+        operationGate: DisplayPowerOperationGate = .shared,
         internalDisplayController: InternalDisplayBrightnessController? = InternalDisplayBrightnessController()
     ) {
         self.reader = reader
-        self.writer = writer
+        self.operationGate = operationGate
+        self.writer = writer ?? M1DDCWriter(operationGate: operationGate)
         self.internalDisplayController = internalDisplayController
     }
 
@@ -50,8 +53,8 @@ final class DisplayHiDPICoordinator {
     let refreshService: HiDPIRefreshService
     let modeSwitcher: CGSModeSwitcher
 
-    init() {
-        let modeSwitcher = CGSModeSwitcher()
+    init(operationGate: DisplayPowerOperationGate = .shared) {
+        let modeSwitcher = CGSModeSwitcher(operationGate: operationGate)
         self.modeSwitcher = modeSwitcher
         self.featureController = HiDPIFeatureController()
         self.refreshService = HiDPIRefreshService(

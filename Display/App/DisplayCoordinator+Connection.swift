@@ -6,6 +6,7 @@ extension DisplayCoordinator {
     }
 
     func refreshDisplayConnectionState() {
+        guard displayOperationsAllowed else { return }
         let result = displayConnectionController.reconcileDesiredState()
         if result.phase == .softwareDisconnected {
             _ = applySoftwareDisconnectedDisplayStateIfNeeded()
@@ -13,8 +14,12 @@ extension DisplayCoordinator {
     }
 
     func toggleExternalDisplayConnection() {
+        guard displayOperationsAllowed else { return }
         Task { @MainActor in
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             let result = await displayConnectionController.toggle()
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             statusText = result.message
 
             switch result.phase {

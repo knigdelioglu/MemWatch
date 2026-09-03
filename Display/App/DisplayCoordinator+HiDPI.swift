@@ -4,8 +4,12 @@ import Foundation
 extension DisplayCoordinator {
     @discardableResult
     func setHiDPIEnabled(_ enabled: Bool) async -> Bool {
+        guard displayOperationsAllowed else { return false }
+        let powerGeneration = displayPowerGeneration
         do {
             let target = try HiDPITargetDisplayResolver.resolveSamsungS60UD()
+            guard target.isOnline, target.isActive,
+                  acceptsDisplayPowerGeneration(powerGeneration) else { return false }
             let _ = hiDPICoordinator.modeSwitcher.scanCGSModes(displayID: target.displayID)
             let status = hiDPICoordinator.modeSwitcher.refreshCGSModes(displayID: target.displayID)
             cgsManualModeSwitcherSummary = status
@@ -63,7 +67,8 @@ extension DisplayCoordinator {
                 return false
             }
 
-            let report = hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: Int(selectedCandidate.modeID))
+            let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: Int(selectedCandidate.modeID))
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return false }
             if report.success {
                 persistHiDPIState(enabled: enabled)
                 hiDPIStatusText = "Mevcut Mod: \(selectedCandidate.logicalWidth)x\(selectedCandidate.logicalHeight) / \(selectedCandidate.pixelWidth)x\(selectedCandidate.pixelHeight) @\(Int(selectedCandidate.refreshRate.rounded()))Hz"
@@ -110,16 +115,22 @@ extension DisplayCoordinator {
 
     @objc func runHiDPIModePoolDiagnosticAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             HiDPIDiagnostic.runModePoolDiagnostic()
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             updateStatus("HiDPI mode pool diagnostic completed")
         }
     }
 
     @objc func runExperimentalHiDPIActivationAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             hiDPIActivationStatusText = "Private SLS transaction activation çalışıyor..."
             updateStatus("Private SLS transaction running")
             let result = PrivateHiDPIActivationEngine.shared.runSLSTransactionActivationExperiment()
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             hiDPIActivationStatusText = "\(result). Report: docs/generated/private_activation/sls_transaction_activation_experiment.md"
             await reloadDisplayModes()
         }
@@ -127,14 +138,18 @@ extension DisplayCoordinator {
 
     @objc func runCGSModeEnumerationAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             do {
                 let summary = try CGSModeEnumerationDiagnostic.runEnumeration()
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeEnumerationSummary = summary
                 let reportPath = summary.reportURL.path
                 let current = summary.currentModeID.map(String.init) ?? "unavailable"
                 cgsModeEnumerationStatusText = "CGS current mode: \(current) | CGS count: \(summary.cgsModeCount) | public dup: \(summary.publicDuplicateModeCount) | Report: \(reportPath)"
                 updateStatus("CGS mode enumeration completed")
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeEnumerationStatusText = "CGS mode enumeration failed: \(error.localizedDescription)"
                 updateStatus("CGS mode enumeration failed")
             }
@@ -143,14 +158,18 @@ extension DisplayCoordinator {
 
     @objc func runCGSMode74WithoutBetterDisplayCheckAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             do {
                 let summary = try CGSModeEnumerationDiagnostic.runWithoutBetterDisplayVerification()
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeEnumerationSummary = summary
                 let reportPath = summary.reportURL.path
                 let current = summary.currentModeID.map(String.init) ?? "unavailable"
                 cgsModeEnumerationStatusText = "CGS current mode: \(current) | CGS count: \(summary.cgsModeCount) | public dup: \(summary.publicDuplicateModeCount) | mode74: \(summary.mode74 != nil ? "present" : "missing") | Report: \(reportPath)"
                 updateStatus("CGS mode 74 check completed")
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeEnumerationStatusText = "CGS mode 74 check failed: \(error.localizedDescription)"
                 updateStatus("CGS mode 74 check failed")
             }
@@ -159,13 +178,16 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode56Action() {
         Task {
+            guard displayOperationsAllowed else { return }
             guard let summary = cgsManualModeSwitcherSummary, summary.canApplyMode56 else {
                 cgsManualModeSwitcherStatusText = "Current CGS Mode: unavailable"
                 updateStatus("CGS mode 56 apply blocked")
                 return
             }
 
-            let report = hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 56)
+            let powerGeneration = displayPowerGeneration
+            let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 56)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             refreshCGSModeSwitcherState()
             if report.success {
                 updateStatus("CGS mode 56 applied")
@@ -177,13 +199,16 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode74Action() {
         Task {
+            guard displayOperationsAllowed else { return }
             guard let summary = cgsManualModeSwitcherSummary, summary.canApplyMode74 else {
                 cgsManualModeSwitcherStatusText = "Current CGS Mode: unavailable"
                 updateStatus("CGS mode 74 apply blocked")
                 return
             }
 
-            let report = hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 74)
+            let powerGeneration = displayPowerGeneration
+            let report = await hiDPICoordinator.modeSwitcher.applyCGSMode(modeID: 74)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             refreshCGSModeSwitcherState()
             if report.success {
                 updateStatus("CGS mode 74 applied")
@@ -195,6 +220,8 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode56NormalQHDTransactionAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             guard let summary = cgsModeEnumerationSummary else {
                 cgsModeApplyExperimentStatusText = "CGS enumeration önce çalıştırılmalı."
                 updateStatus("CGS mode 56 apply blocked")
@@ -209,6 +236,7 @@ extension DisplayCoordinator {
 
             do {
                 let experiment = try CGSModeEnumerationDiagnostic.runMode56NormalQHDApplyExperiment(using: cgsModeApplyExperimentSummary)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeApplyExperimentSummary = experiment
                 cgsModeEnumerationSummary = experiment.finalSummary
                 let reportPath = experiment.reportURL.path
@@ -216,6 +244,7 @@ extension DisplayCoordinator {
                 updateStatus("CGS mode 56 apply completed")
                 await reloadDisplayModes()
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeApplyExperimentStatusText = "CGS mode 56 apply failed: \(error.localizedDescription)"
                 updateStatus("CGS mode 56 apply failed")
             }
@@ -224,6 +253,8 @@ extension DisplayCoordinator {
 
     @objc func applyCGSMode74TransactionAction() {
         Task {
+            guard displayOperationsAllowed else { return }
+            let powerGeneration = displayPowerGeneration
             guard let summary = cgsModeEnumerationSummary else {
                 cgsModeApplyExperimentStatusText = "CGS enumeration önce çalıştırılmalı."
                 updateStatus("CGS mode 74 apply blocked")
@@ -238,6 +269,7 @@ extension DisplayCoordinator {
 
             do {
                 let experiment = try CGSModeEnumerationDiagnostic.runMode74ApplyExperiment(using: cgsModeApplyExperimentSummary)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeApplyExperimentSummary = experiment
                 cgsModeEnumerationSummary = experiment.finalSummary
                 let reportPath = experiment.reportURL.path
@@ -245,6 +277,7 @@ extension DisplayCoordinator {
                 updateStatus("CGS mode 74 apply completed")
                 await reloadDisplayModes()
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 cgsModeApplyExperimentStatusText = "CGS mode 74 apply failed: \(error.localizedDescription)"
                 updateStatus("CGS mode 74 apply failed")
             }

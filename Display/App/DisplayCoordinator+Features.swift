@@ -9,7 +9,10 @@ extension DisplayCoordinator {
     }
 
     func reloadDisplayModes() async {
-        let snapshot = hiDPICoordinator.refreshService.reloadDisplayModes(currentActivationStatusText: hiDPIActivationStatusText)
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
+        let snapshot = await hiDPICoordinator.refreshService.reloadDisplayModes(currentActivationStatusText: hiDPIActivationStatusText)
+        guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
         availableModes = snapshot.availableModes
         cgsManualModeSwitcherSummary = snapshot.manualModeSwitcherSummary
         cgsManualModeSwitcherStatusText = snapshot.manualModeSwitcherStatusText
@@ -31,6 +34,7 @@ extension DisplayCoordinator {
     }
 
     func refreshCGSModeSwitcherState() {
+        guard displayOperationsAllowed else { return }
         let summary = hiDPICoordinator.refreshService.refreshCGSModeSwitcherState()
         cgsManualModeSwitcherSummary = summary
         cgsManualModeSwitcherStatusText = summary?.currentModeText ?? "Current CGS Mode: unavailable"

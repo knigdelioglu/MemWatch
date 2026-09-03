@@ -3,6 +3,7 @@ import Foundation
 
 extension DisplayCoordinator {
     func performMonitorVolumeKeyAction(_ action: MonitorVolumeKeyAction) -> Bool {
+        guard displayOperationsAllowed else { return false }
         switch action {
         case .increase:
             enqueueVolumeAdjustment(by: 5)
@@ -15,15 +16,18 @@ extension DisplayCoordinator {
     }
 
     func adjustMonitorVolumeForSettings(by delta: Int) {
+        guard displayOperationsAllowed else { return }
         enqueueVolumeAdjustment(by: delta)
     }
 
     func toggleMuteForSettingsSync() {
+        guard displayOperationsAllowed else { return }
         enqueueMuteToggle()
     }
 
     @discardableResult
     func adjustMonitorVolume(by delta: Int) async -> Bool {
+        guard displayOperationsAllowed else { return false }
         let previous = monitorVolumeControlValue
         let target = min(100, max(0, previous + delta))
         let generation = beginVolumeIntent(target: target)
@@ -37,6 +41,7 @@ extension DisplayCoordinator {
 
     @discardableResult
     func setMonitorVolume(_ percent: Int) async -> Bool {
+        guard displayOperationsAllowed else { return false }
         let clamped = min(100, max(0, percent))
         let previous = monitorVolumeControlValue
         let generation = beginVolumeIntent(target: clamped)
@@ -49,6 +54,7 @@ extension DisplayCoordinator {
 
     @discardableResult
     func toggleMuteForSettings() async -> Bool {
+        guard displayOperationsAllowed else { return false }
         let previous = monitorVolumeControlValue
         let isMuted = previous == 0
         let targetVolume = isMuted ? max(1, volumeCoordinator.lastNonZeroVolume) : 0
@@ -62,6 +68,7 @@ extension DisplayCoordinator {
     }
 
     func setMonitorVolumeForSettings(_ percent: Int) {
+        guard displayOperationsAllowed else { return }
         let clamped = min(100, max(0, percent))
         let previous = monitorVolumeControlValue
         let generation = beginVolumeIntent(target: clamped)
@@ -72,6 +79,7 @@ extension DisplayCoordinator {
     }
 
     func setMonitorBrightness(_ percent: Int) {
+        guard displayOperationsAllowed else { return }
         let clamped = min(100, max(0, percent))
         pauseAutoBrightnessTemporarily()
         let writeGeneration = startManualBrightnessWrite()
@@ -86,6 +94,7 @@ extension DisplayCoordinator {
     /// Owns the slider debounce so auto/mute/keyboard intents can cancel it
     /// from the same coordinator that owns the latest-intent gate.
     func scheduleMonitorBrightnessWrite(_ percent: Int) {
+        guard displayOperationsAllowed else { return }
         let clamped = min(100, max(0, percent))
         pauseAutoBrightnessTemporarily()
         let writeGeneration = startManualBrightnessWrite()
@@ -103,6 +112,7 @@ extension DisplayCoordinator {
     }
 
     func scheduleMonitorVolumeWrite(_ percent: Int) {
+        guard displayOperationsAllowed else { return }
         let clamped = min(100, max(0, percent))
         let previous = monitorVolumeControlValue
         let generation = beginVolumeIntent(target: clamped)
@@ -177,9 +187,11 @@ extension DisplayCoordinator {
         previous: Int,
         generation: UInt64
     ) async -> Bool {
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard displayOperationsAllowed, acceptsManualVolumeWrite(generation) else { return false }
+        let powerGeneration = displayPowerGeneration
         let (success, _) = await brightnessCoordinator.writer.setVolume(clamped, preferredKey: activeDisplayKey)
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              acceptsManualVolumeWrite(generation) else { return false }
 
         pendingVolumeIntent = nil
         if success {
@@ -199,9 +211,11 @@ extension DisplayCoordinator {
         previous: Int,
         generation: UInt64
     ) async -> Bool {
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard displayOperationsAllowed, acceptsManualVolumeWrite(generation) else { return false }
+        let powerGeneration = displayPowerGeneration
         let (success, _) = await brightnessCoordinator.writer.changeVolume(delta, preferredKey: activeDisplayKey)
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              acceptsManualVolumeWrite(generation) else { return false }
 
         pendingVolumeIntent = nil
         if success {
@@ -221,9 +235,11 @@ extension DisplayCoordinator {
         previous: Int,
         generation: UInt64
     ) async -> Bool {
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard displayOperationsAllowed, acceptsManualVolumeWrite(generation) else { return false }
+        let powerGeneration = displayPowerGeneration
         let (success, _) = await brightnessCoordinator.writer.setMute(!isMuted, preferredKey: activeDisplayKey)
-        guard acceptsManualVolumeWrite(generation) else { return false }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              acceptsManualVolumeWrite(generation) else { return false }
 
         pendingVolumeIntent = nil
         if success {
@@ -238,9 +254,11 @@ extension DisplayCoordinator {
     }
 
     private func performManualBrightnessWrite(_ clamped: Int, generation: UInt64) async {
-        guard acceptsManualBrightnessWrite(generation) else { return }
+        guard displayOperationsAllowed, acceptsManualBrightnessWrite(generation) else { return }
+        let powerGeneration = displayPowerGeneration
         let result = await brightnessCoordinator.writer.setBrightness(clamped, preferredKey: activeDisplayKey)
-        guard acceptsManualBrightnessWrite(generation) else { return }
+        guard acceptsDisplayPowerGeneration(powerGeneration),
+              acceptsManualBrightnessWrite(generation) else { return }
         brightnessState.pendingManualBrightnessPercent = nil
         let actualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped
         let matchedTarget = result.matchedTarget == true
@@ -280,6 +298,7 @@ extension DisplayCoordinator {
 
     @discardableResult
     func setInternalBrightness(_ percent: Int) -> Bool {
+        guard displayOperationsAllowed else { return false }
         guard let controller = brightnessCoordinator.internalDisplayController else {
             updateStatus("Dahili parlaklık kontrolü kullanılamıyor")
             return false
@@ -297,6 +316,7 @@ extension DisplayCoordinator {
     }
 
     func pauseAutoBrightnessTemporarily(for duration: TimeInterval = 20) {
+        guard displayOperationsAllowed else { return }
         invalidateManualBrightnessWrites()
         beginManualBrightnessOverride(fallbackDuration: duration)
     }
@@ -305,6 +325,7 @@ extension DisplayCoordinator {
     /// established before the debounced DDC write can be scheduled, and any
     /// auto write already in flight becomes a stale completion.
     func beginManualBrightnessInteraction() {
+        guard displayOperationsAllowed else { return }
         pauseAutoBrightnessTemporarily()
         manualBrightnessInteractionActive = true
         pendingTargetCandidate = nil

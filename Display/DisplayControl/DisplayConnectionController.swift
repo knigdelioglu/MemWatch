@@ -20,19 +20,23 @@ final class DisplayConnectionController: ObservableObject {
     private let backend: DisplayConnectionBackend
     private let identity: DisplayConnectionIdentity
     private let defaults: UserDefaults
+    private let operationGate: DisplayPowerOperationGate
 
     init(
         backend: DisplayConnectionBackend = PrivateDisplayConnectionBackend(),
         identity: DisplayConnectionIdentity = .samsungS60UD,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        operationGate: DisplayPowerOperationGate = .shared
     ) {
         self.backend = backend
         self.identity = identity
         self.defaults = defaults
+        self.operationGate = operationGate
     }
 
     @discardableResult
     func refresh() -> DisplayConnectionSnapshot {
+        guard operationGate.isAllowed() else { return snapshot }
         guard backend.isAvailable else {
             return publish(
                 phase: .unsupported,
@@ -99,6 +103,7 @@ final class DisplayConnectionController: ObservableObject {
     /// active display remains available.
     @discardableResult
     func reconcileDesiredState() -> DisplayConnectionSnapshot {
+        guard operationGate.isAllowed() else { return snapshot }
         let current = refresh()
         guard softwareDisconnectRequested, current.phase == .connected else {
             return current
@@ -108,12 +113,14 @@ final class DisplayConnectionController: ObservableObject {
 
     @discardableResult
     func toggle() async -> DisplayConnectionSnapshot {
+        let operationGeneration = operationGate.currentGeneration()
+        guard operationGate.accepts(operationGeneration) else { return snapshot }
         let current = refresh()
         switch current.phase {
         case .connected:
             return disconnect()
         case .softwareDisconnected:
-            return await reconnect()
+            return await reconnect(expectedGeneration: operationGeneration)
         default:
             return current
         }
@@ -121,6 +128,7 @@ final class DisplayConnectionController: ObservableObject {
 
     @discardableResult
     func disconnect(preserveRequestOnFailure: Bool = false) -> DisplayConnectionSnapshot {
+        guard operationGate.isAllowed() else { return snapshot }
         guard !isBusy else { return snapshot }
         isBusy = true
         defer { isBusy = false }
@@ -168,6 +176,11 @@ final class DisplayConnectionController: ObservableObject {
 
     @discardableResult
     func reconnect() async -> DisplayConnectionSnapshot {
+        await reconnect(expectedGeneration: operationGate.currentGeneration())
+    }
+
+    private func reconnect(expectedGeneration: UInt64) async -> DisplayConnectionSnapshot {
+        guard operationGate.accepts(expectedGeneration) else { return snapshot }
         guard !isBusy else { return snapshot }
         isBusy = true
         defer { isBusy = false }
@@ -177,6 +190,7 @@ final class DisplayConnectionController: ObservableObject {
         var lastError: Error?
 
         for attempt in 1...Self.reconnectAttemptCount {
+            guard !Task.isCancelled, operationGate.accepts(expectedGeneration) else { return snapshot }
             do {
                 // Always re-enumerate here. A software-disabled display drops out of
                 // public lists and its CGDirectDisplayID must not be treated as durable.
@@ -208,6 +222,7 @@ final class DisplayConnectionController: ObservableObject {
 
                 try backend.setDisplayEnabled(true, displayID: displayID)
                 try? await Task.sleep(nanoseconds: Self.reconnectRetryDelayNanoseconds)
+                guard !Task.isCancelled, operationGate.accepts(expectedGeneration) else { return snapshot }
 
                 // Re-enumerate again before verification; the transaction itself may
                 // cause WindowServer to assign/re-surface a different display id.
@@ -224,9 +239,11 @@ final class DisplayConnectionController: ObservableObject {
 
             if attempt < Self.reconnectAttemptCount {
                 try? await Task.sleep(nanoseconds: Self.reconnectRetryDelayNanoseconds)
+                guard !Task.isCancelled, operationGate.accepts(expectedGeneration) else { return snapshot }
             }
         }
 
+        guard operationGate.accepts(expectedGeneration) else { return snapshot }
         let detail = lastError.map { " Son hata: \($0.localizedDescription)" } ?? ""
         return publish(
             phase: .failed,

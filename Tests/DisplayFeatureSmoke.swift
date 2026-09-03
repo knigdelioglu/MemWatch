@@ -14,6 +14,7 @@ struct DisplayFeatureSmoke {
         testDisplayIdentity()
         testExternalSliderInteractionPolicy()
         testLatestValueWriteGate()
+        testDisplayPowerLifecycle()
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
@@ -94,6 +95,58 @@ struct DisplayFeatureSmoke {
         let latestManualGeneration = gate.startRequest()
         precondition(!gate.accepts(firstManualGeneration))
         precondition(gate.accepts(latestManualGeneration))
+    }
+
+    private static func testDisplayPowerLifecycle() {
+        var lifecycle = DisplayPowerLifecycle()
+        let gate = DisplayPowerOperationGate()
+        let activeGeneration = lifecycle.generation
+        gate.activate(generation: activeGeneration)
+        precondition(lifecycle.state == .active)
+        precondition(lifecycle.accepts(activeGeneration))
+        precondition(gate.isAllowed())
+        let activeOperationGeneration = gate.currentGeneration()
+
+        // A screen/system sleep suspends display work without erasing the
+        // cached display identity and invalidates every older completion.
+        lifecycle.enterScreenSleep()
+        gate.suspend()
+        precondition(lifecycle.state == .screenSleeping)
+        precondition(!lifecycle.accepts(activeGeneration))
+        precondition(!gate.isAllowed())
+
+        lifecycle.enterSystemSleep()
+        lifecycle.enterScreenSleep()
+        precondition(lifecycle.state == .systemSleeping)
+
+        // A rapid sleep -> wake must not make a completion from the previous
+        // operation epoch valid merely because the gate is active again.
+        gate.activate(generation: activeOperationGeneration + 1)
+        precondition(!gate.accepts(activeOperationGeneration))
+
+        // Wake callbacks restart the complete stabilization window rather
+        // than allowing the first callback to arm display work immediately.
+        let wakeStart = Date(timeIntervalSince1970: 10_000)
+        lifecycle.beginWaking(now: wakeStart, stabilizationDuration: 5)
+        let firstWakeGeneration = lifecycle.generation
+        let firstDeadline = lifecycle.wakeStabilizationDeadline
+        lifecycle.resetWakeStabilization(now: wakeStart.addingTimeInterval(1), stabilizationDuration: 5)
+        precondition(lifecycle.state == .waking)
+        precondition(lifecycle.generation != firstWakeGeneration)
+        precondition(lifecycle.wakeStabilizationDeadline == wakeStart.addingTimeInterval(6))
+        precondition(firstDeadline != lifecycle.wakeStabilizationDeadline)
+        precondition(!lifecycle.isWakeStabilized(at: wakeStart.addingTimeInterval(5.9)))
+        precondition(!lifecycle.activateIfReady(now: wakeStart.addingTimeInterval(5.9)))
+
+        let wakingSnapshot = lifecycle.snapshot(isHiDPIAllowed: true)
+        precondition(wakingSnapshot.state == .waking)
+        precondition(!wakingSnapshot.isHiDPIAllowed)
+
+        precondition(lifecycle.activateIfReady(now: wakeStart.addingTimeInterval(6)))
+
+        gate.activate(generation: lifecycle.generation)
+        precondition(gate.isAllowed())
+        precondition(lifecycle.accepts(lifecycle.generation))
     }
 
     private static func testExternalSliderInteractionPolicy() {
@@ -344,6 +397,22 @@ struct DisplayFeatureSmoke {
         precondition(lifecycle.start())
         precondition(!lifecycle.start())
         lifecycle.registrationSucceeded()
+        precondition(lifecycle.scheduleWork())
+        let scheduledGeneration = lifecycle.operationGeneration
+        precondition(lifecycle.scheduleWork())
+        precondition(lifecycle.operationGeneration != scheduledGeneration)
+        let executingGeneration = lifecycle.operationGeneration
+        precondition(lifecycle.beginExecution(for: executingGeneration))
+        precondition(lifecycle.workState == .executing)
+        precondition(!lifecycle.scheduleWork())
+        precondition(!lifecycle.shouldScheduleFromReconfigurationCallback())
+        precondition(lifecycle.beginApplyingMode())
+        precondition(lifecycle.isApplyingMode)
+        precondition(!lifecycle.beginApplyingMode())
+        lifecycle.endApplyingMode()
+        precondition(!lifecycle.isApplyingMode)
+        lifecycle.completeWork(for: executingGeneration)
+        precondition(lifecycle.workState == .idle)
         precondition(lifecycle.scheduleWork())
         precondition(lifecycle.hasPendingWork)
         precondition(lifecycle.stop())

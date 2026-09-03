@@ -3,6 +3,7 @@ import Foundation
 
 extension DisplayCoordinator {
     func applySoftwareDisconnectedDisplayStateIfNeeded() -> Bool {
+        guard displayOperationsAllowed else { return false }
         invalidateManualBrightnessWrites()
         invalidateManualVolumeWrites()
         cancelPendingManualBrightnessWrite()
@@ -38,6 +39,8 @@ extension DisplayCoordinator {
     }
 
     func reloadDisplayInfo(reloadModes: Bool = true) async {
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
         traceRuntime(
             "reloadDisplayInfo begin reloadModes=\(reloadModes) preferredKey=\(store.preferences.selectedDisplayKey ?? "nil") " +
                 "currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")"
@@ -48,6 +51,7 @@ extension DisplayCoordinator {
         }
         let previousDisplayKey = currentDisplayInfo?.displayKey
         let discoveredDisplay = await brightnessCoordinator.writer.refreshDisplay(preferredKey: store.preferences.selectedDisplayKey)
+        guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
         traceRuntime(
             "writer.refreshDisplay result=\(discoveredDisplay?.displayKey ?? "nil") " +
                 "previousDisplay=\(previousDisplayKey ?? "nil")"
@@ -80,12 +84,14 @@ extension DisplayCoordinator {
             }
             if currentBrightness == nil || display.displayKey != previousDisplayKey {
                 let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 let fallback = readback ?? store.lastBrightness(for: display.displayKey)
                 applyBrightnessReadback(readback, requestedFallback: fallback)
                 lastBrightnessReadDate = Date()
             }
             updateAutoBrightnessTitle()
             await refreshCurrentVolume(force: true)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             volumeKeyRouter?.setEnabled(true)
             // Publish display capabilities before the optional synchronous
             // HiDPI/CGS scan so discovery is visible even when that scan is
@@ -93,6 +99,7 @@ extension DisplayCoordinator {
             updateCapabilities()
             if reloadModes {
                 await reloadDisplayModes()
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             }
         } else {
             invalidateManualBrightnessWrites()
@@ -118,19 +125,16 @@ extension DisplayCoordinator {
     }
 
     func refreshInternalBrightness() {
+        guard displayOperationsAllowed else { return }
         currentInternalBrightness = brightnessCoordinator.internalDisplayController?.currentBrightness()
     }
 
     func refreshDisplay() {
-        Task {
-            await reloadDisplayInfo()
-            refreshInternalBrightness()
-            refreshEDIDDiagnosticSummary()
-            await tick()
-        }
+        refresh()
     }
 
     func refreshRuntimeState() {
+        guard displayOperationsAllowed else { return }
         updateAutoBrightnessTitle()
         refreshInternalBrightness()
         Task {
@@ -144,6 +148,7 @@ extension DisplayCoordinator {
     }
 
     func refreshEDIDDiagnosticSummary() {
+        guard displayOperationsAllowed else { return }
         guard let target = try? HiDPITargetDisplayResolver.resolveSamsungS60UDForDiagnostics() else {
             currentEDIDSummary = nil
             return
@@ -152,6 +157,7 @@ extension DisplayCoordinator {
     }
 
     func readEDIDDiagnostic() {
+        guard displayOperationsAllowed else { return }
         guard let target = try? HiDPITargetDisplayResolver.resolveSamsungS60UDForDiagnostics() else {
             currentEDIDSummary = nil
             updateStatus("EDID diagnostic: target display unavailable")
@@ -170,14 +176,21 @@ extension DisplayCoordinator {
     }
 
     func readHDRBrightnessDiagnostic() {
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
         Task { @MainActor in
+            guard displayOperationsAllowed,
+                  displayPowerGeneration == powerGeneration else { return }
             let summary = await hdrBrightnessDiagnostic.run(preferredDisplayKey: currentDisplayInfo?.displayKey)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             hdrBrightnessDiagnosticSummary = summary
             do {
                 let url = try await hdrBrightnessDiagnostic.writeDiagnosticReport(summary: summary)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("HDR brightness diagnostic report written: \(url.path)")
                 updateStatus("HDR brightness diagnostic written")
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("HDR brightness diagnostic report write failed: \(error.localizedDescription)")
                 updateStatus("HDR brightness diagnostic write failed")
             }
@@ -185,14 +198,21 @@ extension DisplayCoordinator {
     }
 
     func readDDCBrightnessMaxDiagnostic() {
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
         Task { @MainActor in
+            guard displayOperationsAllowed,
+                  displayPowerGeneration == powerGeneration else { return }
             let summary = await ddcBrightnessMaxDiagnostic.run(preferredDisplayKey: currentDisplayInfo?.displayKey)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             ddcBrightnessMaxDiagnosticSummary = summary
             do {
                 let url = try await ddcBrightnessMaxDiagnostic.writeDiagnosticReport(summary: summary)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("DDC brightness max diagnostic report written: \(url.path)")
                 updateStatus("DDC brightness max diagnostic written")
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("DDC brightness max diagnostic report write failed: \(error.localizedDescription)")
                 updateStatus("DDC brightness max diagnostic write failed")
             }
@@ -200,14 +220,21 @@ extension DisplayCoordinator {
     }
 
     func readDDCRawBrightnessProbeDiagnostic() {
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
         Task { @MainActor in
+            guard displayOperationsAllowed,
+                  displayPowerGeneration == powerGeneration else { return }
             let summary = await ddcRawBrightnessProbeDiagnostic.run(preferredDisplayKey: currentDisplayInfo?.displayKey)
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             ddcRawBrightnessProbeSummary = summary
             do {
                 let url = try await ddcRawBrightnessProbeDiagnostic.writeDiagnosticReport(summary: summary)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("DDC raw brightness probe report written: \(url.path)")
                 updateStatus("DDC raw brightness probe written")
             } catch {
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 print("DDC raw brightness probe report write failed: \(error.localizedDescription)")
                 updateStatus("DDC raw brightness probe write failed")
             }
@@ -215,10 +242,16 @@ extension DisplayCoordinator {
     }
 
     func readBrightnessMappingDiagnostic() {
+        guard displayOperationsAllowed else { return }
+        let powerGeneration = displayPowerGeneration
         Task { @MainActor in
+            guard displayOperationsAllowed,
+                  displayPowerGeneration == powerGeneration else { return }
             if let display = currentDisplayInfo {
                 let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 let rawSample = await brightnessCoordinator.writer.readBrightnessRaw(preferredKey: display.displayKey)
+                guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
                 if let rawSample {
                     updateBrightnessState { state in
                         state.lastDDCRawCurrentBefore = rawSample.rawCurrent
@@ -232,6 +265,7 @@ extension DisplayCoordinator {
                 applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
             }
 
+            guard acceptsDisplayPowerGeneration(powerGeneration) else { return }
             let summary = brightnessMappingDiagnosticSummarySnapshot()
             brightnessMappingDiagnosticSummary = summary
             do {

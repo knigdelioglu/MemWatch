@@ -17,6 +17,10 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     let runtimeState: DisplayRuntimeState
     private var runtimeStateObservation: AnyCancellable?
     private var startGeneration = 0
+    var wakeStabilizationTask: Task<Void, Never>?
+    var displayTickTask: Task<Void, Never>?
+    var displayTickTaskToken = 0
+    var isPostWakeRefreshInProgress = false
     var volumeKeyRouter: MonitorVolumeKeyRouter?
     lazy var keepAwakeCoordinator = KeepAwakeCoordinator(app: self)
     let volumeCoordinator = DisplayVolumeCoordinator()
@@ -96,7 +100,11 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             guard self.isCurrentStart(generation) else { return }
             self.traceRuntime("startup migration complete; activating runtime generation=\(generation)")
             self.activateRuntime()
-            self.ddcAvailable = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
+            let powerGeneration = self.displayPowerGeneration
+            let available = await self.brightnessCoordinator.isDDCAvailable(refresh: true)
+            guard self.isCurrentStart(generation),
+                  self.acceptsDisplayPowerGeneration(powerGeneration) else { return }
+            self.ddcAvailable = available
             self.traceRuntime("activateRuntime complete ddcAvailable=\(self.ddcAvailable)")
             guard self.isCurrentStart(generation) else { return }
             self.updateCapabilities()
@@ -104,9 +112,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             // scan. A slow or unavailable private mode API must not leave the
             // UI showing the initial "no external display" state.
             await self.reloadDisplayInfo(reloadModes: false)
-            guard self.isCurrentStart(generation) else { return }
+            guard self.isCurrentStart(generation), self.displayOperationsAllowed else { return }
             await self.reloadDisplayModes()
-            guard self.isCurrentStart(generation) else { return }
+            guard self.isCurrentStart(generation), self.displayOperationsAllowed else { return }
             self.refreshCGSModeSwitcherState()
             if self.keepAwakeState.featureEnabled {
                 self.startDefaultAfterWakeSession()
@@ -114,6 +122,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             self.refreshInternalBrightness()
             self.volumeKeyRouter?.setEnabled(self.currentDisplayInfo != nil)
             self.refreshCGSModeSwitcherState()
+            if HiDPIStateStore.isHiDPIEnabled() {
+                HiDPIReapplyService.shared.triggerReapplyDebounced()
+            }
             await self.tick()
         }
     }
@@ -125,7 +136,17 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     private func activateRuntime() {
         traceRuntime("activateRuntime entered isRunning=\(isRunning)")
         guard !isRunning else { return }
+        runtimeState.powerLifecycle.prepareForStart()
+        DisplayPowerOperationGate.shared.activate(generation: displayPowerGeneration)
         isRunning = true
+        HiDPIReapplyService.shared.configurePowerStateProvider { [weak self] in
+            guard let self else { return .blocked }
+            return self.displayPowerLifecycleSnapshot()
+        } powerBoundaryHandler: { [weak self] in
+            self?.handleDisplayChangeEvent()
+        } reapplyCompletionHandler: { [weak self] in
+            self?.refreshHiDPIStateAfterAutomaticReapply()
+        }
         HiDPIReapplyService.shared.startService()
         registerWorkspaceObservers()
 
@@ -134,17 +155,24 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         volumeKeyRouter?.start()
 
         scheduler.register(id: "display-feature", interval: 0.8) { [weak self] in
-            Task { @MainActor [weak self] in
-                await self?.tick()
-            }
+            self?.scheduleDisplayTick()
         }
         traceRuntime("activateRuntime registered display-feature scheduler")
     }
 
     func stop() {
         startGeneration += 1
+        isRunning = false
         startupTask?.cancel()
         startupTask = nil
+        displayTickTask?.cancel()
+        displayTickTask = nil
+        displayTickTaskToken &+= 1
+        wakeStabilizationTask?.cancel()
+        wakeStabilizationTask = nil
+        isPostWakeRefreshInProgress = false
+        DisplayPowerOperationGate.shared.suspend()
+        Task { await brightnessCoordinator.writer.cancelInFlightOperations() }
         manualBrightnessWriteTask?.cancel()
         manualBrightnessWriteTask = nil
         invalidateManualBrightnessWrites()
@@ -163,30 +191,51 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         observerTokens.removeAll()
         keepAwakeCoordinator.stop()
         HiDPIReapplyService.shared.stopService()
-        isRunning = false
+    }
+
+    private func scheduleDisplayTick() {
+        guard displayOperationsAllowed,
+              !isPostWakeRefreshInProgress,
+              displayTickTask == nil else { return }
+        displayTickTaskToken &+= 1
+        let taskToken = displayTickTaskToken
+        displayTickTask = Task { @MainActor [weak self] in
+            defer {
+                guard let self, self.displayTickTaskToken == taskToken else { return }
+                self.displayTickTask = nil
+            }
+            await self?.tick()
+        }
     }
 
     func refresh() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            guard self.isRunning else { return }
+            guard self.displayOperationsAllowed else { return }
+            let powerGeneration = self.displayPowerGeneration
             await self.reloadDisplayInfo()
+            guard self.acceptsDisplayPowerGeneration(powerGeneration) else { return }
             self.refreshInternalBrightness()
             self.refreshEDIDDiagnosticSummary()
             await self.tick()
+            guard self.acceptsDisplayPowerGeneration(powerGeneration) else { return }
         }
     }
 
     func registerWorkspaceObservers() {
+        guard observerTokens.isEmpty else { return }
         let workspaceCenter = NSWorkspace.shared.notificationCenter
-        let wakeNotifications: [Notification.Name] = [
-            NSWorkspace.didWakeNotification,
-            NSWorkspace.screensDidWakeNotification
+        let powerNotifications: [(Notification.Name, () -> Void)] = [
+            (NSWorkspace.willSleepNotification, { [weak self] in self?.handleSystemSleepEvent() }),
+            (NSWorkspace.screensDidSleepNotification, { [weak self] in self?.handleScreenSleepEvent() }),
+            (NSWorkspace.didWakeNotification, { [weak self] in self?.handleWakeEvent() }),
+            (NSWorkspace.screensDidWakeNotification, { [weak self] in self?.handleWakeEvent() })
         ]
-        for name in wakeNotifications {
+        for (name, handler) in powerNotifications {
             let token = workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.handleWakeEvent()
+                    guard self != nil else { return }
+                    handler()
                 }
             }
             observerTokens.append((workspaceCenter, token))
@@ -235,6 +284,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     }
 
     func refreshCurrentVolume(force: Bool = false) async {
+        guard displayOperationsAllowed else { return }
         guard currentDisplayInfo != nil else {
             invalidateManualVolumeWrites()
             currentVolume = nil
@@ -253,8 +303,10 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         }
 
         lastVolumeReadDate = now
+        let powerGeneration = displayPowerGeneration
         let readback = await brightnessCoordinator.writer.currentVolume()
         guard currentDisplayInfo != nil,
+              acceptsDisplayPowerGeneration(powerGeneration),
               acceptsManualVolumeWrite(writeGeneration),
               pendingVolumeIntent == nil else { return }
         if let readback {
@@ -268,11 +320,16 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     }
 
     func handleWakeEvent() {
-        HiDPIReapplyService.shared.triggerReapplyDebounced()
+        beginDisplayWakeStabilization()
         keepAwakeCoordinator.handleWakeEvent()
     }
 
     func handleDisplayChangeEvent() {
+        if displayPowerState != .active || isPostWakeRefreshInProgress {
+            beginDisplayWakeStabilization()
+            return
+        }
+
         HiDPIReapplyService.shared.triggerReapplyDebounced()
         refresh()
     }

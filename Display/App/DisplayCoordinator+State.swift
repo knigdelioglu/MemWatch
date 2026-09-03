@@ -23,6 +23,14 @@ extension DisplayCoordinator {
         get { runtimeState.ddcAvailable }
         set { runtimeState.ddcAvailable = newValue }
     }
+    var displayPowerState: DisplayPowerState { runtimeState.powerLifecycle.state }
+    var displayPowerGeneration: UInt64 { runtimeState.powerLifecycle.generation }
+    var displayOperationsAllowed: Bool {
+        isRunning && runtimeState.powerLifecycle.allowsDisplayOperations
+    }
+    func acceptsDisplayPowerGeneration(_ generation: UInt64) -> Bool {
+        !Task.isCancelled && isRunning && runtimeState.powerLifecycle.accepts(generation)
+    }
     var capabilities: DisplayCapabilities { runtimeState.capabilities }
     var autoBrightnessEnabled: Bool {
         get { runtimeState.autoBrightnessEnabled }
