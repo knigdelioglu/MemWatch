@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum DisplayPowerState: String, Equatable, Sendable {
@@ -162,3 +163,31 @@ final class DisplayPowerOperationGate: @unchecked Sendable {
         return allowed && generation == candidateGeneration
     }
 }
+
+struct TargetDisplayWakeCandidate: Equatable, Sendable {
+    let displayID: CGDirectDisplayID
+    let isOnline: Bool
+    let isActive: Bool
+}
+
+enum TargetDisplayWakeStabilizationPolicy {
+    static let confirmationNanoseconds: UInt64 = 750_000_000
+    static let maxRetries: Int = 5
+
+    static func isCandidateValid(
+        initial: TargetDisplayWakeCandidate?,
+        confirmed: TargetDisplayWakeCandidate?
+    ) -> Bool {
+        guard let initial, initial.isOnline, initial.isActive else { return false }
+        guard let confirmed, confirmed.isOnline, confirmed.isActive else { return false }
+        return initial.displayID == confirmed.displayID
+    }
+
+    static func shouldWaitForTarget(
+        isTargetExpected: Bool,
+        retryCount: Int
+    ) -> Bool {
+        isTargetExpected && retryCount < maxRetries
+    }
+}
+

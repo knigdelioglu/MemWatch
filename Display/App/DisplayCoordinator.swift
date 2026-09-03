@@ -18,6 +18,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     private var runtimeStateObservation: AnyCancellable?
     private var startGeneration = 0
     var wakeStabilizationTask: Task<Void, Never>?
+    var wakeStabilizationRetryCount = 0
     var displayTickTask: Task<Void, Never>?
     var displayTickTaskToken = 0
     var isPostWakeRefreshInProgress = false
@@ -170,6 +171,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         displayTickTaskToken &+= 1
         wakeStabilizationTask?.cancel()
         wakeStabilizationTask = nil
+        wakeStabilizationRetryCount = 0
         isPostWakeRefreshInProgress = false
         DisplayPowerOperationGate.shared.suspend()
         Task { await brightnessCoordinator.writer.cancelInFlightOperations() }

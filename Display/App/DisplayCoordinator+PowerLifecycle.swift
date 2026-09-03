@@ -31,6 +31,7 @@ extension DisplayCoordinator {
         guard isRunning else { return }
 
         suspendDisplayRuntimeWork()
+        wakeStabilizationRetryCount = 0
         let now = Date()
         if displayPowerState == .waking {
             runtimeState.powerLifecycle.resetWakeStabilization(now: now)
@@ -60,6 +61,7 @@ extension DisplayCoordinator {
     private func suspendDisplayRuntimeWork() {
         wakeStabilizationTask?.cancel()
         wakeStabilizationTask = nil
+        wakeStabilizationRetryCount = 0
         isPostWakeRefreshInProgress = false
         displayTickTask?.cancel()
         displayTickTask = nil
@@ -128,8 +130,45 @@ extension DisplayCoordinator {
 
         guard displayStackIsOnlineAndActive() else {
             updateStatus("Display stack is still waking")
+            wakeStabilizationRetryCount += 1
             armWakeStabilizationTask(for: generation, retryAfter: 1.0)
             return
+        }
+
+        if TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(
+            isTargetExpected: isTargetSamsungExpected(),
+            retryCount: wakeStabilizationRetryCount
+        ) {
+            guard let initialCandidate = targetSamsungCandidate(),
+                  initialCandidate.isOnline,
+                  initialCandidate.isActive else {
+                updateStatus("Samsung S60UD is waking…")
+                wakeStabilizationRetryCount += 1
+                armWakeStabilizationTask(for: generation, retryAfter: 1.0)
+                return
+            }
+
+            // 500-1000 ms quiet verification window to ensure display ID
+            // and mode stack stability.
+            do {
+                try await Task.sleep(nanoseconds: TargetDisplayWakeStabilizationPolicy.confirmationNanoseconds)
+            } catch {
+                return
+            }
+
+            guard displayPowerState == .waking,
+                  displayPowerGeneration == generation else { return }
+
+            let confirmedCandidate = targetSamsungCandidate()
+            guard TargetDisplayWakeStabilizationPolicy.isCandidateValid(
+                initial: initialCandidate,
+                confirmed: confirmedCandidate
+            ) else {
+                updateStatus("Samsung S60UD is restabilizing…")
+                wakeStabilizationRetryCount += 1
+                armWakeStabilizationTask(for: generation, retryAfter: 1.0)
+                return
+            }
         }
 
         guard runtimeState.powerLifecycle.activateIfReady() else { return }
@@ -137,6 +176,7 @@ extension DisplayCoordinator {
         DisplayPowerOperationGate.shared.activate(generation: activeGeneration)
         isPostWakeRefreshInProgress = true
         wakeStabilizationTask = nil
+        wakeStabilizationRetryCount = 0
 
         defer { isPostWakeRefreshInProgress = false }
 
@@ -158,6 +198,65 @@ extension DisplayCoordinator {
         isPostWakeRefreshInProgress = false
         keepAwakeCoordinator.refreshKeepAwakeLifecycleIfNeeded()
         notifyDisplayPowerLifecycleChanged()
+    }
+
+    private func targetSamsungCandidate() -> TargetDisplayWakeCandidate? {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else {
+            return nil
+        }
+
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displayIDs, &count) == .success else {
+            return nil
+        }
+
+        for displayID in displayIDs.prefix(Int(count)) {
+            guard CGDisplayIsBuiltin(displayID) == 0 else { continue }
+            let vendorID = CGDisplayVendorNumber(displayID)
+            let productID = CGDisplayModelNumber(displayID)
+            if vendorID == TargetDisplaySpec.samsungQHD.vendorID &&
+                productID == TargetDisplaySpec.samsungQHD.productID {
+                return TargetDisplayWakeCandidate(
+                    displayID: displayID,
+                    isOnline: CGDisplayIsOnline(displayID) != 0,
+                    isActive: CGDisplayIsActive(displayID) != 0
+                )
+            }
+        }
+        return nil
+    }
+
+    private func isTargetSamsungPhysicallyOnline() -> Bool {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else {
+            return false
+        }
+
+        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displayIDs, &count) == .success else {
+            return false
+        }
+
+        return displayIDs.prefix(Int(count)).contains { displayID in
+            CGDisplayIsBuiltin(displayID) == 0 &&
+                CGDisplayVendorNumber(displayID) == TargetDisplaySpec.samsungQHD.vendorID &&
+                CGDisplayModelNumber(displayID) == TargetDisplaySpec.samsungQHD.productID &&
+                CGDisplayIsOnline(displayID) != 0
+        }
+    }
+
+    private func isTargetSamsungExpected() -> Bool {
+        if isTargetSamsungPhysicallyOnline() {
+            return true
+        }
+        if currentDisplayInfo != nil {
+            return true
+        }
+        if store.preferences.selectedDisplayKey != nil {
+            return true
+        }
+        return false
     }
 
     private func displayStackIsOnlineAndActive() -> Bool {

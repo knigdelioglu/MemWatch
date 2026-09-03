@@ -15,6 +15,7 @@ struct DisplayFeatureSmoke {
         testExternalSliderInteractionPolicy()
         testLatestValueWriteGate()
         testDisplayPowerLifecycle()
+        testTargetDisplayWakeStabilizationPolicy()
         testKeepAwakeStatePersistence()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
@@ -147,6 +148,33 @@ struct DisplayFeatureSmoke {
         gate.activate(generation: lifecycle.generation)
         precondition(gate.isAllowed())
         precondition(lifecycle.accepts(lifecycle.generation))
+    }
+
+    private static func testTargetDisplayWakeStabilizationPolicy() {
+        precondition(TargetDisplayWakeStabilizationPolicy.confirmationNanoseconds == 750_000_000)
+        precondition(TargetDisplayWakeStabilizationPolicy.maxRetries == 5)
+
+        let initial = TargetDisplayWakeCandidate(displayID: 42, isOnline: true, isActive: true)
+        let confirmed = TargetDisplayWakeCandidate(displayID: 42, isOnline: true, isActive: true)
+        precondition(TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: initial, confirmed: confirmed))
+
+        // Display ID changed during the 750ms verification window -> invalid
+        let changedID = TargetDisplayWakeCandidate(displayID: 43, isOnline: true, isActive: true)
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: initial, confirmed: changedID))
+
+        // Display dropped offline or inactive during the window -> invalid
+        let offline = TargetDisplayWakeCandidate(displayID: 42, isOnline: false, isActive: true)
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: initial, confirmed: offline))
+        let inactive = TargetDisplayWakeCandidate(displayID: 42, isOnline: true, isActive: false)
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: initial, confirmed: inactive))
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: nil, confirmed: confirmed))
+        precondition(!TargetDisplayWakeStabilizationPolicy.isCandidateValid(initial: initial, confirmed: nil))
+
+        // Retry limit policy
+        precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 0))
+        precondition(TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 4))
+        precondition(!TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: true, retryCount: 5))
+        precondition(!TargetDisplayWakeStabilizationPolicy.shouldWaitForTarget(isTargetExpected: false, retryCount: 0))
     }
 
     private static func testExternalSliderInteractionPolicy() {
