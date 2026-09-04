@@ -507,6 +507,32 @@ jobs:
             -o /tmp/memwatch-monitoring-concurrency-tests
           /tmp/memwatch-monitoring-concurrency-tests
 
+      - name: Run thermal domain foundation tests
+        run: |
+          for test_file in \
+            ThermalModelsTests.swift \
+            SensorCatalogTests.swift \
+            TemperatureValidatorTests.swift \
+            ThermalAggregatorTests.swift \
+            ThermalSourcePolicyTests.swift \
+            ThermalHealthTests.swift
+          do
+            test_name="${test_file%.swift}"
+            xcrun swiftc \
+              -parse-as-library \
+              Models/TemperatureSensor.swift \
+              Models/ThermalSnapshot.swift \
+              Core/Thermal/TemperatureValidator.swift \
+              Core/Thermal/SensorCatalog.swift \
+              Core/Thermal/ThermalHealth.swift \
+              Core/Thermal/ThermalSourcePolicy.swift \
+              Core/Thermal/ThermalAggregator.swift \
+              Tests/ThermalTestFixtures.swift \
+              "Tests/${test_file}" \
+              -o "/tmp/memwatch-${test_name}"
+            "/tmp/memwatch-${test_name}"
+          done
+
       - name: Run privileged helper protocol tests
         run: |
           xcrun swiftc \
