@@ -62,6 +62,12 @@ struct HIDMatchingReport: Codable {
     let matchingResult: String?
     let discoveryStatus: String
     let discoveryError: String?
+    var implementationMode: String? = nil
+}
+
+enum HIDImplementationMode: String, Codable {
+    case standard = "standard"
+    case macmonCompatible = "macmon-compatible"
 }
 
 struct HIDPropertyValue: Codable {
@@ -310,6 +316,9 @@ private typealias HIDEventSystemClientCreateFunction = @convention(c) (CFAllocat
 // Current Swift/Objective-C declarations expose SetMatching as void. Do not
 // interpret an undefined return register as an IOReturn status.
 private typealias HIDEventSystemClientSetMatchingFunction = @convention(c) (CFTypeRef, CFDictionary) -> Void
+// vladkens/macmon (MIT License) declares SetMatching returning i32:
+// fn IOHIDEventSystemClientSetMatching(a: IOHIDEventSystemClientRef, b: CFDictionaryRef) -> i32;
+private typealias MacmonSetMatchingFunction = @convention(c) (CFTypeRef, CFDictionary) -> Int32
 private typealias HIDEventSystemClientCopyServicesFunction = @convention(c) (CFTypeRef) -> Unmanaged<AnyObject>?
 private typealias HIDServiceClientCopyPropertyFunction = @convention(c) (CFTypeRef, CFString) -> Unmanaged<AnyObject>?
 private typealias HIDServiceClientCopyEventFunction = @convention(c) (CFTypeRef, Int64, Int32, Int64) -> Unmanaged<AnyObject>?
@@ -345,9 +354,11 @@ private final class HIDDiscoveredService {
 }
 
 final class HIDTemperatureReader {
+    let implementationMode: HIDImplementationMode
     private var libraryHandle: UnsafeMutableRawPointer?
     private let createClient: HIDEventSystemClientCreateFunction?
     private let setMatching: HIDEventSystemClientSetMatchingFunction?
+    private let macmonSetMatching: MacmonSetMatchingFunction?
     private let copyServices: HIDEventSystemClientCopyServicesFunction?
     private let copyProperty: HIDServiceClientCopyPropertyFunction?
     private let copyEvent: HIDServiceClientCopyEventFunction?
@@ -386,12 +397,14 @@ final class HIDTemperatureReader {
 
     let symbolAvailability: HIDSymbolAvailability
 
-    init() {
+    init(implementationMode: HIDImplementationMode = .standard) {
+        self.implementationMode = implementationMode
         let handle = dlopen(HIDProbeConstants.iokitPath, RTLD_LAZY | RTLD_LOCAL)
         libraryHandle = handle
 
         createClient = Self.resolve(handle: handle, name: "IOHIDEventSystemClientCreate", as: HIDEventSystemClientCreateFunction.self)
         setMatching = Self.resolve(handle: handle, name: "IOHIDEventSystemClientSetMatching", as: HIDEventSystemClientSetMatchingFunction.self)
+        macmonSetMatching = Self.resolve(handle: handle, name: "IOHIDEventSystemClientSetMatching", as: MacmonSetMatchingFunction.self)
         copyServices = Self.resolve(handle: handle, name: "IOHIDEventSystemClientCopyServices", as: HIDEventSystemClientCopyServicesFunction.self)
         copyProperty = Self.resolve(handle: handle, name: "IOHIDServiceClientCopyProperty", as: HIDServiceClientCopyPropertyFunction.self)
         copyEvent = Self.resolve(handle: handle, name: "IOHIDServiceClientCopyEvent", as: HIDServiceClientCopyEventFunction.self)
@@ -460,12 +473,37 @@ final class HIDTemperatureReader {
         client = unmanagedClient.takeRetainedValue()
         backendAvailable = true
 
-        let matching: CFDictionary = [
-            "PrimaryUsagePage": NSNumber(value: HIDProbeConstants.primaryUsagePage),
-            "PrimaryUsage": NSNumber(value: HIDProbeConstants.primaryUsage)
-        ] as CFDictionary
-        setMatching(client! as CFTypeRef, matching)
-        matchingResult = "void API; no return code"
+        let matching: CFDictionary
+        if implementationMode == .macmonCompatible {
+            // vladkens/macmon MIT logic: exact CFDictionaryCreate with kCFNumberSInt32Type
+            var page: Int32 = HIDProbeConstants.primaryUsagePage
+            var usage: Int32 = HIDProbeConstants.primaryUsage
+            let pageNum = CFNumberCreate(kCFAllocatorDefault, .sInt32Type, &page)!
+            let usageNum = CFNumberCreate(kCFAllocatorDefault, .sInt32Type, &usage)!
+            let keys = ["PrimaryUsagePage" as CFString, "PrimaryUsage" as CFString]
+            let values = [pageNum, usageNum]
+            var keysPtr: [UnsafeRawPointer?] = keys.map { UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque()) }
+            var valsPtr: [UnsafeRawPointer?] = values.map { UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque()) }
+            var keyCallbacks = kCFTypeDictionaryKeyCallBacks
+            var valCallbacks = kCFTypeDictionaryValueCallBacks
+            matching = CFDictionaryCreate(
+                kCFAllocatorDefault,
+                &keysPtr,
+                &valsPtr,
+                2,
+                &keyCallbacks,
+                &valCallbacks
+            )!
+            let retCode = macmonSetMatching?(client! as CFTypeRef, matching) ?? 0
+            matchingResult = "macmon-compatible Int32 API; returned \(retCode)"
+        } else {
+            matching = [
+                "PrimaryUsagePage": NSNumber(value: HIDProbeConstants.primaryUsagePage),
+                "PrimaryUsage": NSNumber(value: HIDProbeConstants.primaryUsage)
+            ] as CFDictionary
+            setMatching(client! as CFTypeRef, matching)
+            matchingResult = "void API; no return code"
+        }
         matchingConfigured = true
 
         guard let unmanagedServices = copyServices(client! as CFTypeRef) else {
@@ -700,7 +738,7 @@ final class HIDTemperatureReader {
             eventReadCount: eventReadCount,
             successfulEventReadCount: successfulEventReadCount,
             failedEventReadCount: failedEventReadCount,
-            discoveryStrategy: "discover/cache once; subsequent samples read cached service references"
+            discoveryStrategy: implementationMode == .macmonCompatible ? "macmon-compatible: exact CFDictionaryCreate and Int32 SetMatching declaration" : "discover/cache once; subsequent samples read cached service references"
         )
         return HIDBackendReport(
             available: backendAvailable,
@@ -712,7 +750,8 @@ final class HIDTemperatureReader {
                 matchingConfigured: matchingConfigured,
                 matchingResult: matchingResult,
                 discoveryStatus: discoveryStatus,
-                discoveryError: discoveryError
+                discoveryError: discoveryError,
+                implementationMode: implementationMode.rawValue
             ),
             serviceCount: services.count,
             eventReadCount: eventReadCount,

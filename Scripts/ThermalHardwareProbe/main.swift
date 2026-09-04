@@ -1766,6 +1766,7 @@ private struct ProbeOptions: Codable {
     let outputDirectory: String
     let backend: ProbeBackend
     let runIdentifier: String
+    var hidImplementation: String = "standard"
 }
 
 private struct ProbeReport: Codable {
@@ -2350,6 +2351,7 @@ private func parseOptions(_ arguments: [String]) throws -> (options: ProbeOption
     var outputDirectory = ProbeConstants.defaultOutputDirectory
     var backend = ProbeBackend.all
     var runIdentifier = defaultRunIdentifier()
+    var hidImplementation = "standard"
     var selfTest = false
     var help = false
     var index = 1
@@ -2384,6 +2386,14 @@ private func parseOptions(_ arguments: [String]) throws -> (options: ProbeOption
                 throw ProbeArgumentError.invalidValue(index < arguments.count ? arguments[index] : argument)
             }
             backend = value
+        case "--hid-implementation":
+            index += 1
+            guard index < arguments.count else { throw ProbeArgumentError.missingValue(argument) }
+            let mode = arguments[index]
+            guard mode == "standard" || mode == "macmon-compatible" else {
+                throw ProbeArgumentError.invalidValue(mode)
+            }
+            hidImplementation = mode
         case "--run-id":
             index += 1
             guard index < arguments.count, validRunIdentifier(arguments[index]) else {
@@ -2409,7 +2419,8 @@ private func parseOptions(_ arguments: [String]) throws -> (options: ProbeOption
             intervalSeconds: interval,
             outputDirectory: outputDirectory,
             backend: backend,
-            runIdentifier: runIdentifier
+            runIdentifier: runIdentifier,
+            hidImplementation: hidImplementation
         ),
         false,
         false
@@ -2421,7 +2432,7 @@ private func printHelp() {
     ThermalHardwareProbe — read-only AppleSMC/IOHID/AppleSmartBattery evidence probe
 
     Usage:
-      thermal-hardware-probe [--backend smc|hid|battery|all] [--samples N] [--interval SECONDS] [--output-dir PATH] [--run-id ID]
+      thermal-hardware-probe [--backend smc|hid|battery|all] [--hid-implementation standard|macmon-compatible] [--samples N] [--interval SECONDS] [--output-dir PATH] [--run-id ID]
       thermal-hardware-probe --self-test
 
     Defaults:
@@ -2689,7 +2700,7 @@ private func runProbe(options: ProbeOptions) -> Int32 {
 
     let enumerationWallMilliseconds = (monotonicSeconds() - enumerationStart) * 1_000
 
-    let hidReader = options.backend.includesHID ? HIDTemperatureReader() : nil
+    let hidReader = options.backend.includesHID ? HIDTemperatureReader(implementationMode: HIDImplementationMode(rawValue: options.hidImplementation) ?? .standard) : nil
     hidReader?.discover()
     var battery = options.backend.includesBattery
         ? collectBatteryReport()

@@ -1,0 +1,52 @@
+{
+  "execution": {
+    "status": "SKIPPED",
+    "reason": "macmon binary not found in PATH or standard system directories; rustc/cargo toolchain not installed on host machine. Per instruction Section 2 ('Toolchain/dependency kurmak gerekiyorsa otomatik sistem mutation yapma; SKIPPED olarak raporla'), brew/cargo system mutation was avoided without sudo.",
+    "hostEnvironment": {
+      "model": "Mac16,12",
+      "chip": "Apple M4",
+      "arch": "arm64",
+      "os": "macOS 27.0 (build 26A5425a)",
+      "kernel": "27.0.0",
+      "uid": 501,
+      "root": false
+    },
+    "checkedPaths": [
+      "/usr/bin/macmon",
+      "/usr/local/bin/macmon",
+      "/opt/homebrew/bin/macmon",
+      "/Users/kadir/.cargo/bin/macmon"
+    ]
+  },
+  "sourceAnalysis": {
+    "repository": "vladkens/macmon",
+    "version": "0.8.2",
+    "sourceFiles": [
+      "src_lib/sources.rs",
+      "src_lib/metrics.rs"
+    ],
+    "thermalArchitecture": {
+      "strategy": "Dual-backend: AppleSMC prioritized, IOHIDSensors fallback",
+      "codeReference": "metrics.rs:442-449",
+      "codeSnippet": "fn get_temp(&mut self) -> WithError<TempMetrics> { match !self.smc_cpu_keys.is_empty() { true => self.get_temp_smc(), false => self.get_temp_hid() } }",
+      "commentInSource": "// HID for M1, SMC for M2/M3 // UPD: Looks like HID/SMC related to OS version, not to the chip (SMC available from macOS 14)",
+      "smcMechanism": {
+        "service": "AppleSMC",
+        "endpoint": "AppleSMCKeysEndpoint",
+        "cpuKeysPrefixes": ["Tp", "Te", "Ts"],
+        "gpuKeysPrefixes": ["Tg"],
+        "connection": "IOServiceOpen (rootless)"
+      },
+      "hidMechanism": {
+        "client": "IOHIDEventSystemClientCreate(kCFAllocatorDefault)",
+        "matching": "PrimaryUsagePage=0xFF00, PrimaryUsage=0x0005",
+        "filter": "name.starts_with('pACC MTR Temp Sensor') || name.starts_with('eACC MTR Temp Sensor') for CPU; name.starts_with('GPU MTR Temp Sensor') for GPU",
+        "m4Implication": "M4 chip uses 'PMU tdie*' and 'PMU2 tdie*' rather than 'pACC MTR Temp Sensor'. If macmon fell back to HID on M4, its sensor name filters would match 0 sensors. Macmon temperature on M4 relies on AppleSMC."
+      }
+    }
+  },
+  "externalSameHardwareEvidence": {
+    "targetHardware": "Mac16,12 (MacBook Air, Apple M4)",
+    "publicReports": "macmon issues and output captures on M4 hardware report cpu_temp_avg and gpu_temp_avg derived from AppleSMC keys (Tp* and Tg*). When running in rootless terminal environments where AppleSMC user clients are permitted, SMC keys are fully readable on macOS 14, 15, and 27."
+  }
+}
