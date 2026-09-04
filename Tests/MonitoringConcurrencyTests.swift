@@ -57,7 +57,16 @@ private actor ControlledMonitoringCollector: MonitoringCollecting {
                 lowPowerModeEnabled: false,
                 topProcesses: []
             ),
-            storageVolumes: requestStorage(value: value)
+            storageVolumes: requestStorage(value: value),
+            thermal: ThermalSnapshot(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(value)),
+                hardwareEpoch: value,
+                backendStatuses: [:],
+                categorySourceSelections: .empty,
+                categoryAvailability: .empty,
+                aggregates: .empty,
+                readings: []
+            )
         )
     }
 
@@ -118,9 +127,11 @@ struct MonitoringConcurrencyTests {
         let finalState = await collector.state()
         let finalDiagnostics = await MainActor.run { service.diagnostics }
         let finalStorageAvailable = await MainActor.run { service.storageVolumes.first?.availableBytes }
+        let finalThermalEpoch = await MainActor.run { service.thermalSnapshot.hardwareEpoch }
         precondition(finalState.maximum == 1, "Follow-up collection must remain serialized")
         precondition(finalDiagnostics.cpuUsagePercent == 2, "The latest snapshot must be applied")
         precondition(finalStorageAvailable == 98, "Latest storage snapshot must be applied")
+        precondition(finalThermalEpoch == 2, "Latest thermal snapshot must be applied")
         await MainActor.run { service.stop() }
 
         print("PASS monitoring serialization, coalescing and MainActor responsiveness")

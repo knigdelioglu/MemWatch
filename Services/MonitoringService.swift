@@ -10,6 +10,7 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var powerSnapshot = PowerSnapshot.empty
     @Published private(set) var powerHistory: [PowerHistoryPoint] = []
     @Published private(set) var diagnostics = SystemDiagnosticsSnapshot.empty
+    @Published private(set) var thermalSnapshot = ThermalSnapshot.empty
     @Published private(set) var systemHistory: [SystemHistoryPoint] = []
     @Published private(set) var launchAtLoginState: LaunchAtLoginState = .disabled
     @Published private(set) var launchAtLoginError: String?
@@ -279,6 +280,7 @@ final class MonitoringService: ObservableObject {
                 : diagnostics.topProcesses
         )
         diagnostics = diagnosticsSnapshot
+        thermalSnapshot = collected.thermal
 
         if request.includeProcesses {
             lastProcessRefreshDate = startedAt

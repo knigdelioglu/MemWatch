@@ -14,6 +14,7 @@ struct MonitoringCollectionSnapshot: Sendable {
     let power: PowerSnapshot
     let diagnostics: SystemDiagnosticsSnapshot
     let storageVolumes: [StorageVolumeSnapshot]?
+    let thermal: ThermalSnapshot
 }
 
 /// Actor boundary used by MonitoringService. Keeping the protocol actor-bound
@@ -30,13 +31,19 @@ actor MonitoringCollector: MonitoringCollecting {
     private let powerCollector = PowerCollector()
     private let diagnosticsCollector = SystemDiagnosticsCollector()
     private let storageCollector = StorageCollector()
+    private let thermalCollector: ThermalCollector
+
+    init(thermalCollector: ThermalCollector? = nil) {
+        self.thermalCollector = thermalCollector ?? ThermalCollector()
+    }
 
     func collect(_ request: MonitoringCollectionRequest) async -> MonitoringCollectionSnapshot {
         MonitoringCollectionSnapshot(
             memory: memoryCollector.collect(),
             power: powerCollector.collect(),
             diagnostics: diagnosticsCollector.collect(includeProcesses: request.includeProcesses),
-            storageVolumes: request.includeStorage ? storageCollector.collect() : nil
+            storageVolumes: request.includeStorage ? storageCollector.collect() : nil,
+            thermal: thermalCollector.collect()
         )
     }
 }

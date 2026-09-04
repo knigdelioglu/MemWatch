@@ -426,14 +426,18 @@ final class IOHIDTemperatureAPI: HIDTemperatureAPI {
         }
         var keyCallbacks = kCFTypeDictionaryKeyCallBacks
         var valueCallbacks = kCFTypeDictionaryValueCallBacks
-        return CFDictionaryCreate(
-            kCFAllocatorDefault,
-            &keyPointers,
-            &valuePointers,
-            keys.count,
-            &keyCallbacks,
-            &valueCallbacks
-        )
+        return keyPointers.withUnsafeMutableBufferPointer { keyBuffer in
+            valuePointers.withUnsafeMutableBufferPointer { valueBuffer in
+                CFDictionaryCreate(
+                    kCFAllocatorDefault,
+                    keyBuffer.baseAddress,
+                    valueBuffer.baseAddress,
+                    keys.count,
+                    &keyCallbacks,
+                    &valueCallbacks
+                )
+            }
+        }
     }
 
     private static func stringValue(_ value: Any?) -> String? {

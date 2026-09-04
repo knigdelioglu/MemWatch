@@ -32,6 +32,10 @@ struct BackgroundCadenceTests {
         )
 
         require(source.contains("private let scheduler: PollingScheduler"), "Monitoring must use the shared polling scheduler")
+        require(!source.contains("register(id: \"thermal-health\"")
+            && !source.contains("register(id: \"thermal-refresh\"")
+            && !source.contains("register(id: \"temperature\""),
+                "Thermal collection must reuse the existing system-health scheduler")
 
         require(mainInterval >= 5, "Main background polling must not be faster than 5s")
         require(storageInterval >= 30, "Storage polling must not be faster than 30s")
