@@ -1,0 +1,1625 @@
+{
+  "battery" : {
+    "analysis" : "Observed Temperature raw 3300 gives /100 = 33.00 °C and Smart Battery 0.1 K = 56.85 °C; both pass the broad sanity range. LifetimeData.MaximumTemperature raw 40 is not assumed to share the same unit. If it means 40 °C, /100 is internally more consistent (33.00 ≤ 40) while 0.1 K would exceed it (56.85 > 40). If the lifetime field uses another unit, this is only supporting evidence, not a unit contract. The report preserves /100, Smart Battery 0.1 K, tenths-Celsius and integer-Celsius candidates without selecting or clamping one.",
+    "errors" : [
+
+    ],
+    "matchingResult" : {
+      "code" : 0,
+      "hex" : "0x00000000",
+      "message" : "(os/kern) successful"
+    },
+    "propertyReadResult" : {
+      "code" : 0,
+      "hex" : "0x00000000",
+      "message" : "(os/kern) successful"
+    },
+    "propertyReadSucceeded" : true,
+    "relevantProperties" : [
+      {
+        "number" : {
+          "double" : 0,
+          "int64" : 0,
+          "objCType" : "i",
+          "uint64" : "0"
+        },
+        "path" : "AppleSmartBattery.Amperage",
+        "propertyName" : "Amperage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 0,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 0,
+          "unsignedInteger" : "0"
+        }
+      },
+      {
+        "path" : "AppleSmartBattery.BatteryData",
+        "propertyName" : "BatteryData",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "kind" : "dictionary",
+          "objectValue" : {
+            "AbsoluteCapacity" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "AvgTimeToEmpty" : {
+              "doubleValue" : 65535,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 65535,
+              "unsignedInteger" : "65535"
+            },
+            "BatteryPower" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "CurrentCapacity" : {
+              "doubleValue" : 85,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 85,
+              "unsignedInteger" : "85"
+            },
+            "DesignCapacity" : {
+              "doubleValue" : 4629,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4629,
+              "unsignedInteger" : "4629"
+            },
+            "FullChargeCapacity" : {
+              "doubleValue" : 4636,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4636,
+              "unsignedInteger" : "4636"
+            },
+            "FullyCharged" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "MaxCapacity" : {
+              "doubleValue" : 100,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 100,
+              "unsignedInteger" : "100"
+            },
+            "NominalChargeCapacity" : {
+              "doubleValue" : 4763,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4763,
+              "unsignedInteger" : "4763"
+            },
+            "RemainingCapacity" : {
+              "doubleValue" : 3758,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 3758,
+              "unsignedInteger" : "3758"
+            },
+            "TrueRemainingCapacity" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            }
+          },
+          "redacted" : false
+        }
+      },
+      {
+        "number" : {
+          "double" : 0,
+          "int64" : 0,
+          "objCType" : "i",
+          "uint64" : "0"
+        },
+        "path" : "AppleSmartBattery.InstantAmperage",
+        "propertyName" : "InstantAmperage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 0,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 0,
+          "unsignedInteger" : "0"
+        }
+      },
+      {
+        "path" : "AppleSmartBattery.PowerTelemetryData",
+        "propertyName" : "PowerTelemetryData",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "kind" : "dictionary",
+          "objectValue" : {
+            "AccumSystemEffectiveTotalLoad" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "AccumSystemEffectiveTotalLoadCount" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "AccumulatedAdapterEfficiencyLoss" : {
+              "doubleValue" : 34376918296280,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 34376918296280,
+              "unsignedInteger" : "34376918296280"
+            },
+            "AccumulatedBatteryDischarge" : {
+              "doubleValue" : -10483536,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : -10483536,
+              "unsignedInteger" : "18446744073699068080"
+            },
+            "AccumulatedBatteryPower" : {
+              "doubleValue" : 4110388,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4110388,
+              "unsignedInteger" : "4110388"
+            },
+            "AccumulatedSystemEnergyConsumed" : {
+              "doubleValue" : 36149000,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 36149000,
+              "unsignedInteger" : "36149000"
+            },
+            "AccumulatedSystemLoad" : {
+              "doubleValue" : 136541162,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 136541162,
+              "unsignedInteger" : "136541162"
+            },
+            "AccumulatedSystemPowerIn" : {
+              "doubleValue" : 130168014,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 130168014,
+              "unsignedInteger" : "130168014"
+            },
+            "AccumulatedWallEnergyEstimate" : {
+              "doubleValue" : 36208096,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 36208096,
+              "unsignedInteger" : "36208096"
+            },
+            "AdapterEfficiencyLoss" : {
+              "doubleValue" : -25,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : -25,
+              "unsignedInteger" : "18446744073709551591"
+            },
+            "AdapterEfficiencyLossAccumulatorCount" : {
+              "doubleValue" : 18350,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 18350,
+              "unsignedInteger" : "18350"
+            },
+            "BatteryDischargeAccumulatorCount" : {
+              "doubleValue" : 1268,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 1268,
+              "unsignedInteger" : "1268"
+            },
+            "BatteryPower" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "BatteryPowerAccumulatorCount" : {
+              "doubleValue" : 159,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 159,
+              "unsignedInteger" : "159"
+            },
+            "PowerTelemetryErrorCount" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "SystemCurrentIn" : {
+              "doubleValue" : 332,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 332,
+              "unsignedInteger" : "332"
+            },
+            "SystemEffectiveTotalLoad" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "SystemEnergyConsumed" : {
+              "doubleValue" : 1840,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 1840,
+              "unsignedInteger" : "1840"
+            },
+            "SystemLoad" : {
+              "doubleValue" : 6627,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 6627,
+              "unsignedInteger" : "6627"
+            },
+            "SystemLoadAccumulatorCount" : {
+              "doubleValue" : 18594,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 18594,
+              "unsignedInteger" : "18594"
+            },
+            "SystemPowerIn" : {
+              "doubleValue" : 6627,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 6627,
+              "unsignedInteger" : "6627"
+            },
+            "SystemPowerInAccumulatorCount" : {
+              "doubleValue" : 18593,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 18593,
+              "unsignedInteger" : "18593"
+            },
+            "SystemVoltageIn" : {
+              "doubleValue" : 19935,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 19935,
+              "unsignedInteger" : "19935"
+            },
+            "WallEnergyEstimate" : {
+              "doubleValue" : 1815,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 1815,
+              "unsignedInteger" : "1815"
+            }
+          },
+          "redacted" : false
+        }
+      },
+      {
+        "number" : {
+          "double" : 12631,
+          "int64" : 12631,
+          "objCType" : "i",
+          "uint64" : "12631"
+        },
+        "path" : "AppleSmartBattery.Voltage",
+        "propertyName" : "Voltage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 12631,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 12631,
+          "unsignedInteger" : "12631"
+        }
+      },
+      {
+        "path" : "AppleSmartBatteryPack.BatteryData",
+        "propertyName" : "BatteryData",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "kind" : "dictionary",
+          "objectValue" : {
+            "AbsoluteCapacity" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Amperage" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "AppleRawBatteryVoltage" : {
+              "doubleValue" : 12631,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 12631,
+              "unsignedInteger" : "12631"
+            },
+            "AppleRawCurrentCapacity" : {
+              "doubleValue" : 3758,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 3758,
+              "unsignedInteger" : "3758"
+            },
+            "AppleRawMaxCapacity" : {
+              "doubleValue" : 4636,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4636,
+              "unsignedInteger" : "4636"
+            },
+            "BatteryCellDisconnectCount" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "BatteryHealthMetric" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "BatteryPfCommsFailure" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "BatteryPower" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "BatteryState" : {
+              "kind" : "CFData",
+              "rawHex" : "000000000000000000c3e40002c9020000",
+              "redacted" : false
+            },
+            "ChargeAccum" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "ChemID" : {
+              "doubleValue" : 29845,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 29845,
+              "unsignedInteger" : "29845"
+            },
+            "CurrentCapacity" : {
+              "doubleValue" : 85,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 85,
+              "unsignedInteger" : "85"
+            },
+            "CycleCount" : {
+              "doubleValue" : 67,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 67,
+              "unsignedInteger" : "67"
+            },
+            "DailyMaxSoc" : {
+              "doubleValue" : 86,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 86,
+              "unsignedInteger" : "86"
+            },
+            "DailyMinSoc" : {
+              "doubleValue" : 81,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 81,
+              "unsignedInteger" : "81"
+            },
+            "DataFlashWriteCount" : {
+              "doubleValue" : 8254,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 8254,
+              "unsignedInteger" : "8254"
+            },
+            "DateOfFirstUse" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "DesignCapacity" : {
+              "doubleValue" : 4629,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4629,
+              "unsignedInteger" : "4629"
+            },
+            "Dod0AtQualifiedQmax" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "FaultType" : {
+              "doubleValue" : 1,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 1,
+              "unsignedInteger" : "1"
+            },
+            "FccComp1" : {
+              "doubleValue" : 4636,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4636,
+              "unsignedInteger" : "4636"
+            },
+            "FccComp2" : {
+              "doubleValue" : 4636,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4636,
+              "unsignedInteger" : "4636"
+            },
+            "FilteredCurrent" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Flags" : {
+              "doubleValue" : 16777217,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 16777217,
+              "unsignedInteger" : "16777217"
+            },
+            "FullyCharged" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "GasGaugeFirmwareVersion" : {
+              "doubleValue" : 2,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 2,
+              "unsignedInteger" : "2"
+            },
+            "GaugeFlagRaw" : {
+              "doubleValue" : 192,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 192,
+              "unsignedInteger" : "192"
+            },
+            "IPDBatteryDemand" : {
+              "doubleValue" : 8976,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 8976,
+              "unsignedInteger" : "8976"
+            },
+            "ISS" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "ITMiscStatus" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "IdealCRate" : {
+              "doubleValue" : 0.44999998807907104,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "InstantAmperage" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "LifetimeData" : {
+              "kind" : "dictionary",
+              "objectValue" : {
+                "AverageTemperature" : {
+                  "doubleValue" : 225,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 225,
+                  "unsignedInteger" : "225"
+                },
+                "CycleCountLastQmax" : {
+                  "doubleValue" : 65,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 65,
+                  "unsignedInteger" : "65"
+                },
+                "MaximumChargeCurrent" : {
+                  "doubleValue" : 5320,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 5320,
+                  "unsignedInteger" : "5320"
+                },
+                "MaximumDischargeCurrent" : {
+                  "doubleValue" : -3762,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : -3762,
+                  "unsignedInteger" : "18446744073709547854"
+                },
+                "MaximumPackVoltage" : {
+                  "doubleValue" : 13364,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 13364,
+                  "unsignedInteger" : "13364"
+                },
+                "MaximumTemperature" : {
+                  "doubleValue" : 40,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 40,
+                  "unsignedInteger" : "40"
+                },
+                "MinimumPackVoltage" : {
+                  "doubleValue" : 10832,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 10832,
+                  "unsignedInteger" : "10832"
+                },
+                "MinimumTemperature" : {
+                  "doubleValue" : 3,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 3,
+                  "unsignedInteger" : "3"
+                },
+                "RDISCnt" : {
+                  "doubleValue" : 0,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 0,
+                  "unsignedInteger" : "0"
+                },
+                "Raw" : {
+                  "kind" : "CFData",
+                  "rawHex" : "02f7204f0001ed89000000000000000002f90dd80000c7e440920000000000000028000311680e1234342a5014c8f14e19a2ee67f488f22300e1000361e90003",
+                  "redacted" : false
+                },
+                "TemperatureSamples" : {
+                  "doubleValue" : 221673,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 221673,
+                  "unsignedInteger" : "221673"
+                },
+                "TotalOperatingTime" : {
+                  "doubleValue" : 13854,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 13854,
+                  "unsignedInteger" : "13854"
+                },
+                "UpdateTime" : {
+                  "doubleValue" : 1788521177,
+                  "kind" : "NSNumber",
+                  "redacted" : false,
+                  "signedInteger" : 1788521177,
+                  "unsignedInteger" : "1788521177"
+                }
+              },
+              "redacted" : false
+            },
+            "ManufactureDate" : {
+              "doubleValue" : 57381588316979,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 57381588316979,
+              "unsignedInteger" : "57381588316979"
+            },
+            "MaxCapacity" : {
+              "doubleValue" : 100,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 100,
+              "unsignedInteger" : "100"
+            },
+            "MfgData" : {
+              "kind" : "redacted",
+              "redacted" : true
+            },
+            "MiscStatus" : {
+              "doubleValue" : 200,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 200,
+              "unsignedInteger" : "200"
+            },
+            "NominalChargeCapacity" : {
+              "doubleValue" : 4763,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4763,
+              "unsignedInteger" : "4763"
+            },
+            "PackCurrentAccumulator" : {
+              "doubleValue" : -527371,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : -527371,
+              "unsignedInteger" : "18446744073709024245"
+            },
+            "PackCurrentAccumulatorCount" : {
+              "doubleValue" : 18781,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 18781,
+              "unsignedInteger" : "18781"
+            },
+            "PackReserve" : {
+              "doubleValue" : 127,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 127,
+              "unsignedInteger" : "127"
+            },
+            "PassedCharge" : {
+              "doubleValue" : 146,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 146,
+              "unsignedInteger" : "146"
+            },
+            "PermanentFailureStatus" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "QmaxDisqualificationReason" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Qstart" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "RSS" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "ResScale" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Serial" : {
+              "kind" : "redacted",
+              "redacted" : true
+            },
+            "SimRate" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Soc1Voltage" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "StateOfCharge" : {
+              "doubleValue" : 81,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 81,
+              "unsignedInteger" : "81"
+            },
+            "Temperature" : {
+              "doubleValue" : 3300,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 3300,
+              "unsignedInteger" : "3300"
+            },
+            "TrueRemainingCapacity" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "VacVoltageLimit" : {
+              "doubleValue" : 4455,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4455,
+              "unsignedInteger" : "4455"
+            },
+            "VirtualTemperature" : {
+              "doubleValue" : 3300,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 3300,
+              "unsignedInteger" : "3300"
+            },
+            "VmaxNcc" : {
+              "doubleValue" : 4455,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 4455,
+              "unsignedInteger" : "4455"
+            },
+            "Voltage" : {
+              "doubleValue" : 12631,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 12631,
+              "unsignedInteger" : "12631"
+            },
+            "iMaxAndSocSmoothTable" : {
+              "kind" : "CFData",
+              "rawHex" : "0000000000000000000000000000000000000000000000000000000000000000",
+              "redacted" : false
+            }
+          },
+          "redacted" : false
+        }
+      },
+      {
+        "number" : {
+          "double" : 0,
+          "int64" : 0,
+          "objCType" : "i",
+          "uint64" : "0"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.Amperage",
+        "propertyName" : "Amperage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 0,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 0,
+          "unsignedInteger" : "0"
+        }
+      },
+      {
+        "number" : {
+          "double" : 0,
+          "int64" : 0,
+          "objCType" : "i",
+          "uint64" : "0"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.InstantAmperage",
+        "propertyName" : "InstantAmperage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 0,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 0,
+          "unsignedInteger" : "0"
+        }
+      },
+      {
+        "path" : "AppleSmartBatteryPack.BatteryData.LifetimeData",
+        "propertyName" : "LifetimeData",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "kind" : "dictionary",
+          "objectValue" : {
+            "AverageTemperature" : {
+              "doubleValue" : 225,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 225,
+              "unsignedInteger" : "225"
+            },
+            "CycleCountLastQmax" : {
+              "doubleValue" : 65,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 65,
+              "unsignedInteger" : "65"
+            },
+            "MaximumChargeCurrent" : {
+              "doubleValue" : 5320,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 5320,
+              "unsignedInteger" : "5320"
+            },
+            "MaximumDischargeCurrent" : {
+              "doubleValue" : -3762,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : -3762,
+              "unsignedInteger" : "18446744073709547854"
+            },
+            "MaximumPackVoltage" : {
+              "doubleValue" : 13364,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 13364,
+              "unsignedInteger" : "13364"
+            },
+            "MaximumTemperature" : {
+              "doubleValue" : 40,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 40,
+              "unsignedInteger" : "40"
+            },
+            "MinimumPackVoltage" : {
+              "doubleValue" : 10832,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 10832,
+              "unsignedInteger" : "10832"
+            },
+            "MinimumTemperature" : {
+              "doubleValue" : 3,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 3,
+              "unsignedInteger" : "3"
+            },
+            "RDISCnt" : {
+              "doubleValue" : 0,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 0,
+              "unsignedInteger" : "0"
+            },
+            "Raw" : {
+              "kind" : "CFData",
+              "rawHex" : "02f7204f0001ed89000000000000000002f90dd80000c7e440920000000000000028000311680e1234342a5014c8f14e19a2ee67f488f22300e1000361e90003",
+              "redacted" : false
+            },
+            "TemperatureSamples" : {
+              "doubleValue" : 221673,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 221673,
+              "unsignedInteger" : "221673"
+            },
+            "TotalOperatingTime" : {
+              "doubleValue" : 13854,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 13854,
+              "unsignedInteger" : "13854"
+            },
+            "UpdateTime" : {
+              "doubleValue" : 1788521177,
+              "kind" : "NSNumber",
+              "redacted" : false,
+              "signedInteger" : 1788521177,
+              "unsignedInteger" : "1788521177"
+            }
+          },
+          "redacted" : false
+        }
+      },
+      {
+        "number" : {
+          "double" : 225,
+          "int64" : 225,
+          "objCType" : "i",
+          "uint64" : "225"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.LifetimeData.AverageTemperature",
+        "propertyName" : "AverageTemperature",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 2.25,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : -250.64999999999998,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 22.5,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 225,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          }
+        ],
+        "value" : {
+          "doubleValue" : 225,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 225,
+          "unsignedInteger" : "225"
+        }
+      },
+      {
+        "number" : {
+          "double" : 40,
+          "int64" : 40,
+          "objCType" : "i",
+          "uint64" : "40"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.LifetimeData.MaximumTemperature",
+        "propertyName" : "MaximumTemperature",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 0.4,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : -269.15,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 4,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 40,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : true
+          }
+        ],
+        "value" : {
+          "doubleValue" : 40,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 40,
+          "unsignedInteger" : "40"
+        }
+      },
+      {
+        "number" : {
+          "double" : 3,
+          "int64" : 3,
+          "objCType" : "i",
+          "uint64" : "3"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.LifetimeData.MinimumTemperature",
+        "propertyName" : "MinimumTemperature",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 0.03,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : -272.84999999999997,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 0.3,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 3,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : true
+          }
+        ],
+        "value" : {
+          "doubleValue" : 3,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 3,
+          "unsignedInteger" : "3"
+        }
+      },
+      {
+        "number" : {
+          "double" : 221673,
+          "int64" : 221673,
+          "objCType" : "i",
+          "uint64" : "221673"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.LifetimeData.TemperatureSamples",
+        "propertyName" : "TemperatureSamples",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 2216.73,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 21894.149999999998,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 22167.3,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 221673,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          }
+        ],
+        "value" : {
+          "doubleValue" : 221673,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 221673,
+          "unsignedInteger" : "221673"
+        }
+      },
+      {
+        "number" : {
+          "double" : 3300,
+          "int64" : 3300,
+          "objCType" : "i",
+          "uint64" : "3300"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.Temperature",
+        "propertyName" : "Temperature",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 33,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 56.85000000000002,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 330,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 3300,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          }
+        ],
+        "value" : {
+          "doubleValue" : 3300,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 3300,
+          "unsignedInteger" : "3300"
+        }
+      },
+      {
+        "number" : {
+          "double" : 3300,
+          "int64" : 3300,
+          "objCType" : "i",
+          "uint64" : "3300"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.VirtualTemperature",
+        "propertyName" : "VirtualTemperature",
+        "temperatureCandidates" : [
+          {
+            "celsius" : 33,
+            "interpretation" : "Candidate macOS /100 interpretation",
+            "notes" : "heuristic; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 56.85000000000002,
+            "interpretation" : "Candidate Smart Battery 0.1 K interpretation",
+            "notes" : "standard Smart Battery-style candidate; not selected",
+            "validUnderSanityCheck" : true
+          },
+          {
+            "celsius" : 330,
+            "interpretation" : "Candidate tenths-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          },
+          {
+            "celsius" : 3300,
+            "interpretation" : "Candidate integer-Celsius interpretation",
+            "notes" : "non-standard fallback; not selected",
+            "validUnderSanityCheck" : false
+          }
+        ],
+        "value" : {
+          "doubleValue" : 3300,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 3300,
+          "unsignedInteger" : "3300"
+        }
+      },
+      {
+        "number" : {
+          "double" : 12631,
+          "int64" : 12631,
+          "objCType" : "q",
+          "uint64" : "12631"
+        },
+        "path" : "AppleSmartBatteryPack.BatteryData.Voltage",
+        "propertyName" : "Voltage",
+        "temperatureCandidates" : [
+
+        ],
+        "value" : {
+          "doubleValue" : 12631,
+          "kind" : "NSNumber",
+          "redacted" : false,
+          "signedInteger" : 12631,
+          "unsignedInteger" : "12631"
+        }
+      }
+    ],
+    "sampling" : {
+      "completedSamples" : 1,
+      "intervalSeconds" : 5,
+      "points" : [
+        {
+          "errors" : [
+
+          ],
+          "propertyReadSucceeded" : true,
+          "readings" : [
+            {
+              "dividedBy100Celsius" : 33,
+              "path" : "AppleSmartBatteryPack.BatteryData.Temperature",
+              "propertyName" : "Temperature",
+              "raw" : 3300,
+              "serviceClass" : "AppleSmartBatteryPack",
+              "status" : "observed",
+              "zeroPoint1KCelsius" : 56.85000000000002
+            },
+            {
+              "dividedBy100Celsius" : 33,
+              "path" : "AppleSmartBatteryPack.BatteryData.VirtualTemperature",
+              "propertyName" : "VirtualTemperature",
+              "raw" : 3300,
+              "serviceClass" : "AppleSmartBatteryPack",
+              "status" : "observed",
+              "zeroPoint1KCelsius" : 56.85000000000002
+            }
+          ],
+          "serviceCount" : 2,
+          "timestamp" : "2026-09-04T11:26:32Z"
+        }
+      ],
+      "requestedSamples" : 1,
+      "status" : "completed"
+    },
+    "selectedInterpretation" : "UNVERIFIED",
+    "serviceClass" : "AppleSmartBattery, AppleSmartBatteryPack",
+    "serviceCount" : 2,
+    "serviceFound" : true,
+    "unitAssessment" : {
+      "confidence" : "LOW",
+      "dividedBy100Celsius" : 33,
+      "lifetimeAverageRaw" : 225,
+      "lifetimeMaximumDividedBy100Candidate" : 0.4,
+      "lifetimeMaximumIntegerCelsiusCandidate" : 40,
+      "lifetimeMaximumRaw" : 40,
+      "lifetimeMaximumZeroPoint1KCandidate" : -269.15,
+      "lifetimeMinimumRaw" : 3,
+      "rationale" : "Observed Temperature raw 3300 gives /100 = 33.00 °C and Smart Battery 0.1 K = 56.85 °C; both pass the broad sanity range. LifetimeData.MaximumTemperature raw 40 is not assumed to share the same unit. If it means 40 °C, /100 is internally more consistent (33.00 ≤ 40) while 0.1 K would exceed it (56.85 > 40). If the lifetime field uses another unit, this is only supporting evidence, not a unit contract.",
+      "selectedInterpretation" : "UNVERIFIED",
+      "temperatureRaw" : 3300,
+      "virtualTemperatureRaw" : 3300,
+      "zeroPoint1KCelsius" : 56.85000000000002
+    }
+  },
+  "generatedAt" : "2026-09-04T11:26:32Z",
+  "hardware" : {
+    "appleSilicon" : true,
+    "architecture" : "arm64",
+    "chip" : "Apple M4",
+    "effectiveUID" : 501,
+    "kernelVersion" : "27.0.0",
+    "macOSBuild" : "26A5425a",
+    "macOSVersion" : "27.0",
+    "modelIdentifier" : "Mac16,12",
+    "runningAsRoot" : false,
+    "sandbox" : "not determinable from CLI environment (no container marker)"
+  },
+  "hidBackend" : {
+    "available" : true,
+    "errors" : [
+      "IOHIDEventSystemClientCopyServices returned nil"
+    ],
+    "eventReadCount" : 0,
+    "failedEventReadCount" : 0,
+    "matching" : {
+      "discoveryError" : "IOHIDEventSystemClientCopyServices returned nil",
+      "discoveryStatus" : "noServices",
+      "matchingConfigured" : true,
+      "matchingResult" : "void API; no return code",
+      "primaryUsage" : 5,
+      "primaryUsagePage" : 65280
+    },
+    "performance" : {
+      "cachedSampleReadCount" : 0,
+      "cachedSampleReadWallDurationMilliseconds" : 0,
+      "discoveryStrategy" : "discover/cache once; subsequent samples read cached service references",
+      "eventReadCount" : 0,
+      "failedEventReadCount" : 0,
+      "firstSampleReadCPUTimeMilliseconds" : 0.014000000000000123,
+      "firstSampleReadWallDurationMilliseconds" : 0.014917000953573734,
+      "initialDiscoveryCPUTimeMilliseconds" : 2.8859999999999997,
+      "initialDiscoveryWallDurationMilliseconds" : 4.223042000376154,
+      "serviceCount" : 0,
+      "successfulEventReadCount" : 0
+    },
+    "resourceCleanup" : {
+      "clientReleaseAttempted" : true,
+      "clientReleased" : true,
+      "libraryCloseAttempted" : true,
+      "libraryClosed" : true,
+      "serviceArrayReleaseAttempted" : false,
+      "serviceArrayReleased" : false
+    },
+    "serviceCount" : 0,
+    "successfulEventReadCount" : 0,
+    "symbolAvailability" : {
+      "libraryLoaded" : true,
+      "libraryPath" : "/System/Library/Frameworks/IOKit.framework/IOKit",
+      "missingSymbols" : [
+
+      ],
+      "requiredSymbolsFound" : true,
+      "symbols" : {
+        "IOHIDEventGetFloatValue" : true,
+        "IOHIDEventSystemClientCopyServices" : true,
+        "IOHIDEventSystemClientCreate" : true,
+        "IOHIDEventSystemClientSetMatching" : true,
+        "IOHIDServiceClientCopyEvent" : true,
+        "IOHIDServiceClientCopyProperty" : true
+      }
+    },
+    "symbols" : {
+      "IOHIDEventGetFloatValue" : true,
+      "IOHIDEventSystemClientCopyServices" : true,
+      "IOHIDEventSystemClientCreate" : true,
+      "IOHIDEventSystemClientSetMatching" : true,
+      "IOHIDServiceClientCopyEvent" : true,
+      "IOHIDServiceClientCopyProperty" : true
+    }
+  },
+  "options" : {
+    "backend" : "all",
+    "intervalSeconds" : 5,
+    "outputDirectory" : "docs/generated/thermal_probe",
+    "runIdentifier" : "m4-mac16-12-idle-20260904-final2",
+    "samples" : 1
+  },
+  "performance" : {
+    "averageProcessCPUTimeMillisecondsPerSample" : 18.425000000000004,
+    "averageWallMillisecondsPerSample" : 0.1602910015208181,
+    "cachedHIDSampleReadCount" : 0,
+    "cachedHIDSampleReadWallDurationMilliseconds" : 0,
+    "cadenceAssessment" : "5-second diagnostic cadence is reasonable; measured probe CPU time is 18.43 ms/sample and does not approach the cadence budget.",
+    "firstHIDSampleReadCPUTimeMilliseconds" : 0.014000000000000123,
+    "firstHIDSampleReadWallDurationMilliseconds" : 0.014917000953573734,
+    "hidEventReadCount" : 0,
+    "initialHIDDiscoveryCPUTimeMilliseconds" : 2.8859999999999997,
+    "initialHIDDiscoveryWallDurationMilliseconds" : 4.223042000376154,
+    "initialKeyReadCount" : 0,
+    "processCPUTimeMilliseconds" : 18.425000000000004,
+    "sampledTemperatureReadCount" : 0,
+    "smcEnumerationWallDurationMilliseconds" : 0.020458999642869458,
+    "totalWallDurationMilliseconds" : 482.6902089989744
+  },
+  "references" : [
+    "Apple IOKit IOServiceOpen documentation: https://developer.apple.com/documentation/iokit/1514515-ioserviceopen",
+    "Apple IOKit IOConnectCallStructMethod documentation: https://developer.apple.com/documentation/iokit/1514274-ioconnectcallstructmethod",
+    "Apple IOKit IOHIDEventSystemClientCopyServices documentation: https://developer.apple.com/documentation/iokit/2269511-iohideventsystemclientcopyservic",
+    "Apple IOKit IOHIDServiceClientCopyProperty documentation: https://developer.apple.com/documentation/iokit/2269430-iohidserviceclientcopyproperty",
+    "Linux/Asahi Apple Silicon SMC transport reference: https://github.com/torvalds/linux/blob/master/drivers/mfd/macsmc.c",
+    "Linux/Asahi Apple Silicon SMC hwmon type handling reference: https://github.com/torvalds/linux/blob/master/drivers/hwmon/macsmc-hwmon.c",
+    "Stats Swift SMC user-client structure and read command reference: https://github.com/exelban/stats/blob/master/SMC/smc.swift",
+    "Stats IOHID temperature reader reference (MIT): https://github.com/exelban/stats/blob/master/Modules/Sensors/reader.m",
+    "SwiftTempBar IOHID temperature matching and event reference (MIT): https://github.com/WHYBBE/SwiftTempBar",
+    "SwiftTempBar source declaration of the void SetMatching ABI (MIT): https://github.com/WHYBBE/SwiftTempBar/blob/main/Sources/TemperatureReader.swift",
+    "lude-vitals IOHID private-symbol sampler reference (MIT): https://github.com/iamdemetris/lude-vitals",
+    "redline IOHID temperature enumeration and conservative filtering reference (MIT): https://github.com/apeabody007/redline",
+    "IOHID temperature usage/event declarations: https://github.com/freedomtan/sensors_cmdline/blob/main/sensors.m",
+    "Chromium Apple Silicon sensor declarations: https://chromium.googlesource.com/chromium/src/+/c21e9f71d1f2e/components/power_metrics/m1_sensors_internal_types_mac.h",
+    "Netdata macOS IOHID declaration comparison: https://github.com/netdata/netdata/blob/master/src/collectors/macos.plugin/macos_iohid.c",
+    "macmon/mactop Apple Silicon monitor reference (MIT; optional fan-control writes are outside this probe): https://github.com/metaspartan/mactop",
+    "iSMC Apple Silicon HID/SMC reference (GPL-3.0; reference only, no code copied): https://github.com/dkorunic/iSMC"
+  ],
+  "safety" : {
+    "authorizationServicesUsed" : false,
+    "connectionReleaseAttempted" : false,
+    "connectionReleasedSuccessfully" : false,
+    "fanManipulationImplemented" : false,
+    "hidSetReportInvoked" : false,
+    "hidWritesAttempted" : false,
+    "powerLimitMutationImplemented" : false,
+    "powermetricsInvoked" : false,
+    "privilegedHelperUsed" : false,
+    "processRanAsRoot" : false,
+    "readOnly" : true,
+    "rootRequiredByProbe" : false,
+    "sleepWakeIntegrationImplemented" : false,
+    "smcWritesAttempted" : false,
+    "voltagePowerMutationAttempted" : false
+  },
+  "sampling" : {
+    "batteryServiceCount" : 2,
+    "batteryTemperatureReadingCount" : 2,
+    "completedSamples" : 1,
+    "correlations" : [
+
+    ],
+    "eventReadCount" : 0,
+    "hidServiceCount" : 0,
+    "intervalSeconds" : 5,
+    "requestedSamples" : 1,
+    "status" : "completed; AppleSMC unavailable; HID returned no temperature services",
+    "temperatureKeyCount" : 0,
+    "wallDurationMilliseconds" : 0.1602910015208181,
+    "workloadGenerated" : false
+  },
+  "schemaVersion" : "2.0",
+  "sensors" : [
+
+  ],
+  "services" : [
+
+  ],
+  "smc" : {
+    "connectionOpened" : false,
+    "decodedTemperatureKeyCount" : 0,
+    "enumeratedKeyCount" : 0,
+    "errors" : [
+      "matching service was found, but IOServiceOpen/#KEY protocol validation failed"
+    ],
+    "keyEnumerationSupported" : false,
+    "keyEnumerationTruncated" : false,
+    "keyInfoFailureCount" : 0,
+    "keyInfoSuccessCount" : 0,
+    "keyReadFailureCount" : 0,
+    "keyReadSuccessCount" : 0,
+    "observedDataTypes" : [
+
+    ],
+    "protocolAttempt" : "IOConnectCallStructMethod selector 2; key-info command 9, read-bytes command 5, read-index command 8; not reached because IOServiceOpen/#KEY validation failed",
+    "serviceCandidates" : [
+      {
+        "matchingClass" : "AppleSMC",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870174,
+          "hex" : "0xE00002E2",
+          "message" : "(iokit/common) not permitted"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCKeysEndpoint",
+        "serviceFound" : true,
+        "serviceName" : "AppleSMCKeysEndpoint"
+      },
+      {
+        "matchingClass" : "AppleSMCInterface",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870201,
+          "hex" : "0xE00002C7",
+          "message" : "(iokit/common) unsupported function"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCInterface",
+        "serviceFound" : true,
+        "serviceName" : "smc-pmu"
+      },
+      {
+        "matchingClass" : "AppleSMCInterface",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870201,
+          "hex" : "0xE00002C7",
+          "message" : "(iokit/common) unsupported function"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCInterface",
+        "serviceFound" : true,
+        "serviceName" : "smc-charger-util-1"
+      },
+      {
+        "matchingClass" : "AppleSMCInterface",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870201,
+          "hex" : "0xE00002C7",
+          "message" : "(iokit/common) unsupported function"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCInterface",
+        "serviceFound" : true,
+        "serviceName" : "smc-charger-util-0"
+      },
+      {
+        "matchingClass" : "AppleSMCInterface",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870201,
+          "hex" : "0xE00002C7",
+          "message" : "(iokit/common) unsupported function"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCInterface",
+        "serviceFound" : true,
+        "serviceName" : "smc-charger-util"
+      },
+      {
+        "matchingClass" : "AppleSMCPMU",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "openResult" : {
+          "code" : -536870201,
+          "hex" : "0xE00002C7",
+          "message" : "(iokit/common) unsupported function"
+        },
+        "protocolProbe" : "IOServiceOpen failed",
+        "serviceClass" : "AppleSMCPMU",
+        "serviceFound" : true,
+        "serviceName" : "AppleSMCPMU"
+      },
+      {
+        "matchingClass" : "AppleSMCClient",
+        "matchingResult" : {
+          "code" : 0,
+          "hex" : "0x00000000",
+          "message" : "(os/kern) successful"
+        },
+        "protocolProbe" : "no matching service",
+        "serviceFound" : false
+      }
+    ],
+    "temperatureLikeKeyCount" : 0,
+    "unavailableReason" : "matching service was found, but IOServiceOpen/#KEY protocol validation failed",
+    "validTemperatureKeyCount" : 0
+  }
+}
