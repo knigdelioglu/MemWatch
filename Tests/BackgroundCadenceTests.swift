@@ -34,6 +34,7 @@ struct BackgroundCadenceTests {
         require(source.contains("private let scheduler: PollingScheduler"), "Monitoring must use the shared polling scheduler")
         require(!source.contains("register(id: \"thermal-health\"")
             && !source.contains("register(id: \"thermal-refresh\"")
+            && !source.contains("register(id: \"thermal-wake\"")
             && !source.contains("register(id: \"temperature\""),
                 "Thermal collection must reuse the existing system-health scheduler")
 

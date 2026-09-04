@@ -27,6 +27,10 @@ struct MergeArchitectureContractTests {
         let keepAwake = try read("Display/App/KeepAwakeCoordinator.swift", root: root)
         let displayFeature = try read("Display/DisplayFeature.swift", root: root)
         let scheduler = try read("Core/Polling/PollingScheduler.swift", root: root)
+        let monitoringService = try read("Services/MonitoringService.swift", root: root)
+        let monitoringCollector = try read("Services/MonitoringCollector.swift", root: root)
+        let thermalCollector = try read("Collectors/ThermalCollector.swift", root: root)
+        let thermalHealth = try read("Core/Thermal/ThermalHealth.swift", root: root)
         let migration = try read("Display/App/DisplayPreferencesMigration.swift", root: root)
         let displayFeatureView = try read("Views/DisplayFeatureView.swift", root: root)
         let unifiedSettingsView = try read("Views/UnifiedSettingsView.swift", root: root)
@@ -93,6 +97,30 @@ struct MergeArchitectureContractTests {
                "Display must expose a feature boundary")
         expect(scheduler.contains("func register(\n"),
                "PollingScheduler must provide named job ownership")
+        expect(monitoringService.contains("NSWorkspace.willSleepNotification")
+            && monitoringService.contains("NSWorkspace.didWakeNotification")
+            && !monitoringService.contains("NSWorkspace.screensDidSleepNotification")
+            && !monitoringService.contains("NSWorkspace.screensDidWakeNotification"),
+               "Thermal lifecycle must observe only system sleep/wake notifications")
+        expect(monitoringService.contains("workspaceNotificationCenter")
+            && monitoringService.contains("registerThermalLifecycleObservers")
+            && monitoringService.contains("removeThermalLifecycleObservers")
+            && monitoringService.contains("thermalLifecycleForwardingTask"),
+               "MonitoringService must own thermal observer registration and ordered forwarding")
+        expect(monitoringCollector.contains("func handleThermalLifecycleEvent")
+            && monitoringCollector.contains("thermalCollector.handleLifecycleEvent"),
+               "MonitoringCollector must forward thermal lifecycle events inside its actor")
+        expect(thermalCollector.contains("private(set) var hardwareEpoch")
+            && thermalCollector.contains("private(set) var lifecycleState")
+            && thermalCollector.contains("func handleLifecycleEvent")
+            && !thermalCollector.contains("DisplayCoordinator")
+            && !thermalCollector.contains("screensDidSleepNotification")
+            && !thermalCollector.contains("screensDidWakeNotification"),
+               "ThermalCollector must own lifecycle state without display coupling")
+        expect(!monitoringService.contains("thermalEpoch")
+            && !monitoringCollector.contains("thermalEpoch")
+            && thermalHealth.contains("case lifecycleSuspended"),
+               "Thermal hardware epoch ownership must not be duplicated outside ThermalCollector")
         expect(migration.contains("fyi.kadir.AmbientSync"),
                "Preference migration must retain the legacy suite")
         expect(migration.contains("enum DisplayConnectionIntentMigration")

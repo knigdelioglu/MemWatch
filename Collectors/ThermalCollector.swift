@@ -1,7 +1,8 @@
 import Foundation
 
-/// Reasons are intentionally thermal-only. Phase 4 may connect the lifecycle
-/// reasons to a system observer without moving lifecycle ownership here.
+/// Reasons are intentionally thermal-only. System lifecycle invalidation is
+/// forwarded here by MonitoringService; this remains the only hardware epoch
+/// owner.
 enum ThermalInvalidationReason: Sendable, Equatable {
     case systemSleep
     case systemWake
@@ -43,6 +44,7 @@ final class ThermalCollector {
     // Thermal hardware epoch has one owner. MonitoringService and
     // HIDTemperatureSource intentionally do not keep or advance this value.
     private(set) var hardwareEpoch: UInt64 = 1
+    private(set) var lifecycleState: ThermalLifecycleState = .active
     private(set) var selectionGeneration: UInt64 = 0
     private(set) var latestSourceSelections = ThermalCategorySourceSelections.empty
     private(set) var latestBackendStatuses: ThermalBackendStatuses = [
@@ -74,6 +76,10 @@ final class ThermalCollector {
     /// Collects one immutable thermal snapshot. The caller already provides
     /// serialization, so this method intentionally has no async abstraction.
     func collect(at timestamp: Date = Date()) -> ThermalSnapshot {
+        guard lifecycleState == .active else {
+            return suspendedSnapshot(at: timestamp)
+        }
+
         let collection = collectHID(at: timestamp)
 
         // A source must never commit readings obtained for another hardware
@@ -139,12 +145,31 @@ final class ThermalCollector {
         )
     }
 
+    /// System sleep and wake are explicit thermal boundaries. Wake advances
+    /// the epoch defensively even when the process did not observe the sleep
+    /// notification, so no pre-wake hardware reference can be reused.
+    func handleLifecycleEvent(_ event: ThermalLifecycleEvent) {
+        switch event {
+        case .systemWillSleep:
+            guard lifecycleState != .suspended else { return }
+            invalidateHardware(reason: .systemSleep)
+        case .systemDidWake:
+            invalidateHardware(reason: .systemWake)
+        }
+    }
+
     /// Invalidates all source-owned hardware references and starts a new
     /// thermal hardware epoch. The next collection performs lazy discovery.
     func invalidateHardware(reason: ThermalInvalidationReason) {
-        _ = reason
         hardwareEpoch &+= 1
         hidSource.invalidate()
+
+        switch reason {
+        case .systemSleep:
+            lifecycleState = .suspended
+        case .systemWake, .backendRecovery, .explicitReset:
+            lifecycleState = .active
+        }
 
         hidDiscoveryState = .notAttempted
         hidRuntimeState = .notSampled
@@ -157,6 +182,37 @@ final class ThermalCollector {
         latestSourceSelections = .empty
         latestBackendStatuses = [.appleSMC: Self.unsupportedAppleSMCStatus]
         latestCategoryAvailability = .empty
+    }
+
+    private func suspendedSnapshot(at timestamp: Date) -> ThermalSnapshot {
+        let backendStatuses = [
+            TemperatureSensorSource.ioHID: TemperatureBackendStatus(
+                source: .ioHID,
+                availability: .unavailable(reason: .lifecycleSuspended)
+            ),
+            TemperatureSensorSource.appleSMC: Self.unsupportedAppleSMCStatus
+        ]
+        let categoryAvailability = ThermalCategoryAvailabilityReport(
+            statuses: Dictionary(
+                uniqueKeysWithValues: TemperatureSensorCategory.allCases.map {
+                    ($0, .temporarilyUnavailable(reason: .lifecycleSuspended))
+                }
+            )
+        )
+
+        latestSourceSelections = .empty
+        latestBackendStatuses = backendStatuses
+        latestCategoryAvailability = categoryAvailability
+
+        return ThermalSnapshot(
+            timestamp: timestamp,
+            hardwareEpoch: hardwareEpoch,
+            backendStatuses: backendStatuses,
+            categorySourceSelections: .empty,
+            categoryAvailability: categoryAvailability,
+            aggregates: .empty,
+            readings: []
+        )
     }
 
     private func collectHID(at timestamp: Date) -> HIDCollectionResult {

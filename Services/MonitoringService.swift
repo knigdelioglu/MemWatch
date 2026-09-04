@@ -92,6 +92,12 @@ final class MonitoringService: ObservableObject {
     private var pendingRefresh: PendingRefresh?
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration: UInt64 = 0
+    private let workspaceNotificationCenter: NotificationCenter
+    private var thermalLifecycleObserverTokens: [NSObjectProtocol] = []
+    private var thermalLifecycleForwardingTask: Task<Void, Never>?
+    private var thermalLifecycleSequence: UInt64 = 0
+    private var thermalLifecycleServiceGeneration: UInt64 = 0
+    private var thermalLifecycleBarrierActive = false
 
     // These counters are interpreted only on MainActor, after the serialized
     // worker has returned an immutable snapshot.
@@ -102,11 +108,13 @@ final class MonitoringService: ObservableObject {
     init(
         scheduler: PollingScheduler,
         collector: any MonitoringCollecting = MonitoringCollector(),
-        notificationService: NotificationService? = NotificationService()
+        notificationService: NotificationService? = NotificationService(),
+        workspaceNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
     ) {
         self.scheduler = scheduler
         self.collector = collector
         self.notificationService = notificationService
+        self.workspaceNotificationCenter = workspaceNotificationCenter
 
         if UserDefaults.standard.object(forKey: Self.notificationsEnabledKey) != nil {
             notificationsEnabled = UserDefaults.standard.bool(forKey: Self.notificationsEnabledKey)
@@ -140,6 +148,13 @@ final class MonitoringService: ObservableObject {
         }
 
         refresh(forceStorage: true, forceDiagnostics: true)
+    }
+
+    isolated deinit {
+        thermalLifecycleForwardingTask?.cancel()
+        for token in thermalLifecycleObserverTokens {
+            workspaceNotificationCenter.removeObserver(token)
+        }
     }
 
     func setNotificationsEnabled(_ enabled: Bool) {
@@ -198,6 +213,10 @@ final class MonitoringService: ObservableObject {
         refreshGeneration &+= 1
         pendingRefresh = nil
         refreshTask?.cancel()
+        thermalLifecycleServiceGeneration &+= 1
+        thermalLifecycleBarrierActive = false
+        thermalLifecycleForwardingTask?.cancel()
+        removeThermalLifecycleObservers()
         // Keep the in-flight task registered until its actor call returns. A
         // subsequent start therefore cannot create a second collection while
         // a cancellation-insensitive test/backend is still unwinding.
@@ -206,11 +225,14 @@ final class MonitoringService: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        registerThermalLifecycleObservers()
         startMonitoring()
     }
 
     private func startNextRefreshIfNeeded() {
-        guard refreshTask == nil, let pendingRefresh else { return }
+        guard !thermalLifecycleBarrierActive,
+              refreshTask == nil,
+              let pendingRefresh else { return }
         self.pendingRefresh = nil
 
         let startedAt = Date()
@@ -412,6 +434,88 @@ final class MonitoringService: ObservableObject {
         guard isRunning else { return }
         scheduler.register(id: "system-health", interval: 5) { [weak self] in
             self?.refresh()
+        }
+    }
+
+    private func registerThermalLifecycleObservers() {
+        guard thermalLifecycleObserverTokens.isEmpty else { return }
+
+        let lifecycleNotifications: [(Notification.Name, ThermalLifecycleEvent)] = [
+            (NSWorkspace.willSleepNotification, .systemWillSleep),
+            (NSWorkspace.didWakeNotification, .systemDidWake)
+        ]
+
+        for (name, event) in lifecycleNotifications {
+            let token = workspaceNotificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                // NotificationCenter delivers this observer on the main
+                // operation queue. Keep generation invalidation synchronous at
+                // that boundary, then serialize the actor hop below.
+                MainActor.assumeIsolated {
+                    self?.receiveThermalLifecycleEvent(event)
+                }
+            }
+            thermalLifecycleObserverTokens.append(token)
+        }
+    }
+
+    private func removeThermalLifecycleObservers() {
+        for token in thermalLifecycleObserverTokens {
+            workspaceNotificationCenter.removeObserver(token)
+        }
+        thermalLifecycleObserverTokens.removeAll()
+    }
+
+    private func receiveThermalLifecycleEvent(_ event: ThermalLifecycleEvent) {
+        guard isRunning else { return }
+
+        if event == .systemWillSleep {
+            // This is deliberately separate from ThermalCollector.hardwareEpoch:
+            // it rejects an in-flight UI result, while the collector invalidates
+            // hardware references when the serialized actor hop executes.
+            refreshGeneration &+= 1
+            pendingRefresh = nil
+            refreshTask?.cancel()
+        }
+
+        thermalLifecycleSequence &+= 1
+        let sequence = thermalLifecycleSequence
+        let serviceGeneration = thermalLifecycleServiceGeneration
+        let previousTask = thermalLifecycleForwardingTask
+        let collector = self.collector
+        thermalLifecycleBarrierActive = true
+
+        thermalLifecycleForwardingTask = Task { @MainActor [weak self] in
+            if let previousTask {
+                await previousTask.value
+            }
+
+            guard self?.isRunning == true,
+                  self?.thermalLifecycleServiceGeneration == serviceGeneration else {
+                return
+            }
+
+            await collector.handleThermalLifecycleEvent(event)
+
+            guard let self,
+                  self.isRunning,
+                  self.thermalLifecycleServiceGeneration == serviceGeneration,
+                  self.thermalLifecycleSequence == sequence else {
+                return
+            }
+
+            self.thermalLifecycleForwardingTask = nil
+            self.thermalLifecycleBarrierActive = false
+            if event == .systemDidWake {
+                // Wake uses the existing coalescing pipeline. It must never
+                // call collector.collect directly from the notification path.
+                self.refresh()
+            } else {
+                self.startNextRefreshIfNeeded()
+            }
         }
     }
 

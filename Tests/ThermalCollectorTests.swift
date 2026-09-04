@@ -36,6 +36,8 @@ private final class ScriptedHIDTemperatureSource: HIDTemperatureSampling {
     private let plans: [FakeBatchPlan]
     private(set) var sampleCount = 0
     private(set) var invalidateCount = 0
+    private(set) var discoveryCount = 0
+    private var needsDiscovery = true
 
     init(plans: [FakeBatchPlan]) {
         precondition(!plans.isEmpty, "A scripted source needs at least one plan")
@@ -45,6 +47,10 @@ private final class ScriptedHIDTemperatureSource: HIDTemperatureSampling {
     func sample(timestamp: Date, hardwareEpoch: UInt64) -> HIDTemperatureSampleBatch {
         let plan = plans[min(sampleCount, plans.count - 1)]
         sampleCount += 1
+        if needsDiscovery {
+            discoveryCount += 1
+            needsDiscovery = false
+        }
 
         let resultEpoch = plan.forcedEpoch ?? hardwareEpoch
         let readings = plan.sensors.map { sensor in
@@ -142,6 +148,7 @@ private final class ScriptedHIDTemperatureSource: HIDTemperatureSampling {
 
     func invalidate() {
         invalidateCount += 1
+        needsDiscovery = true
     }
 }
 
@@ -153,6 +160,9 @@ struct ThermalCollectorTests {
         testMixedAndUnknownReadingsPreserveCanonicalData()
         testEpochInvalidationChangesCollectionEpoch()
         testOldEpochBatchIsRejectedSafely()
+        testLifecycleSuspendsHardwareAndWakesLazily()
+        testLifecycleResetsHealthAndRecoveryBudget()
+        testCapabilityFailureAfterWakeIsCached()
         await testMonitoringCollectorIntegratesThermalOnce()
         print("PASS ThermalCollector integration and recovery")
     }
@@ -277,6 +287,99 @@ struct ThermalCollectorTests {
         require(snapshot.backendStatuses[.ioHID]?.availability == .unavailable(reason: .runtimeTransportFailure), "Epoch mismatch must remain an unavailable thermal result")
     }
 
+    private static func testLifecycleSuspendsHardwareAndWakesLazily() {
+        let source = ScriptedHIDTemperatureSource(plans: [
+            validStoragePlan(celsius: 37),
+            validStoragePlan(celsius: 38),
+            validStoragePlan(celsius: 39)
+        ])
+        let collector = ThermalCollector(hidSource: source)
+
+        let preSleep = collector.collect(at: timestamp(50))
+        collector.handleLifecycleEvent(.systemWillSleep)
+        let suspended = collector.collect(at: timestamp(51))
+
+        require(preSleep.hardwareEpoch == 1, "Pre-sleep collection must use the initial epoch")
+        require(collector.lifecycleState == .suspended, "System sleep must suspend thermal collection")
+        require(collector.hardwareEpoch == 2 && suspended.hardwareEpoch == 2, "Sleep must advance the thermal epoch")
+        require(source.sampleCount == 1, "Suspended collection must not sample HID")
+        require(source.discoveryCount == 1, "Suspended collection must not rediscover HID")
+        require(source.invalidateCount == 1, "Sleep must invalidate the HID source")
+        require(suspended.readings.isEmpty && suspended.aggregates.aggregates.isEmpty, "Suspended snapshots must not reuse hardware values")
+        require(suspended.categorySourceSelections == .empty, "Suspended snapshots must not imply a current canonical source")
+        require(suspended.backendStatuses[.ioHID]?.availability == .unavailable(reason: .lifecycleSuspended), "Sleep must have an explicit lifecycle-unavailable reason")
+        require(TemperatureSensorCategory.allCases.allSatisfy {
+            suspended.categoryAvailability.status(for: $0) == .temporarilyUnavailable(reason: .lifecycleSuspended)
+        }, "Every category must be lifecycle-unavailable while suspended")
+
+        collector.handleLifecycleEvent(.systemDidWake)
+        require(collector.lifecycleState == .active, "System wake must reactivate thermal collection")
+        require(collector.hardwareEpoch == 3, "Wake must create a fresh epoch boundary")
+        require(source.invalidateCount == 2, "Wake must defensively invalidate HID again")
+        require(source.sampleCount == 1, "Wake notification must not discover hardware immediately")
+
+        let postWake = collector.collect(at: timestamp(52))
+        let cachedPostWake = collector.collect(at: timestamp(53))
+        require(postWake.hardwareEpoch == 3 && cachedPostWake.hardwareEpoch == 3, "Post-wake collections must share the new epoch")
+        require(postWake.readings.allSatisfy { $0.hardwareEpoch == 3 }, "Post-wake readings must use the new epoch")
+        require(postWake.aggregates[.storage]?.currentCelsius == 38, "First post-wake collection must use fresh values")
+        require(cachedPostWake.aggregates[.storage]?.currentCelsius == 39, "Second post-wake collection must continue sampling")
+        require(source.sampleCount == 3, "Wake must lazily sample once per normal collection")
+        require(source.discoveryCount == 2, "Only the first post-wake collection may rediscover HID")
+        require(!postWake.accepts(aggregate: preSleep.aggregates[.storage]!), "Pre-sleep aggregate must not survive wake")
+    }
+
+    private static func testLifecycleResetsHealthAndRecoveryBudget() {
+        let source = ScriptedHIDTemperatureSource(plans: [
+            allBadPlan(),
+            allBadPlan(),
+            allBadPlan(),
+            allBadPlan(),
+            allBadPlan(),
+            validStoragePlan(celsius: 45),
+            validStoragePlan(celsius: 46)
+        ])
+        let collector = ThermalCollector(hidSource: source)
+
+        _ = collector.collect(at: timestamp(60))
+        let beforeSleep = collector.collect(at: timestamp(61))
+        require(beforeSleep.backendStatuses[.ioHID]?.runtimeHealth.consecutiveBackendBadSamples == 2, "Pre-sleep bad counter must reach two")
+
+        collector.handleLifecycleEvent(.systemWillSleep)
+        collector.handleLifecycleEvent(.systemDidWake)
+        let firstAfterWake = collector.collect(at: timestamp(62))
+        require(firstAfterWake.hardwareEpoch == 3, "Wake must start a new recovery epoch")
+        require(firstAfterWake.backendStatuses[.ioHID]?.runtimeHealth.consecutiveBackendBadSamples == 1, "Wake must reset the bad-sample counter")
+
+        _ = collector.collect(at: timestamp(63))
+        _ = collector.collect(at: timestamp(64))
+        require(source.invalidateCount == 3, "A new epoch must receive its own single bounded rediscovery")
+        require(collector.hardwareEpoch == 4, "The post-wake threshold must advance only once")
+        require(source.discoveryCount == 3, "Each new hardware epoch may rediscover once")
+    }
+
+    private static func testCapabilityFailureAfterWakeIsCached() {
+        let source = ScriptedHIDTemperatureSource(plans: [
+            validStoragePlan(celsius: 40),
+            FakeBatchPlan(sensors: [], discoveryFailure: .sandboxRestricted)
+        ])
+        let collector = ThermalCollector(hidSource: source)
+
+        let preSleep = collector.collect(at: timestamp(70))
+        collector.handleLifecycleEvent(.systemWillSleep)
+        collector.handleLifecycleEvent(.systemDidWake)
+        let firstAfterWake = collector.collect(at: timestamp(71))
+        let secondAfterWake = collector.collect(at: timestamp(72))
+
+        require(preSleep.aggregates[.storage]?.currentCelsius == 40, "Pre-sleep fixture must have a current storage value")
+        require(firstAfterWake.hardwareEpoch == 3, "Wake capability failure must use the new epoch")
+        require(firstAfterWake.backendStatuses[.ioHID]?.availability == .unavailable(reason: .sandboxRestricted), "Wake discovery failure must be explicit")
+        require(firstAfterWake.readings.isEmpty && firstAfterWake.aggregates.aggregates.isEmpty, "Wake failure must not reuse pre-sleep values")
+        require(secondAfterWake.backendStatuses[.ioHID] == firstAfterWake.backendStatuses[.ioHID], "Wake capability failure must remain cached")
+        require(source.sampleCount == 2, "A wake capability failure must not retry every collection")
+        require(source.discoveryCount == 2, "Wake must attempt discovery once for its new epoch")
+    }
+
     private static func testMonitoringCollectorIntegratesThermalOnce() async {
         let source = ScriptedHIDTemperatureSource(plans: [validStoragePlan(celsius: 39)])
         let thermalCollector = ThermalCollector(hidSource: source)
@@ -292,6 +395,16 @@ struct ThermalCollectorTests {
         require(snapshot.memory.totalBytes > 0, "Memory collection must remain available with thermal collection")
         require(snapshot.power.timestamp != .distantPast, "Power collection must remain available with thermal collection")
         require(source.sampleCount == 1, "Thermal source must be sampled exactly once per worker collection")
+
+        await worker.handleThermalLifecycleEvent(.systemWillSleep)
+        let suspended = await worker.collect(
+            MonitoringCollectionRequest(includeProcesses: false, includeStorage: false)
+        )
+        require(suspended.thermal.readings.isEmpty, "A suspended worker collection must contain no HID readings")
+        require(suspended.thermal.aggregates.aggregates.isEmpty, "A suspended worker collection must contain no thermal aggregate")
+        require(suspended.storageVolumes == nil, "Existing storage cadence must remain independently optional")
+        require(suspended.memory.totalBytes > 0, "Non-thermal collectors must continue during thermal suspension")
+        require(source.sampleCount == 1, "MonitoringCollector must not sample HID while thermal is suspended")
     }
 
     private static let storageMapping = SensorMapping(

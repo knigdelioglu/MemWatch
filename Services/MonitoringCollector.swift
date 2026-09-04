@@ -21,6 +21,7 @@ struct MonitoringCollectionSnapshot: Sendable {
 /// makes test fakes obey the same isolation rules as the production worker.
 protocol MonitoringCollecting: Actor {
     func collect(_ request: MonitoringCollectionRequest) async -> MonitoringCollectionSnapshot
+    func handleThermalLifecycleEvent(_ event: ThermalLifecycleEvent) async
 }
 
 /// Owns every stateful collector for the lifetime of one monitoring service.
@@ -45,5 +46,9 @@ actor MonitoringCollector: MonitoringCollecting {
             storageVolumes: request.includeStorage ? storageCollector.collect() : nil,
             thermal: thermalCollector.collect()
         )
+    }
+
+    func handleThermalLifecycleEvent(_ event: ThermalLifecycleEvent) async {
+        thermalCollector.handleLifecycleEvent(event)
     }
 }

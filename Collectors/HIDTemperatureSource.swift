@@ -684,7 +684,7 @@ final class HIDTemperatureSource {
     }
 
     /// Drops only this source's hardware/cache ownership. Hardware epoch and
-    /// lifecycle decisions belong to the future ThermalCollector owner.
+    /// lifecycle decisions belong to the ThermalCollector owner.
     func invalidate() {
         releaseDiscoveryResources()
         discoveryCache = nil

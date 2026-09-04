@@ -1,5 +1,15 @@
 import Foundation
 
+enum ThermalLifecycleEvent: Sendable, Equatable {
+    case systemWillSleep
+    case systemDidWake
+}
+
+enum ThermalLifecycleState: Sendable, Equatable {
+    case active
+    case suspended
+}
+
 enum BackendUnavailableReason: String, Sendable, Equatable, Hashable, Codable {
     case clientCreationFailed
     case copyServicesUnavailable
@@ -11,6 +21,7 @@ enum BackendUnavailableReason: String, Sendable, Equatable, Hashable, Codable {
     case badSampleCoverage
     case rediscoveryFailed
     case invalidCoverage
+    case lifecycleSuspended
 }
 
 enum BackendUnsupportedReason: String, Sendable, Equatable, Hashable, Codable {
@@ -406,6 +417,7 @@ enum TemperatureCategoryUnavailableReason: String, Sendable, Equatable, Hashable
     case noValidSamples
     case epochMismatch
     case rediscoveryRequired
+    case lifecycleSuspended
 }
 
 enum TemperatureCategoryAvailability: Sendable, Equatable, Hashable, Codable {
