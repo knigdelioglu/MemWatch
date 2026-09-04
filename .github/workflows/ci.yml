@@ -533,6 +533,23 @@ jobs:
             "/tmp/memwatch-${test_name}"
           done
 
+      - name: Run production HID temperature source tests
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/TemperatureSensor.swift \
+            Models/ThermalSnapshot.swift \
+            Core/Thermal/TemperatureValidator.swift \
+            Core/Thermal/SensorCatalog.swift \
+            Core/Thermal/ThermalHealth.swift \
+            Core/Thermal/ThermalSourcePolicy.swift \
+            Core/Thermal/ThermalAggregator.swift \
+            Collectors/HIDTemperatureSource.swift \
+            Tests/HIDTemperatureSourceTests.swift \
+            -framework IOKit \
+            -o /tmp/memwatch-hid-temperature-source-tests
+          /tmp/memwatch-hid-temperature-source-tests
+
       - name: Run privileged helper protocol tests
         run: |
           xcrun swiftc \
