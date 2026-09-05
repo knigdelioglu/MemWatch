@@ -29,6 +29,24 @@ final class DisplayBrightnessCoordinator {
     func isDDCAvailable(refresh: Bool = false) async -> Bool {
         await writer.isAvailable(refresh: refresh)
     }
+
+    @discardableResult
+    func rebindAmbientLightSensor() -> Bool {
+        reader?.rebind() ?? false
+    }
+
+    var ambientLightSensorClientGeneration: UInt64 {
+        reader?.clientGeneration ?? 0
+    }
+
+    var ambientLightSensorRebindCount: UInt64 {
+        reader?.rebindCount ?? 0
+    }
+
+    func invalidateDDCBrightnessCache(for displayKey: String?) {
+        let writer = writer
+        Task { await writer.invalidateBrightnessCache(for: displayKey) }
+    }
 }
 
 @MainActor

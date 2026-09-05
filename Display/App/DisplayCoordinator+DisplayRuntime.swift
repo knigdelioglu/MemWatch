@@ -55,6 +55,7 @@ extension DisplayCoordinator {
         let powerGeneration = displayPowerGeneration
         let targetSnapshot = targetDisplayOperationGate.snapshot()
         guard let targetDisplayID = targetSnapshot.displayID else { return }
+        var brightnessEpoch = brightnessControlEpoch
         traceRuntime(
             "reloadDisplayInfo begin reloadModes=\(reloadModes) preferredKey=\(store.preferences.selectedDisplayKey ?? "nil") " +
                 "currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")"
@@ -69,7 +70,8 @@ extension DisplayCoordinator {
               targetDisplayOperationGate.accepts(
                   targetSnapshot.generation,
                   displayID: targetDisplayID
-              ) else { return }
+              ),
+              acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
         traceRuntime(
             "writer.refreshDisplay result=\(discoveredDisplay?.displayKey ?? "nil") " +
                 "previousDisplay=\(previousDisplayKey ?? "nil")"
@@ -79,12 +81,18 @@ extension DisplayCoordinator {
             store.setSelectedDisplayKey(display.displayKey)
             if display.displayKey != previousDisplayKey {
                 beginBrightnessControlEpoch(reason: "display identity changed")
+                brightnessEpoch = brightnessControlEpoch
+                let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
+                traceRuntime(
+                    "ALS rebind reason=display identity changed success=\(didRebindALS) " +
+                        "clientGeneration=\(brightnessCoordinator.ambientLightSensorClientGeneration) " +
+                        "rebindCount=\(brightnessCoordinator.ambientLightSensorRebindCount)"
+                )
                 invalidateManualBrightnessWrites()
                 invalidateManualVolumeWrites()
                 cancelPendingManualBrightnessWrite()
                 cancelPendingManualVolumeWrite()
                 luxFilter.reset()
-                lastSentBrightness = store.lastBrightness(for: display.displayKey)
                 lastWriteDate = .distantPast
                 lastBrightnessReadDate = .distantPast
                 lastDisplaySearchDate = Date()
@@ -98,17 +106,33 @@ extension DisplayCoordinator {
                 ddcBrightnessMaxDiagnosticSummary = nil
                 ddcRawBrightnessProbeSummary = nil
                 brightnessMappingDiagnosticSummary = nil
-                brightnessState = BrightnessState()
+                updateBrightnessState { state in
+                    state.persistedBrightnessPercent = store.lastBrightness(for: display.displayKey)
+                    if previousDisplayKey != nil || state.commandedBrightnessPercent != nil {
+                        // A new physical display, including one discovered
+                        // after a disconnect, must not inherit the prior
+                        // panel's accepted command. A same-panel HDR/SDR
+                        // transition may preserve logical intent instead.
+                        state.commandedBrightnessPercent = nil
+                    }
+                    if previousDisplayKey != nil {
+                        state.transitionPreviousReadbackPercent = nil
+                    }
+                }
                 currentBrightness = nil
             }
             if currentBrightness == nil || display.displayKey != previousDisplayKey {
-                let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+                let readback = await brightnessCoordinator.writer.readBrightnessSample(preferredKey: display.displayKey)
                 guard acceptsDisplayPowerGeneration(powerGeneration),
                       targetDisplayOperationGate.accepts(
                           targetSnapshot.generation,
                           displayID: targetDisplayID
-                      ) else { return }
-                let fallback = readback ?? store.lastBrightness(for: display.displayKey)
+                      ),
+                      acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
+                // The persisted value is the only safe presentation fallback.
+                // A fresh-looking but unverified transition sample must not
+                // become the fallback merely because it was returned by DDC.
+                let fallback = store.lastBrightness(for: display.displayKey)
                 applyBrightnessReadback(readback, requestedFallback: fallback)
                 lastBrightnessReadDate = Date()
             }
@@ -118,7 +142,8 @@ extension DisplayCoordinator {
                   targetDisplayOperationGate.accepts(
                       targetSnapshot.generation,
                       displayID: targetDisplayID
-                  ) else { return }
+                  ),
+                  acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
             volumeKeyRouter?.setEnabled(true)
             // Publish display capabilities before the optional synchronous
             // HiDPI/CGS scan so discovery is visible even when that scan is
@@ -130,11 +155,14 @@ extension DisplayCoordinator {
                       targetDisplayOperationGate.accepts(
                           targetSnapshot.generation,
                           displayID: targetDisplayID
-                      ) else { return }
+                      ),
+                      acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
             }
         } else {
             if previousDisplayKey != nil {
                 beginBrightnessControlEpoch(reason: "display rediscovery unavailable")
+            } else {
+                brightnessState = BrightnessState()
             }
             invalidateManualBrightnessWrites()
             invalidateManualVolumeWrites()
@@ -153,7 +181,6 @@ extension DisplayCoordinator {
             ddcBrightnessMaxDiagnosticSummary = nil
             ddcRawBrightnessProbeSummary = nil
             brightnessMappingDiagnosticSummary = nil
-            brightnessState = BrightnessState()
             updateCapabilities()
         }
     }
@@ -343,28 +370,32 @@ extension DisplayCoordinator {
         let powerGeneration = displayPowerGeneration
         let targetSnapshot = targetDisplayOperationGate.snapshot()
         guard let targetDisplayID = targetSnapshot.displayID else { return }
+        let brightnessEpoch = brightnessControlEpoch
         Task { @MainActor in
             guard externalDisplayInteractiveOperationsAllowed,
                   displayPowerGeneration == powerGeneration,
                   targetDisplayOperationGate.accepts(
                       targetSnapshot.generation,
                       displayID: targetDisplayID
-                  ) else { return }
+                  ),
+                  acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
             if let display = currentDisplayInfo {
-                let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+                let readback = await brightnessCoordinator.writer.readBrightnessSample(preferredKey: display.displayKey)
                 guard acceptsDisplayPowerGeneration(powerGeneration),
                       externalDisplayInteractiveOperationsAllowed,
                       targetDisplayOperationGate.accepts(
                           targetSnapshot.generation,
                           displayID: targetDisplayID
-                      ) else { return }
+                      ),
+                      acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
                 let rawSample = await brightnessCoordinator.writer.readBrightnessRaw(preferredKey: display.displayKey)
                 guard acceptsDisplayPowerGeneration(powerGeneration),
                       externalDisplayInteractiveOperationsAllowed,
                       targetDisplayOperationGate.accepts(
                           targetSnapshot.generation,
                           displayID: targetDisplayID
-                      ) else { return }
+                      ),
+                      acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
                 if let rawSample {
                     updateBrightnessState { state in
                         state.lastDDCRawCurrentBefore = rawSample.rawCurrent
@@ -383,7 +414,8 @@ extension DisplayCoordinator {
                   targetDisplayOperationGate.accepts(
                       targetSnapshot.generation,
                       displayID: targetDisplayID
-                  ) else { return }
+                  ),
+                  acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
             let summary = brightnessMappingDiagnosticSummarySnapshot()
             brightnessMappingDiagnosticSummary = summary
             do {

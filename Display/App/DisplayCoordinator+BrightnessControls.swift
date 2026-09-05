@@ -289,7 +289,7 @@ extension DisplayCoordinator {
               acceptsManualBrightnessWrite(generation) else { return }
         brightnessState.pendingManualBrightnessPercent = nil
         let displayKey = activeDisplayKey
-        let evidence = brightnessAutoWriteOutcomePlanner.observeLimiterEvidence(
+        let evidence = brightnessAutoWriteOutcomePlanner.observeManualLimiterEvidence(
             result: result,
             requested: clamped,
             displayKey: displayKey
@@ -357,6 +357,7 @@ extension DisplayCoordinator {
 
     func pauseAutoBrightnessTemporarily(for duration: TimeInterval = 20) {
         guard externalDisplayInteractiveOperationsAllowed else { return }
+        brightnessAutoWriteOutcomePlanner.resetAutoLimiterEvidenceForManualInteraction()
         invalidateManualBrightnessWrites()
         beginManualBrightnessOverride(fallbackDuration: duration)
     }

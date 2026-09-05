@@ -36,12 +36,15 @@ private typealias IOHIDServiceClientCopyPropertyFn = @convention(c) (CFTypeRef, 
 private typealias IOHIDEventGetFloatValueFn = @convention(c) (CFTypeRef, Int32) -> Double
 private typealias IODisplaySetFloatParameterFn = @convention(c) (io_service_t, IOOptionBits, CFString, Float) -> IOReturn
 private typealias CGDisplayIOServicePortFn = @convention(c) (CGDirectDisplayID) -> io_service_t
+@MainActor
 final class AmbientLightReader {
     private let copyClient: ALCALSCopyALSServiceClientFn
     private var client: CFTypeRef
     private let copyEvent: IOHIDServiceClientCopyEventFn
     private let copyProperty: IOHIDServiceClientCopyPropertyFn?
     private let readFloatValue: IOHIDEventGetFloatValueFn
+    private(set) var clientGeneration: UInt64 = 0
+    private(set) var rebindCount: UInt64 = 0
 
     init?() {
         guard
@@ -60,6 +63,7 @@ final class AmbientLightReader {
             as: IOHIDServiceClientCopyPropertyFn.self
         )
         self.readFloatValue = readFloatValue
+        clientGeneration = 1
     }
 
     func readLux() -> Double? {
@@ -67,13 +71,22 @@ final class AmbientLightReader {
             return value
         }
 
-        // macOS can replace the ALS service client when display parameters
-        // change (including HDR/SDR transitions). Rebind once so the next
-        // automatic-brightness tick is not permanently stuck at "waiting".
-        guard let unmanaged = copyClient() else { return nil }
-        let refreshedClient = unmanaged.takeRetainedValue() as CFTypeRef
-        client = refreshedClient
-        return readLux(from: refreshedClient)
+        // Keep the read-side recovery for an actually unavailable client, but
+        // display-parameter transitions also call rebind() proactively below.
+        guard rebind() else { return nil }
+        return readLux(from: client)
+    }
+
+    /// Refreshes only the service client. Private symbols are resolved once
+    /// during initialization; a display/HDR transition must not keep using an
+    /// old client that still returns a valid but frozen lux value.
+    @discardableResult
+    func rebind() -> Bool {
+        rebindCount &+= 1
+        guard let unmanaged = copyClient() else { return false }
+        client = unmanaged.takeRetainedValue() as CFTypeRef
+        clientGeneration &+= 1
+        return true
     }
 
     private func readLux(from client: CFTypeRef) -> Double? {

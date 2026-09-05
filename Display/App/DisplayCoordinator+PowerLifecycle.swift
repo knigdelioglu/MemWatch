@@ -58,6 +58,18 @@ extension DisplayCoordinator {
 
     func refreshHiDPIStateAfterAutomaticReapply() {
         guard externalDisplayReadOperationsAllowed, !isPostWakeRefreshInProgress else { return }
+        // The reapply service suppresses its own display-change callback while
+        // the CGS transaction is running. Establish the brightness/ALS epoch
+        // explicitly here so that a self-generated display-parameter change
+        // cannot bypass the transition reset.
+        beginBrightnessControlEpoch(reason: "display parameter transition")
+        let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
+        traceRuntime(
+            "ALS rebind reason=display parameter transition (HiDPI reapply) " +
+                "success=\(didRebindALS) displayKey=\(currentDisplayKey ?? "nil") " +
+                "clientGeneration=\(brightnessCoordinator.ambientLightSensorClientGeneration) " +
+                "rebindCount=\(brightnessCoordinator.ambientLightSensorRebindCount)"
+        )
         Task { @MainActor [weak self] in
             guard let self, self.externalDisplayReadOperationsAllowed else { return }
             await self.reloadDisplayModes(allowDuringPostWake: true)
@@ -242,6 +254,13 @@ extension DisplayCoordinator {
     func restartTargetDisplayReadinessRecovery(for powerGeneration: UInt64) {
         guard isRunning else { return }
         beginBrightnessControlEpoch(reason: "display parameter transition")
+        let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
+        traceRuntime(
+            "ALS rebind reason=display parameter transition success=\(didRebindALS) " +
+                "displayKey=\(currentDisplayKey ?? "nil") " +
+                "clientGeneration=\(brightnessCoordinator.ambientLightSensorClientGeneration) " +
+                "rebindCount=\(brightnessCoordinator.ambientLightSensorRebindCount)"
+        )
         beginTargetDisplayReadinessRecovery(
             for: powerGeneration,
             initialDelay: 0,

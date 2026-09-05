@@ -29,10 +29,23 @@ enum BrightnessSource: String, Codable, Sendable {
     case writeFailed
 }
 
-enum BrightnessReadbackReliability: String, Codable, Sendable {
+enum BrightnessReadbackReliability: String, Codable, Sendable, Equatable {
     case reliable
     case uncertainAfterWrite
+    case transitionUnverified
     case unavailable
+}
+
+/// Describes where a scalar brightness sample came from. A cache fallback is
+/// never evidence that the panel returned this value for the current epoch.
+enum BrightnessReadbackSource: String, Codable, Sendable, Equatable {
+    case hardwareFresh = "freshHardware"
+    case cacheFallback
+}
+
+struct BrightnessReadSample: Sendable {
+    let percent: Int
+    let source: BrightnessReadbackSource
 }
 
 enum BrightnessSuppressionReason: String, Codable, Sendable {
@@ -89,11 +102,25 @@ struct BrightnessState: Sendable {
     /// command is accepted, `optimisticBrightnessPercent` carries the same
     /// intent beyond this transient phase while the readback is uncertain.
     var pendingManualBrightnessPercent: Int?
+    /// Latest DDC command accepted by the monitor. This remains the logical
+    /// command/reference until a later explicit failure or authoritative
+    /// observation replaces it; it is intentionally not TTL-bound.
+    var commandedBrightnessPercent: Int?
     var optimisticBrightnessPercent: Int?
     var optimisticBrightnessExpiresAt: Date?
     var optimisticReadbackAttempts: Int = 0
+    /// Presentation-only fallback. It is never treated as hardware truth or
+    /// used by the automatic policy reference.
+    var persistedBrightnessPercent: Int?
     var lastConfirmedBrightnessPercent: Int?
     var readbackReliability: BrightnessReadbackReliability = .unavailable
+    var lastReadbackSource: BrightnessReadbackSource?
+    var transitionReadbackSampleCount: Int = 0
+    var transitionReadbackStableCount: Int = 0
+    var transitionReadbackCandidatePercent: Int?
+    /// Non-authoritative diagnostic marker from the preceding display epoch;
+    /// used to avoid promoting the same stale value after a transition.
+    var transitionPreviousReadbackPercent: Int?
     var mismatchStreak: Int = 0
     var limiterDetected: Bool = false
 
@@ -107,23 +134,24 @@ struct BrightnessState: Sendable {
     }
 
     func referenceBrightness(now: Date = Date()) -> Int? {
-        activeOptimisticBrightnessPercent(now: now)
+        // Accepted commands are intentionally not time-limited. `now` stays
+        // in the API for callers that already provide it and for future
+        // confidence policy, while command authority is lifecycle-based.
+        _ = now
+        pendingManualBrightnessPercent
+            ?? commandedBrightnessPercent
             ?? (readbackReliability == .reliable
-                ? actualDDCBrightnessPercent ?? lastDDCReadbackPercent
+                ? actualDDCBrightnessPercent ?? lastConfirmedBrightnessPercent ?? lastDDCReadbackPercent
                 : nil)
-            ?? lastConfirmedBrightnessPercent
-            ?? requestedDDCBrightnessPercent
-            ?? autoTargetBrightnessPercent
     }
 
     var uiSliderBrightnessPercent: Int {
         return pendingManualBrightnessPercent
-            ?? activeOptimisticBrightnessPercent()
+            ?? commandedBrightnessPercent
             ?? (readbackReliability == .reliable
-                ? actualDDCBrightnessPercent ?? lastDDCReadbackPercent
+                ? actualDDCBrightnessPercent ?? lastConfirmedBrightnessPercent ?? lastDDCReadbackPercent
                 : nil)
-            ?? lastConfirmedBrightnessPercent
-            ?? requestedDDCBrightnessPercent
+            ?? persistedBrightnessPercent
             ?? autoTargetBrightnessPercent
             ?? 50
     }

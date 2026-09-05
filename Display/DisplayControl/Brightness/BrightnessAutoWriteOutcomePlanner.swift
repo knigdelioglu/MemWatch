@@ -93,8 +93,11 @@ private struct BrightnessLimiterEvidenceTracker {
         distinctCandidates.insert(requested)
 
         let requestSpan = (requestMaximum ?? requested) - (requestMinimum ?? requested)
+        // A ceiling limiter can only be inferred when the stable readback is
+        // below the range being requested. A fixed readback above every
+        // request is indistinguishable from a stale-high GET response and
+        // must not start a monitor cooldown.
         let readbackIsStableLimit = actualAfter <= (requestMinimum ?? requested) - minimumMismatchPercent
-            || actualAfter >= (requestMaximum ?? requested) + minimumMismatchPercent
         let limiterDetected = mismatchStreak >= requiredMismatchStreak
             && distinctCandidates.count >= requiredMismatchStreak
             && requestSpan >= minimumRequestSpan
@@ -140,10 +143,16 @@ struct BrightnessAutoWriteOutcome {
 }
 
 final class BrightnessAutoWriteOutcomePlanner {
-    private var limiterEvidence = BrightnessLimiterEvidenceTracker()
+    private var autoLimiterEvidence = BrightnessLimiterEvidenceTracker()
+    private var manualLimiterEvidence = BrightnessLimiterEvidenceTracker()
 
     func resetLimiterEvidence() {
-        limiterEvidence.reset()
+        autoLimiterEvidence.reset()
+        manualLimiterEvidence.reset()
+    }
+
+    func resetAutoLimiterEvidenceForManualInteraction() {
+        autoLimiterEvidence.reset()
     }
 
     func observeLimiterEvidence(
@@ -151,7 +160,19 @@ final class BrightnessAutoWriteOutcomePlanner {
         requested: Int,
         displayKey: String
     ) -> BrightnessLimiterObservation {
-        limiterEvidence.observe(
+        autoLimiterEvidence.observe(
+            result: result,
+            requested: requested,
+            displayKey: displayKey
+        )
+    }
+
+    func observeManualLimiterEvidence(
+        result: M1DDCBrightnessWriteResult,
+        requested: Int,
+        displayKey: String
+    ) -> BrightnessLimiterObservation {
+        manualLimiterEvidence.observe(
             result: result,
             requested: requested,
             displayKey: displayKey

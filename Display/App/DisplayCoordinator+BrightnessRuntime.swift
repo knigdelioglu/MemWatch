@@ -16,12 +16,14 @@ extension DisplayCoordinator {
         // the rest of this auto pass stale, even if the drag ends before the
         // next await resumes.
         let tickBrightnessWriteGeneration = currentManualBrightnessWriteGeneration
+        let tickBrightnessControlEpoch = brightnessControlEpoch
         guard !manualBrightnessInteractionActive else { return }
 
         traceRuntime("tick entered currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")")
 
         let isAvailable = await brightnessCoordinator.isDDCAvailable()
-        guard acceptsDisplayPowerGeneration(tickPowerGeneration) else { return }
+        guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
         ddcAvailable = isAvailable
         updateCapabilities()
         refreshSharedRuntimeFeatures()
@@ -45,7 +47,8 @@ extension DisplayCoordinator {
             lastDisplaySearchDate = Date()
             await reloadDisplayInfo(allowDuringPostWake: allowDuringPostWake)
             guard acceptsDisplayPowerGeneration(tickPowerGeneration),
-                  acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
+                  acceptsTargetDisplayOperation(tickTargetSnapshot),
+                  acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
             refreshSharedRuntimeFeatures()
         }
 
@@ -105,9 +108,10 @@ extension DisplayCoordinator {
             && (currentBrightness == nil
                 || now.timeIntervalSince(lastBrightnessReadDate) >= brightnessReadInterval)
         if shouldRefreshBrightness {
-            let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+            let readback = await brightnessCoordinator.writer.readBrightnessSample(preferredKey: display.displayKey)
             guard acceptsDisplayPowerGeneration(tickPowerGeneration),
                   acceptsTargetDisplayOperation(tickTargetSnapshot),
+                  acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
                   acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
                   !manualBrightnessInteractionActive,
                   brightnessState.pendingManualBrightnessPercent == nil else {
@@ -123,10 +127,9 @@ extension DisplayCoordinator {
             calibration: settings.calibration,
             profile: profile
         )
-        let actualBefore = brightnessState.referenceBrightness(now: now)
-            ?? currentBrightness
-            ?? store.lastBrightness(for: display.displayKey)
-            ?? 50
+        // Automatic policy must never use presentation fallbacks or an
+        // unverified transition/readback value as its hardware reference.
+        let actualBefore = brightnessState.referenceBrightness(now: now) ?? 50
         let requestReferenceBrightness = actualBefore
         let isManualOverrideActive = shouldHoldManualBrightnessOverride(currentLux: smoothedLux, now: now)
 
@@ -177,7 +180,8 @@ extension DisplayCoordinator {
 
         await refreshCurrentVolume()
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
-              acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
+              acceptsTargetDisplayOperation(tickTargetSnapshot),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
         refreshSharedRuntimeFeatures()
 
         let target = autoTargetBrightnessPercent
@@ -199,7 +203,8 @@ extension DisplayCoordinator {
         let smoothedCandidate = smoothedRequestedPercent
         let preflightDDCAvailable = await brightnessCoordinator.isDDCAvailable()
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
-              acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
+              acceptsTargetDisplayOperation(tickTargetSnapshot),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
 
         let preflight = brightnessAutoLoopPlanner.preflight(
             context: BrightnessAutoLoopPreflightContext(
@@ -222,6 +227,7 @@ extension DisplayCoordinator {
 
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return
@@ -267,6 +273,7 @@ extension DisplayCoordinator {
 
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return
@@ -274,6 +281,7 @@ extension DisplayCoordinator {
         let result = await brightnessCoordinator.writer.setBrightness(writeCandidate, preferredKey: display.displayKey)
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot),
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
               !manualBrightnessInteractionActive else {
             return

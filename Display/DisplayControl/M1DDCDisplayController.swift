@@ -203,12 +203,22 @@ actor M1DDCWriter {
         return display
     }
 
+    func currentBrightnessSample() async -> BrightnessReadSample? {
+        await readBrightnessSample(preferredKey: nil)
+    }
+
     func currentBrightness() async -> Int? {
+        guard let sample = await currentBrightnessSample(),
+              sample.source == .hardwareFresh else { return nil }
+        return sample.percent
+    }
+
+    func readBrightnessSample(preferredKey: String? = nil) async -> BrightnessReadSample? {
         let operationGeneration = operationGate.currentGeneration()
         guard operationGate.accepts(operationGeneration),
               let targetContext = currentTargetOperationContext() else { return nil }
         guard let display = await selectDisplay(
-            preferredKey: nil,
+            preferredKey: preferredKey,
             expectedGeneration: operationGeneration,
             targetContext: targetContext
         ) else { return nil }
@@ -223,26 +233,17 @@ actor M1DDCWriter {
         {
             let value = DDCBrightnessScale.uiPercent(fromRawCurrent: rawCurrent, rawMax: rawMax)
             lastKnownBrightnessByDisplay[display.displayKey] = value
-            return value
+            return BrightnessReadSample(percent: value, source: .hardwareFresh)
         }
         guard acceptsOperation(operationGeneration, targetContext: targetContext) else { return nil }
-        return lastKnownBrightnessByDisplay[display.displayKey]
+        guard let cached = lastKnownBrightnessByDisplay[display.displayKey] else { return nil }
+        return BrightnessReadSample(percent: cached, source: .cacheFallback)
     }
 
     func readBrightness(preferredKey: String? = nil) async -> Int? {
-        let operationGeneration = operationGate.currentGeneration()
-        guard operationGate.accepts(operationGeneration),
-              let targetContext = currentTargetOperationContext() else { return nil }
-        guard let display = await selectDisplay(
-            preferredKey: preferredKey,
-            expectedGeneration: operationGeneration,
-            targetContext: targetContext
-        ) else { return nil }
-        return await readBrightness(
-            displayIndex: Self.ddcSelector(for: display),
-            expectedGeneration: operationGeneration,
-            targetContext: targetContext
-        )
+        guard let sample = await readBrightnessSample(preferredKey: preferredKey),
+              sample.source == .hardwareFresh else { return nil }
+        return sample.percent
     }
 
     func readBrightnessRaw(preferredKey: String? = nil) async -> DDCBrightnessRawSample? {
@@ -259,6 +260,17 @@ actor M1DDCWriter {
             expectedGeneration: operationGeneration,
             targetContext: targetContext
         )
+    }
+
+    /// Invalidates presentation cache for a display-parameter epoch. A cache
+    /// value may still be useful for diagnostics/presentation, but it must not
+    /// be the first brightness observation attributed to the new mode.
+    func invalidateBrightnessCache(for displayKey: String?) {
+        if let displayKey {
+            lastKnownBrightnessByDisplay.removeValue(forKey: displayKey)
+        } else {
+            lastKnownBrightnessByDisplay.removeAll()
+        }
     }
 
     func currentVolume() async -> Int? {
@@ -1004,21 +1016,6 @@ actor M1DDCWriter {
         }, onCancel: {
             processHandle.cancel()
         })
-    }
-
-    private func readBrightness(
-        displayIndex: String,
-        expectedGeneration: UInt64,
-        targetContext: M1DDCTargetOperationContext
-    ) async -> Int? {
-        guard let sample = await readBrightnessRaw(
-            displayIndex: displayIndex,
-            expectedGeneration: expectedGeneration,
-            targetContext: targetContext
-        ) else { return nil }
-        guard acceptsOperation(expectedGeneration, targetContext: targetContext) else { return nil }
-        guard let rawCurrent = sample.rawCurrent, let rawMax = sample.rawMax else { return nil }
-        return DDCBrightnessScale.uiPercent(fromRawCurrent: rawCurrent, rawMax: rawMax)
     }
 
     private func readBrightnessSample(
