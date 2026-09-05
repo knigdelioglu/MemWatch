@@ -91,7 +91,7 @@ actor DDCRawBrightnessProbeDiagnostic {
         }
 
         if let rawMax = beforeSample.rawMax, rawMax == 50, let normalizedAfterPercent, (40...55).contains(normalizedAfterPercent) {
-            diagnosis = ["Monitör DDC parlaklığı %46 civarında sınırlıyor. HDR/Eco/Eye Saver/Adaptive Picture/Picture Mode ayarları kontrol edilmeli."]
+            diagnosis = ["DDC readback %46 civarında; tek probe limiter kanıtı değildir. HDR/Eco/Eye Saver/Adaptive Picture/Picture Mode ayarları kontrol edilmeli."]
         }
 
         return DDCRawBrightnessProbeSummary(

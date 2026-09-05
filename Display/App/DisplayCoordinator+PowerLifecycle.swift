@@ -85,6 +85,7 @@ extension DisplayCoordinator {
         manualBrightnessWriteTask = nil
         invalidateManualBrightnessWrites()
         brightnessState.pendingManualBrightnessPercent = nil
+        beginBrightnessControlEpoch(reason: "power transition")
 
         manualVolumeWriteTask?.cancel()
         manualVolumeWriteTask = nil
@@ -239,6 +240,8 @@ extension DisplayCoordinator {
     }
 
     func restartTargetDisplayReadinessRecovery(for powerGeneration: UInt64) {
+        guard isRunning else { return }
+        beginBrightnessControlEpoch(reason: "display parameter transition")
         beginTargetDisplayReadinessRecovery(
             for: powerGeneration,
             initialDelay: 0,

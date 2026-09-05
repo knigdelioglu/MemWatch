@@ -176,6 +176,7 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
         targetDisplayOperationGate.invalidate()
         isPostWakeRefreshInProgress = false
         DisplayPowerOperationGate.shared.suspend()
+        beginBrightnessControlEpoch(reason: "runtime stopped")
         Task { await brightnessCoordinator.writer.cancelInFlightOperations() }
         manualBrightnessWriteTask?.cancel()
         manualBrightnessWriteTask = nil

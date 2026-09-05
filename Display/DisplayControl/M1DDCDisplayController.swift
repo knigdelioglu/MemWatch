@@ -27,6 +27,12 @@ struct M1DDCBrightnessWriteResult: Sendable {
     /// `success` describes command acceptance. A successful DDC command can
     /// still have an unavailable or unreliable readback.
     var writeAccepted: Bool { success }
+
+    var readbackReliability: BrightnessReadbackReliability {
+        guard writeAccepted else { return .unavailable }
+        if matchedTarget == true, readbackAvailable { return .reliable }
+        return readbackAvailable ? .uncertainAfterWrite : .unavailable
+    }
 }
 
 private struct M1DDCCommandResult {
@@ -316,7 +322,7 @@ actor M1DDCWriter {
             expectedGeneration: operationGeneration,
             targetContext: targetContext
         )
-        if firstResult.success {
+        if firstResult.writeAccepted {
             return firstResult
         }
 

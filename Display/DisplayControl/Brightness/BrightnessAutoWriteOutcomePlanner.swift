@@ -62,7 +62,7 @@ private struct BrightnessLimiterEvidenceTracker {
             abs(rawMax - $0) <= max(stableRawTolerance, rawMax / 50)
         } ?? true
         let direction = lastCandidate.map {
-            direction(for: requested - $0)
+            directionSign(for: requested - $0)
         } ?? 0
         let directionIsStable = lastDirection == nil || direction == 0 || direction == lastDirection
 
@@ -106,7 +106,7 @@ private struct BrightnessLimiterEvidenceTracker {
         )
     }
 
-    private func direction(for delta: Int) -> Int {
+    private func directionSign(for delta: Int) -> Int {
         if delta == 0 { return 0 }
         return delta > 0 ? 1 : -1
     }
@@ -161,18 +161,14 @@ final class BrightnessAutoWriteOutcomePlanner {
     func plan(
         result: M1DDCBrightnessWriteResult,
         candidate: Int,
-        displayKey: String
+        displayKey: String = "unknown"
     ) -> BrightnessAutoWriteOutcome {
+        guard result.writeAccepted else {
+            return planFailure(result: result, currentActual: candidate)
+        }
         let observedAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? candidate
         let matchedTarget = result.matchedTarget == true
-        let reliability: BrightnessReadbackReliability
-        if matchedTarget {
-            reliability = .reliable
-        } else if result.readbackAvailable {
-            reliability = .uncertainAfterWrite
-        } else {
-            reliability = .unavailable
-        }
+        let reliability = result.readbackReliability
 
         let evidence = observeLimiterEvidence(
             result: result,
@@ -182,12 +178,25 @@ final class BrightnessAutoWriteOutcomePlanner {
 
         switch result.status {
         case .success:
+            if matchedTarget {
+                return BrightnessAutoWriteOutcome(
+                    statusText: "Brightness \(observedAfter)%",
+                    writeDiagnosis: "DDC write succeeded and the readback matched the requested target.",
+                    actualAfter: observedAfter,
+                    referenceAfter: observedAfter,
+                    persistedReadback: observedAfter,
+                    readbackReliability: reliability,
+                    mismatchStreak: evidence.mismatchStreak,
+                    limiterDetected: evidence.limiterDetected,
+                    shouldSetCooldown: evidence.limiterDetected
+                )
+            }
             return BrightnessAutoWriteOutcome(
-                statusText: "Brightness \(observedAfter)%",
-                writeDiagnosis: "DDC write succeeded and the readback matched the requested target.",
+                statusText: "Brightness \(candidate)% (readback uncertain)",
+                writeDiagnosis: "DDC write was accepted but the success status lacked a matching target; readback remains uncertain.",
                 actualAfter: observedAfter,
-                referenceAfter: observedAfter,
-                persistedReadback: observedAfter,
+                referenceAfter: candidate,
+                persistedReadback: candidate,
                 readbackReliability: reliability,
                 mismatchStreak: evidence.mismatchStreak,
                 limiterDetected: evidence.limiterDetected,
@@ -229,7 +238,7 @@ final class BrightnessAutoWriteOutcomePlanner {
         currentActual: Int
     ) -> BrightnessAutoWriteOutcome {
         resetLimiterEvidence()
-        BrightnessAutoWriteOutcome(
+        return BrightnessAutoWriteOutcome(
             statusText: result.message.isEmpty ? "Yazma hatası" : "Yazma hatası: \(result.message)",
             writeDiagnosis: "DDC write failed. Error details: \(result.message)",
             actualAfter: currentActual,

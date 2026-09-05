@@ -436,7 +436,7 @@ actor DDCBrightnessMaxDiagnostic {
         contrastLow: Bool
     ) -> DDCBrightnessLimiterState {
         if maxBrightness != nil, maxBrightness != 100 {
-            return .yes
+            return .unknown
         }
 
         guard setSucceeded else {
@@ -445,9 +445,9 @@ actor DDCBrightnessMaxDiagnostic {
 
         if let brightnessReadbackAfterSet100 {
             if brightnessReadbackAfterSet100 != 100 {
-                return .yes
+                return .unknown
             }
-            return contrastLow ? .yes : .no
+            return contrastLow ? .unknown : .no
         }
 
         return .unknown
@@ -463,7 +463,7 @@ actor DDCBrightnessMaxDiagnostic {
 
         if let maxBrightness, maxBrightness == 50, let brightnessReadbackAfterSet100 {
             if (40...55).contains(brightnessReadbackAfterSet100) {
-                diagnosis.append("Monitör DDC parlaklığı %46 civarında sınırlıyor. HDR/Eco/Eye Saver/Adaptive Picture/Picture Mode ayarları kontrol edilmeli.")
+                diagnosis.append("DDC readback %46 civarında; tek testte limiter kanıtlanamaz. HDR/Eco/Eye Saver/Adaptive Picture/Picture Mode ayarları kontrol edilmeli.")
             } else if brightnessReadbackAfterSet100 == 100 {
                 diagnosis.append("DDC raw mapping doğrulandı; monitör raw max değerini kabul etti.")
             } else if brightnessReadbackAfterSet100 != 100 {
@@ -472,9 +472,9 @@ actor DDCBrightnessMaxDiagnostic {
         } else if setSucceeded, let brightnessReadbackAfterSet100, brightnessReadbackAfterSet100 == 100 {
             diagnosis.append("DDC brightness 100 uygulanmış görünüyor. Sönüklük muhtemelen HDR/OSD/Eco/Contrast/Color profile kaynaklı.")
         } else if setSucceeded {
-            diagnosis.append("Monitor DDC brightness 100 komutunu kabul etmiyor veya sınırlıyor.")
+            diagnosis.append("Monitor DDC brightness 100 komutunu kabul etti, ancak readback eşleşmedi; limiter veya güvenilmez readback olabilir.")
         } else {
-            diagnosis.append("Monitor DDC brightness 100 komutunu kabul etmiyor veya sınırlıyor.")
+            diagnosis.append("Monitor DDC brightness 100 komutunu kabul etmedi; limiter durumu belirlenemedi.")
         }
 
         if contrastLow {

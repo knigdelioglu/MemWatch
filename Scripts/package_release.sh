@@ -2,8 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DERIVED_DATA="${1:-$ROOT_DIR/build/DerivedData}"
+TEMP_ROOT="${TMPDIR:-/private/tmp}"
+DEFAULT_DERIVED_DATA="${TEMP_ROOT%/}/MemWatchDerivedData"
+DERIVED_DATA="${1:-$DEFAULT_DERIVED_DATA}"
 DIST_DIR="${2:-$ROOT_DIR/dist}"
+APP_ONLY=false
+if [[ "${3:-}" == "--app-only" ]]; then
+  APP_ONLY=true
+elif [[ -n "${3:-}" ]]; then
+  echo "Usage: $0 [derived-data-path] [dist-path] [--app-only]" >&2
+  exit 2
+fi
 APP_NAME="MemWatch"
 APP_PATH="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
@@ -16,8 +25,11 @@ HELPER_PLIST_NAME="com.knigdelioglu.MemWatch.PrivilegedHelper.plist"
 HELPER_PLIST_REL="Contents/Library/LaunchDaemons/$HELPER_PLIST_NAME"
 HELPER_DEST_REL="Contents/Library/HelperTools/$HELPER_NAME"
 
-rm -rf "$DERIVED_DATA" "$DIST_DIR"
-mkdir -p "$DIST_DIR"
+rm -rf "$DERIVED_DATA"
+if [[ "$APP_ONLY" == false ]]; then
+  rm -rf "$DIST_DIR"
+  mkdir -p "$DIST_DIR"
+fi
 
 xcodebuild \
   -project "$ROOT_DIR/MemWatch.xcodeproj" \
@@ -128,6 +140,11 @@ codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 codesign --verify --strict --verbose=2 "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
 verify_helper_code_identifier "$APP_PATH/$HELPER_BUNDLE_PROGRAM"
+
+if [[ "$APP_ONLY" == true ]]; then
+  echo "Release app ready: $APP_PATH"
+  exit 0
+fi
 
 mkdir -p "$STAGE_DIR"
 ditto "$APP_PATH" "$STAGE_DIR/$APP_NAME.app"

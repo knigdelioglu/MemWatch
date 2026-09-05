@@ -317,7 +317,6 @@ extension DisplayCoordinator {
 
         updateBrightnessState { state in
             state.lastWriteAttemptPercent = candidate
-            state.lastWriteReadbackPercent = outcome.actualAfter
             state.mismatchStreak = outcome.mismatchStreak
             state.limiterDetected = outcome.limiterDetected
             state.isAutoBrightnessEnabled = autoBrightnessEnabled

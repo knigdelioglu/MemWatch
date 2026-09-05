@@ -92,7 +92,7 @@ final class BrightnessAutoLoopPlanner {
                 reason: .monitorLimiterCooldown,
                 source: .suppressed,
                 statusText: "monitor limiter cooldown (\(remaining)s)",
-                diagnosis: "Previous DDC write was accepted but monitor did not change brightness. Auto brightness is paused briefly to avoid visible pulsing.",
+                diagnosis: "Repeated stable DDC mismatches indicate a monitor-side brightness limiter. Auto brightness is paused briefly to avoid visible pulsing.",
                 reportSuppressionReason: "monitor limiter cooldown"
             )
         }

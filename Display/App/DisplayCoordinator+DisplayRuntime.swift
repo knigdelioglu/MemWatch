@@ -17,6 +17,9 @@ extension DisplayCoordinator {
                 "online=\(connection.isOnline) active=\(connection.isActive)"
         )
         guard connection.phase == .softwareDisconnected else { return false }
+        if currentDisplayInfo != nil {
+            beginBrightnessControlEpoch(reason: "software display disconnect")
+        }
 
         publishCurrentDisplayInfo(nil, reason: "software disconnect state applied")
         currentBrightness = nil
@@ -75,6 +78,7 @@ extension DisplayCoordinator {
             publishCurrentDisplayInfo(display, reason: "writer.refreshDisplay non-nil")
             store.setSelectedDisplayKey(display.displayKey)
             if display.displayKey != previousDisplayKey {
+                beginBrightnessControlEpoch(reason: "display identity changed")
                 invalidateManualBrightnessWrites()
                 invalidateManualVolumeWrites()
                 cancelPendingManualBrightnessWrite()
@@ -129,6 +133,9 @@ extension DisplayCoordinator {
                       ) else { return }
             }
         } else {
+            if previousDisplayKey != nil {
+                beginBrightnessControlEpoch(reason: "display rediscovery unavailable")
+            }
             invalidateManualBrightnessWrites()
             invalidateManualVolumeWrites()
             cancelPendingManualBrightnessWrite()
