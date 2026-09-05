@@ -490,10 +490,26 @@ struct DisplayFeatureSmoke {
             displayID: 42,
             productName: "Samsung S60UD",
             serial: "CG-serial",
+            systemUUID: "s60ud-uuid",
+            ioLocation: nil
+        )
+        precondition(
+            M1DDCWriter.ddcSelectorForDiagnostics(coreGraphicsOnlyFallback) == "s60ud-uuid",
+            "CoreGraphics fallback must use the stable UUID for DDC after a display-parameter change"
+        )
+
+        let displayIDOnlyFallback = ExternalDisplayInfo(
+            displayIndex: "id:42",
+            displayID: 42,
+            productName: "Samsung S60UD",
+            serial: "CG-serial",
             systemUUID: nil,
             ioLocation: nil
         )
-        precondition(M1DDCWriter.ddcSelectorForDiagnostics(coreGraphicsOnlyFallback).isEmpty)
+        precondition(
+            M1DDCWriter.ddcSelectorForDiagnostics(displayIDOnlyFallback) == "id=42",
+            "CoreGraphics fallback must retain an explicit m1ddc ID selector when UUID is unavailable"
+        )
 
         func input(
             executableSelected: Bool = true,

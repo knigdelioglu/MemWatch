@@ -32,12 +32,15 @@ private enum PrivateSymbols {
 
 private typealias ALCALSCopyALSServiceClientFn = @convention(c) () -> Unmanaged<AnyObject>?
 private typealias IOHIDServiceClientCopyEventFn = @convention(c) (CFTypeRef, Int64, Int32, Int64) -> Unmanaged<AnyObject>?
+private typealias IOHIDServiceClientCopyPropertyFn = @convention(c) (CFTypeRef, CFString) -> Unmanaged<AnyObject>?
 private typealias IOHIDEventGetFloatValueFn = @convention(c) (CFTypeRef, Int32) -> Double
 private typealias IODisplaySetFloatParameterFn = @convention(c) (io_service_t, IOOptionBits, CFString, Float) -> IOReturn
 private typealias CGDisplayIOServicePortFn = @convention(c) (CGDirectDisplayID) -> io_service_t
 final class AmbientLightReader {
-    private let client: CFTypeRef
+    private let copyClient: ALCALSCopyALSServiceClientFn
+    private var client: CFTypeRef
     private let copyEvent: IOHIDServiceClientCopyEventFn
+    private let copyProperty: IOHIDServiceClientCopyPropertyFn?
     private let readFloatValue: IOHIDEventGetFloatValueFn
 
     init?() {
@@ -49,12 +52,38 @@ final class AmbientLightReader {
         else {
             return nil
         }
+        self.copyClient = copyClient
         client = unmanaged.takeRetainedValue() as CFTypeRef
         self.copyEvent = copyEvent
+        self.copyProperty = PrivateSymbols.symbol(
+            "IOHIDServiceClientCopyProperty",
+            as: IOHIDServiceClientCopyPropertyFn.self
+        )
         self.readFloatValue = readFloatValue
     }
 
     func readLux() -> Double? {
+        if let value = readLux(from: client) {
+            return value
+        }
+
+        // macOS can replace the ALS service client when display parameters
+        // change (including HDR/SDR transitions). Rebind once so the next
+        // automatic-brightness tick is not permanently stuck at "waiting".
+        guard let unmanaged = copyClient() else { return nil }
+        let refreshedClient = unmanaged.takeRetainedValue() as CFTypeRef
+        client = refreshedClient
+        return readLux(from: refreshedClient)
+    }
+
+    private func readLux(from client: CFTypeRef) -> Double? {
+        // Newer Apple ALS drivers publish the calibrated value directly as a
+        // CurrentLux property. Prefer it when present; unlike the older event
+        // offsets, it remains available after an external HDR mode change.
+        if let currentLux = readCurrentLuxProperty(from: client) {
+            return currentLux
+        }
+
         guard let unmanaged = copyEvent(client, AmbientSensorConstants.eventType, 0, 0) else {
             return nil
         }
@@ -81,5 +110,30 @@ final class AmbientLightReader {
         guard !trimmed.isEmpty else { return median }
         let average = trimmed.reduce(0.0, +) / Double(trimmed.count)
         return (median * 0.65) + (average * 0.35)
+    }
+
+    private func readCurrentLuxProperty(from client: CFTypeRef) -> Double? {
+        guard let copyProperty,
+              let unmanaged = copyProperty(client, "CurrentLux" as CFString) else {
+            return nil
+        }
+
+        let property = unmanaged.takeRetainedValue()
+        let value: Double?
+        if let number = property as? NSNumber {
+            value = number.doubleValue
+        } else if let string = property as? NSString {
+            value = Double(string as String)
+        } else {
+            value = nil
+        }
+
+        guard let value,
+              value.isFinite,
+              value >= 0,
+              value <= AmbientSensorConstants.maxValidLux else {
+            return nil
+        }
+        return value
     }
 }

@@ -440,7 +440,12 @@ actor M1DDCWriter {
             let currentDisplayInfo,
             preferredKey == nil || preferredKey == currentDisplayInfo.displayKey
         {
-            guard currentDisplayInfo.displayID == targetContext.displayID else { return nil }
+            guard Self.matchesTargetIdentity(
+                currentDisplayInfo,
+                targetDisplayID: targetContext.displayID
+            ) || currentDisplayInfo.displayID == targetContext.displayID else {
+                return nil
+            }
             return currentDisplayInfo
         }
 
@@ -450,7 +455,10 @@ actor M1DDCWriter {
             targetContext: targetContext
         )
         guard acceptsOperation(expectedGeneration, targetContext: targetContext) else { return nil }
-        let targetDisplays = displays.filter { $0.displayID == targetContext.displayID }
+        let targetDisplays = Self.targetDisplays(
+            from: displays,
+            targetDisplayID: targetContext.displayID
+        )
         guard !targetDisplays.isEmpty else {
             currentDisplayInfo = nil
             return nil
@@ -468,6 +476,71 @@ actor M1DDCWriter {
 
         currentDisplayInfo = targetDisplays[0]
         return targetDisplays[0]
+    }
+
+    private static func targetDisplays(
+        from displays: [ExternalDisplayInfo],
+        targetDisplayID: CGDirectDisplayID
+    ) -> [ExternalDisplayInfo] {
+        let exactMatches = displays.filter { $0.displayID == targetDisplayID }
+        if !exactMatches.isEmpty {
+            return exactMatches
+        }
+
+        // HDR/SDR changes can make the DDC enumeration briefly omit or
+        // refresh Display ID while CoreGraphics keeps the same physical
+        // monitor online. Match the stable UUID/serial before falling back to
+        // a sole, explicitly supported Samsung model.
+        let stableMatches = displays.filter {
+            matchesTargetIdentity($0, targetDisplayID: targetDisplayID)
+        }
+        if !stableMatches.isEmpty {
+            return stableMatches
+        }
+
+        guard displays.count == 1,
+              targetMonitorNames.contains(where: {
+                  displays[0].productName.localizedCaseInsensitiveContains($0)
+              }) else {
+            return []
+        }
+        return displays
+    }
+
+    private static func matchesTargetIdentity(
+        _ display: ExternalDisplayInfo,
+        targetDisplayID: CGDirectDisplayID
+    ) -> Bool {
+        if let candidateUUID = display.systemUUID,
+           !candidateUUID.isEmpty,
+           let targetUUID = coreGraphicsDisplayUUID(for: targetDisplayID),
+           candidateUUID.caseInsensitiveCompare(targetUUID) == .orderedSame {
+            return true
+        }
+
+        let targetSerial = CGDisplaySerialNumber(targetDisplayID)
+        guard targetSerial != 0,
+              let candidateSerial = leadingDecimalSerialNumber(from: display.serial) else {
+            return false
+        }
+        return candidateSerial == targetSerial
+    }
+
+    private static func leadingDecimalSerialNumber(from rawValue: String?) -> UInt32? {
+        guard let rawValue else { return nil }
+        let digits = rawValue
+            .drop(while: { !$0.isNumber })
+            .prefix(while: { $0.isNumber })
+        guard !digits.isEmpty else { return nil }
+        return UInt32(digits)
+    }
+
+    private static func coreGraphicsDisplayUUID(for displayID: CGDirectDisplayID) -> String? {
+        guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else {
+            return nil
+        }
+        return (CFUUIDCreateString(nil, uuid) as String)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func selectDisplay(
@@ -495,9 +568,15 @@ actor M1DDCWriter {
             return systemUUID
         }
 
-        // A CoreGraphics-only fallback has a display ID but no m1ddc list
-        // index. The CG ID is an identity value, not a valid m1ddc selector;
-        // leave DDC unavailable rather than addressing an unrelated display.
+        // A CoreGraphics-only fallback has no m1ddc list index. m1ddc accepts
+        // an explicit id= selector, and the live target gate has already
+        // verified that this ID belongs to the supported Samsung display.
+        let coreGraphicsIDPrefix = "id:"
+        if display.displayIndex.hasPrefix(coreGraphicsIDPrefix),
+           let displayID = UInt32(display.displayIndex.dropFirst(coreGraphicsIDPrefix.count)) {
+            return "id=\(displayID)"
+        }
+
         return ""
     }
 
@@ -538,7 +617,12 @@ actor M1DDCWriter {
         if !parsed.isEmpty {
             cachedDisplays = parsed
         } else {
-            cachedDisplays = []
+            // Keep the last known DDC selector during the short empty
+            // enumeration window that macOS can produce while switching
+            // display parameters (including HDR -> SDR). The target gate and
+            // the selector fallback still validate the live display before a
+            // command is executed.
+            return cachedDisplays
         }
         return cachedDisplays
     }
@@ -622,12 +706,13 @@ actor M1DDCWriter {
             return ExternalDisplayInfo(
                 // Keep the CG ID in a visibly non-DDC selector-shaped field so
                 // the identity remains diagnosable without mistaking it for
-                // an m1ddc list index.
+                // an m1ddc list index. The UUID below is the operational
+                // selector fallback when the DDC list is temporarily empty.
                 displayIndex: "id:\(displayID)",
                 displayID: displayID,
                 productName: "Samsung S60UD",
                 serial: serialValue == 0 ? nil : String(serialValue),
-                systemUUID: nil,
+                systemUUID: coreGraphicsDisplayUUID(for: displayID),
                 ioLocation: nil
             )
         }
@@ -678,7 +763,6 @@ actor M1DDCWriter {
     ) async -> M1DDCBrightnessWriteResult {
         let selector = Self.ddcSelector(for: display)
         guard acceptsOperation(expectedGeneration, targetContext: targetContext),
-              display.displayID == targetContext.displayID,
               !selector.isEmpty else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
