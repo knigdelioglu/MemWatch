@@ -25,9 +25,11 @@ final class DisplayBrightnessRuntimeState: ObservableObject {
     var pendingTargetCandidate: Int?
     var pendingTargetCandidateSince: Date = .distantPast
     var mismatchIntervalsCount = 0
+    var brightnessControlEpoch: UInt64 = 0
     var brightnessLimiterCooldownUntil = Date.distantPast
     var brightnessLimiterCooldownDisplayKey: String?
     let brightnessLimiterCooldownDuration: TimeInterval = 120.0
+    let optimisticBrightnessTTL: TimeInterval = 30.0
     var manualBrightnessWriteGate = LatestValueWriteGate()
     var manualBrightnessInteractionActive = false
 
@@ -174,6 +176,10 @@ final class DisplayRuntimeState: ObservableObject {
         get { brightness.mismatchIntervalsCount }
         set { brightness.mismatchIntervalsCount = newValue }
     }
+    var brightnessControlEpoch: UInt64 {
+        get { brightness.brightnessControlEpoch }
+        set { brightness.brightnessControlEpoch = newValue }
+    }
     var brightnessLimiterCooldownUntil: Date {
         get { brightness.brightnessLimiterCooldownUntil }
         set { brightness.brightnessLimiterCooldownUntil = newValue }
@@ -183,6 +189,7 @@ final class DisplayRuntimeState: ObservableObject {
         set { brightness.brightnessLimiterCooldownDisplayKey = newValue }
     }
     var brightnessLimiterCooldownDuration: TimeInterval { brightness.brightnessLimiterCooldownDuration }
+    var optimisticBrightnessTTL: TimeInterval { brightness.optimisticBrightnessTTL }
     var volumeReadInterval: TimeInterval { volume.volumeReadInterval }
     var lastVolumeReadDate: Date {
         get { volume.lastVolumeReadDate }

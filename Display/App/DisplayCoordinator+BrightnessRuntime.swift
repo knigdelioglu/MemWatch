@@ -96,19 +96,39 @@ extension DisplayCoordinator {
         currentLux = smoothedLux
 
         let now = Date()
+        expireOptimisticBrightnessIfNeeded(now: now)
+
+        // `brightnessReadInterval` is also the recovery path for monitors
+        // whose immediate post-write readback is stale. Do not let the
+        // cached value prevent a later read from becoming authoritative.
+        let shouldRefreshBrightness = brightnessState.pendingManualBrightnessPercent == nil
+            && (currentBrightness == nil
+                || now.timeIntervalSince(lastBrightnessReadDate) >= brightnessReadInterval)
+        if shouldRefreshBrightness {
+            let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
+            guard acceptsDisplayPowerGeneration(tickPowerGeneration),
+                  acceptsTargetDisplayOperation(tickTargetSnapshot),
+                  acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
+                  !manualBrightnessInteractionActive,
+                  brightnessState.pendingManualBrightnessPercent == nil else {
+                return
+            }
+            applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
+            lastBrightnessReadDate = now
+        }
+
         let ambientNormalizedValue = BrightnessCurve.ambientNormalizedValue(for: smoothedLux, calibration: settings.calibration)
         let autoTargetBrightnessPercent = BrightnessCurve.targetBrightness(
             for: smoothedLux,
             calibration: settings.calibration,
             profile: profile
         )
-        let isManualOverrideActive = shouldHoldManualBrightnessOverride(currentLux: smoothedLux, now: now)
-        let actualBefore = brightnessState.actualDDCBrightnessPercent
-            ?? brightnessState.lastDDCReadbackPercent
+        let actualBefore = brightnessState.referenceBrightness(now: now)
             ?? currentBrightness
             ?? store.lastBrightness(for: display.displayKey)
             ?? 50
         let requestReferenceBrightness = actualBefore
+        let isManualOverrideActive = shouldHoldManualBrightnessOverride(currentLux: smoothedLux, now: now)
 
         let smoothedRequestedPercent = brightnessAutoController.smoothedRequestedPercent(
             target: autoTargetBrightnessPercent,
@@ -121,7 +141,6 @@ extension DisplayCoordinator {
             state.ambientNormalizedValue = ambientNormalizedValue
             state.autoTargetBrightnessPercent = autoTargetBrightnessPercent
             state.smoothedRequestedBrightnessPercent = smoothedRequestedPercent
-            state.actualDDCBrightnessPercent = actualBefore
             state.isManualOverrideActive = isManualOverrideActive
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && !isManualOverrideActive && calibrationSession == nil
             state.manualOverridePausedUntil = manualBrightnessOverrideUntil != .distantPast ? manualBrightnessOverrideUntil : nil
@@ -156,17 +175,6 @@ extension DisplayCoordinator {
             return
         }
 
-        if currentBrightness == nil {
-            let readback = await brightnessCoordinator.writer.readBrightness(preferredKey: display.displayKey)
-            guard acceptsDisplayPowerGeneration(tickPowerGeneration),
-                  acceptsTargetDisplayOperation(tickTargetSnapshot),
-                  acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
-                  !manualBrightnessInteractionActive else {
-                return
-            }
-            applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
-            lastBrightnessReadDate = now
-        }
         await refreshCurrentVolume()
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot) else { return }
@@ -175,7 +183,7 @@ extension DisplayCoordinator {
         let target = autoTargetBrightnessPercent
         updateStatus(String(format: "%.0f lux -> %%%d", smoothedLux, target))
 
-        let currentActual = brightnessState.actualDDCBrightnessPercent ?? brightnessState.lastDDCReadbackPercent ?? actualBefore
+        let currentActual = brightnessState.referenceBrightness(now: now) ?? actualBefore
         let minInterval: TimeInterval = profile.minInterval
 
         if abs(target - currentActual) > 10 {
@@ -271,7 +279,7 @@ extension DisplayCoordinator {
             return
         }
 
-        if result.status == .success || result.status == .writeAcceptedButReadbackLimited {
+        if result.writeAccepted {
             handleAutoBrightnessWriteSuccess(
                 result: result,
                 candidate: writeCandidate,
@@ -293,7 +301,11 @@ extension DisplayCoordinator {
         currentActual: Int,
         displayKey: String
     ) {
-        let outcome = brightnessAutoWriteOutcomePlanner.plan(result: result, candidate: candidate)
+        let outcome = brightnessAutoWriteOutcomePlanner.plan(
+            result: result,
+            candidate: candidate,
+            displayKey: displayKey
+        )
         lastWriteDate = Date()
 
         if let readback = outcome.persistedReadback {
@@ -306,23 +318,24 @@ extension DisplayCoordinator {
         updateBrightnessState { state in
             state.lastWriteAttemptPercent = candidate
             state.lastWriteReadbackPercent = outcome.actualAfter
-            state.actualDDCBrightnessPercent = outcome.actualAfter
-            state.lastDDCReadbackPercent = outcome.actualAfter
+            state.mismatchStreak = outcome.mismatchStreak
+            state.limiterDetected = outcome.limiterDetected
             state.isAutoBrightnessEnabled = autoBrightnessEnabled
             state.isManualOverrideActive = false
             state.suppressionReason = nil
         }
 
         pendingTargetCandidate = nil
-        currentBrightness = outcome.actualAfter
-        lastSentBrightness = outcome.actualAfter
+        currentBrightness = brightnessState.referenceBrightness() ?? outcome.referenceAfter
+        lastSentBrightness = candidate
         if outcome.shouldSetCooldown {
             brightnessLimiterCooldownDisplayKey = displayKey
             brightnessLimiterCooldownUntil = Date().addingTimeInterval(brightnessLimiterCooldownDuration)
-        } else {
+        } else if brightnessLimiterCooldownDisplayKey == displayKey {
             brightnessLimiterCooldownDisplayKey = nil
             brightnessLimiterCooldownUntil = .distantPast
         }
+        logBrightnessWrite(requested: candidate, source: .autoDDCWrite, result: result)
         updateStatus(outcome.statusText)
     }
 
@@ -343,12 +356,15 @@ extension DisplayCoordinator {
         updateBrightnessState { state in
             state.lastWriteAttemptPercent = candidate
             state.lastWriteReadbackPercent = nil
+            state.mismatchStreak = outcome.mismatchStreak
+            state.limiterDetected = outcome.limiterDetected
             state.lastAutoWriteActualAfter = outcome.actualAfter
             state.suppressionReason = "Write error: \(result.message)"
         }
-        currentBrightness = outcome.actualAfter
-        lastSentBrightness = outcome.actualAfter
+        currentBrightness = brightnessState.referenceBrightness() ?? outcome.referenceAfter
+        lastSentBrightness = currentBrightness
 
+        logBrightnessWrite(requested: candidate, source: .autoDDCWrite, result: result)
         updateStatus(outcome.statusText)
     }
 }

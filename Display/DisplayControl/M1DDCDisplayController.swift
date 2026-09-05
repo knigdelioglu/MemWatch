@@ -23,6 +23,10 @@ struct M1DDCBrightnessWriteResult: Sendable {
     let matchedTarget: Bool?
 
     var requestedBrightnessPercent: Int { requestedUIPercent }
+
+    /// `success` describes command acceptance. A successful DDC command can
+    /// still have an unavailable or unreliable readback.
+    var writeAccepted: Bool { success }
 }
 
 private struct M1DDCCommandResult {
@@ -835,7 +839,7 @@ actor M1DDCWriter {
         }
         guard let rawAfter = afterSample?.rawCurrent else {
             return M1DDCBrightnessWriteResult(
-                success: false,
+                success: true,
                 status: .readbackUnavailable,
                 message: "DDC write accepted but readback unavailable",
                 requestedUIPercent: clamped,
@@ -852,9 +856,9 @@ actor M1DDCWriter {
 
         let actualUIPercentAfter = DDCBrightnessScale.uiPercent(fromRawCurrent: rawAfter, rawMax: rawMax)
         let matchedTarget = DDCBrightnessScale.isMatched(rawAfter: rawAfter, computedRawTarget: computedRawTarget)
-        lastKnownBrightnessByDisplay[display.displayKey] = actualUIPercentAfter
 
         if matchedTarget {
+            lastKnownBrightnessByDisplay[display.displayKey] = actualUIPercentAfter
             return M1DDCBrightnessWriteResult(
                 success: true,
                 status: .success,
@@ -872,9 +876,9 @@ actor M1DDCWriter {
         }
 
         return M1DDCBrightnessWriteResult(
-            success: false,
-            status: .writeAcceptedButReadbackLimited,
-            message: "DDC write accepted but monitor did not change brightness. Possible monitor-side limiter.",
+            success: true,
+            status: .writeAcceptedReadbackUncertain,
+            message: "DDC write accepted but readback did not match the requested target; readback is uncertain.",
             requestedUIPercent: clamped,
             rawMax: rawMax,
             computedRawTarget: computedRawTarget,

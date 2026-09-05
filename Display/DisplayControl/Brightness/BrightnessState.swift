@@ -29,6 +29,12 @@ enum BrightnessSource: String, Codable, Sendable {
     case writeFailed
 }
 
+enum BrightnessReadbackReliability: String, Codable, Sendable {
+    case reliable
+    case uncertainAfterWrite
+    case unavailable
+}
+
 enum BrightnessSuppressionReason: String, Codable, Sendable {
     case autoDisabled = "auto disabled"
     case manualOverrideActive = "manual override active"
@@ -79,19 +85,50 @@ struct BrightnessState: Sendable {
     var manualOverridePausedUntil: Date?
     var showMismatchWarning: Bool = false
     /// Latest manual slider intent that is waiting for its DDC write or
-    /// readback. Backend refreshes must not replace this draft.
+    /// readback. Backend refreshes must not replace this draft. Once the
+    /// command is accepted, `optimisticBrightnessPercent` carries the same
+    /// intent beyond this transient phase while the readback is uncertain.
     var pendingManualBrightnessPercent: Int?
+    var optimisticBrightnessPercent: Int?
+    var optimisticBrightnessExpiresAt: Date?
+    var optimisticReadbackAttempts: Int = 0
+    var lastConfirmedBrightnessPercent: Int?
+    var readbackReliability: BrightnessReadbackReliability = .unavailable
+    var mismatchStreak: Int = 0
+    var limiterDetected: Bool = false
+
+    func activeOptimisticBrightnessPercent(now: Date = Date()) -> Int? {
+        guard let optimisticBrightnessPercent,
+              let optimisticBrightnessExpiresAt,
+              now < optimisticBrightnessExpiresAt else {
+            return nil
+        }
+        return optimisticBrightnessPercent
+    }
+
+    func referenceBrightness(now: Date = Date()) -> Int? {
+        activeOptimisticBrightnessPercent(now: now)
+            ?? (readbackReliability == .reliable
+                ? actualDDCBrightnessPercent ?? lastDDCReadbackPercent
+                : nil)
+            ?? lastConfirmedBrightnessPercent
+            ?? requestedDDCBrightnessPercent
+            ?? autoTargetBrightnessPercent
+    }
 
     var uiSliderBrightnessPercent: Int {
         return pendingManualBrightnessPercent
-            ?? actualDDCBrightnessPercent
-            ?? lastDDCReadbackPercent
+            ?? activeOptimisticBrightnessPercent()
+            ?? (readbackReliability == .reliable
+                ? actualDDCBrightnessPercent ?? lastDDCReadbackPercent
+                : nil)
+            ?? lastConfirmedBrightnessPercent
             ?? requestedDDCBrightnessPercent
             ?? autoTargetBrightnessPercent
             ?? 50
     }
 
     var readbackStatusText: String {
-        isDDCReadbackAvailable ? "OK" : "Failed"
+        readbackReliability.rawValue
     }
 }

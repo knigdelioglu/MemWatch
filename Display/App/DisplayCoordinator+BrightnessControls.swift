@@ -288,38 +288,50 @@ extension DisplayCoordinator {
               ),
               acceptsManualBrightnessWrite(generation) else { return }
         brightnessState.pendingManualBrightnessPercent = nil
-        let actualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped
-        let matchedTarget = result.matchedTarget == true
-        print(
-            """
-            requestedUIPercent=\(clamped)
-            rawMax=\(result.rawMax.map(String.init) ?? "unavailable")
-            computedRawTarget=\(result.computedRawTarget.map(String.init) ?? "unavailable")
-            rawBefore=\(result.rawBefore.map(String.init) ?? "unavailable")
-            writeResult=\(result.status.rawValue)
-            rawAfter=\(result.rawAfter.map(String.init) ?? "unavailable")
-            actualUIPercentAfter=\(actualAfter)
-            matchedTarget=\(matchedTarget ? "YES" : "NO")
-            """
+        let displayKey = activeDisplayKey
+        let evidence = brightnessAutoWriteOutcomePlanner.observeLimiterEvidence(
+            result: result,
+            requested: clamped,
+            displayKey: displayKey
         )
-        if result.status == .success || result.status == .writeAcceptedButReadbackLimited {
+        updateBrightnessState { state in
+            state.mismatchStreak = evidence.mismatchStreak
+            state.limiterDetected = evidence.limiterDetected
+        }
+
+        if result.writeAccepted {
             lastSentBrightness = clamped
             lastWriteDate = Date()
             beginManualBrightnessOverride()
-            if let readback = result.actualUIPercentAfter ?? result.readbackBrightnessPercent {
-                lastBrightnessReadDate = lastWriteDate
-                store.setLastBrightness(readback, for: activeDisplayKey)
-            } else {
-                store.setLastBrightness(clamped, for: activeDisplayKey)
-            }
+            lastBrightnessReadDate = lastWriteDate
+            // A mismatched readback is diagnostic data only. Persist the
+            // accepted user intent until a later reliable readback confirms it.
+            let persistedBrightness = result.matchedTarget == true
+                ? (result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped)
+                : clamped
+            store.setLastBrightness(persistedBrightness, for: displayKey)
             applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
-            if result.status == .writeAcceptedButReadbackLimited {
-                updateStatus(result.message)
-            } else {
+            if evidence.limiterDetected {
+                brightnessLimiterCooldownDisplayKey = displayKey
+                brightnessLimiterCooldownUntil = Date().addingTimeInterval(brightnessLimiterCooldownDuration)
+            } else if result.matchedTarget == true {
+                brightnessLimiterCooldownDisplayKey = nil
+                brightnessLimiterCooldownUntil = .distantPast
+            }
+            logBrightnessWrite(requested: clamped, source: .quickPanelSlider, result: result)
+            switch result.status {
+            case .success:
                 updateStatus(result.actualUIPercentAfter.map { "Brightness \($0)%" } ?? "Brightness \(clamped)%")
+            case .writeAcceptedReadbackUncertain, .writeAcceptedButReadbackLimited:
+                updateStatus("Brightness \(clamped)% (readback uncertain)")
+            case .readbackUnavailable:
+                updateStatus("Brightness \(clamped)% (readback unavailable)")
+            case .writeFailed:
+                updateStatus(result.message)
             }
         } else {
             applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
+            logBrightnessWrite(requested: clamped, source: .quickPanelSlider, result: result)
             updateStatus(result.message.isEmpty ? "Parlaklık yazılamadı" : "Parlaklık yazılamadı: \(result.message)")
         }
     }

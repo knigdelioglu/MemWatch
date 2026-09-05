@@ -172,6 +172,10 @@ extension DisplayCoordinator {
         get { runtimeState.mismatchIntervalsCount }
         set { runtimeState.mismatchIntervalsCount = newValue }
     }
+    var brightnessControlEpoch: UInt64 {
+        get { runtimeState.brightnessControlEpoch }
+        set { runtimeState.brightnessControlEpoch = newValue }
+    }
     var brightnessLimiterCooldownUntil: Date {
         get { runtimeState.brightnessLimiterCooldownUntil }
         set { runtimeState.brightnessLimiterCooldownUntil = newValue }
@@ -181,6 +185,7 @@ extension DisplayCoordinator {
         set { runtimeState.brightnessLimiterCooldownDisplayKey = newValue }
     }
     var brightnessLimiterCooldownDuration: TimeInterval { runtimeState.brightnessLimiterCooldownDuration }
+    var optimisticBrightnessTTL: TimeInterval { runtimeState.optimisticBrightnessTTL }
     var volumeReadInterval: TimeInterval { runtimeState.volumeReadInterval }
     var lastVolumeReadDate: Date {
         get { runtimeState.lastVolumeReadDate }

@@ -107,9 +107,9 @@ actor DDCBrightnessMaxDiagnostic {
         let writeStatus: M1DDCBrightnessWriteStatus = {
             guard setBrightnessCommandResult.success else { return .writeFailed }
             guard brightnessAfterProbe.currentValue != nil else { return .readbackUnavailable }
-            return matchedTarget ? .success : .writeAcceptedButReadbackLimited
+            return matchedTarget ? .success : .writeAcceptedReadbackUncertain
         }()
-        let setBrightnessSucceeded = writeStatus == .success
+        let setBrightnessSucceeded = setBrightnessCommandResult.success
 
         let supportedVCPCodes = Self.supportedVCPCodeList(
             capabilitiesString: capabilitiesProbe.capabilitiesString,
@@ -151,8 +151,8 @@ actor DDCBrightnessMaxDiagnostic {
         if setBrightnessSucceeded, brightnessReadbackAfterUIPercent == 100, brightnessBefore.maxValue == 100 {
             notes.append("DDC brightness 100 uygulanmış görünüyor; HDR/OSD/Eco/Contrast/Color profile kaynaklı sönüklük ihtimali var.")
         }
-        if writeStatus == .writeAcceptedButReadbackLimited {
-            notes.append("DDC write accepted but monitor did not change brightness. Possible monitor-side limiter.")
+        if writeStatus == .writeAcceptedReadbackUncertain {
+            notes.append("DDC write accepted but readback is uncertain; repeated stable mismatches are required before auto brightness is paused.")
         }
 
         return DDCBrightnessMaxDiagnosticSummary(

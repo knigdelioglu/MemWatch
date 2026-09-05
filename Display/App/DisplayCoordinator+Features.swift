@@ -63,6 +63,76 @@ extension DisplayCoordinator {
         brightnessState = next
     }
 
+    /// Starts a fresh brightness-control epoch after a display-parameter or
+    /// target transition. A last confirmed value is safe as a temporary
+    /// fallback, but write confidence, optimistic values, and limiter
+    /// evidence belong to the previous display mode and must not cross it.
+    func beginBrightnessControlEpoch(reason: String) {
+        brightnessControlEpoch &+= 1
+        brightnessAutoWriteOutcomePlanner.resetLimiterEvidence()
+        let fallback = brightnessState.lastConfirmedBrightnessPercent
+
+        updateBrightnessState { state in
+            state.pendingManualBrightnessPercent = nil
+            state.optimisticBrightnessPercent = nil
+            state.optimisticBrightnessExpiresAt = nil
+            state.optimisticReadbackAttempts = 0
+            state.readbackReliability = .unavailable
+            state.actualDDCBrightnessPercent = fallback
+            state.requestedDDCBrightnessPercent = fallback
+            state.lastDDCReadbackPercent = nil
+            state.lastDDCActualPercentAfter = nil
+            state.lastDDCRawCurrentBefore = nil
+            state.lastDDCRawMax = nil
+            state.lastDDCRawTarget = nil
+            state.lastDDCRawAfter = nil
+            state.lastDDCWriteSucceeded = nil
+            state.lastDDCWriteMessage = nil
+            state.lastDDCWriteStatus = nil
+            state.lastDDCMatchedTarget = nil
+            state.lastWriteReadbackPercent = nil
+            state.mismatchStreak = 0
+            state.limiterDetected = false
+            state.isDDCReadbackAvailable = false
+            state.isManualOverrideActive = false
+            state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil
+        }
+
+        brightnessLimiterCooldownDisplayKey = nil
+        brightnessLimiterCooldownUntil = .distantPast
+        mismatchIntervalsCount = 0
+        pendingTargetCandidate = nil
+        manualBrightnessOverrideStartLux = nil
+        manualBrightnessOverrideUntil = .distantPast
+        lastBrightnessReadDate = .distantPast
+        lastSentBrightness = fallback
+        currentBrightness = nil
+        traceRuntime(
+            "brightness control epoch=\(brightnessControlEpoch) reset reason=\(reason) fallback=\(fallback.map(String.init) ?? "nil")"
+        )
+    }
+
+    func expireOptimisticBrightnessIfNeeded(now: Date = Date()) {
+        guard let expiresAt = brightnessState.optimisticBrightnessExpiresAt,
+              now >= expiresAt else { return }
+
+        brightnessAutoWriteOutcomePlanner.resetLimiterEvidence()
+        updateBrightnessState { state in
+            state.optimisticBrightnessPercent = nil
+            state.optimisticBrightnessExpiresAt = nil
+            state.optimisticReadbackAttempts = 0
+            state.readbackReliability = .unavailable
+            state.actualDDCBrightnessPercent = state.lastConfirmedBrightnessPercent
+            state.isDDCReadbackAvailable = false
+            state.mismatchStreak = 0
+            state.limiterDetected = false
+        }
+        brightnessLimiterCooldownDisplayKey = nil
+        brightnessLimiterCooldownUntil = .distantPast
+        currentBrightness = brightnessState.referenceBrightness(now: now) ?? currentBrightness
+        traceRuntime("brightness optimistic state expired epoch=\(brightnessControlEpoch)")
+    }
+
     func recordAutoSuppression(
         reason: BrightnessSuppressionReason,
         source: BrightnessSource,
@@ -77,7 +147,7 @@ extension DisplayCoordinator {
             if let target {
                 state.autoTargetBrightnessPercent = target
             }
-            if let actual {
+            if let actual, state.readbackReliability == .reliable {
                 state.actualDDCBrightnessPercent = actual
             }
         }
@@ -87,27 +157,71 @@ extension DisplayCoordinator {
         // A refresh/readback can overlap a manual DDC write. Keep the latest
         // user draft authoritative until that write completes or fails.
         guard brightnessState.pendingManualBrightnessPercent == nil else { return }
+        expireOptimisticBrightnessIfNeeded()
+        let now = Date()
+        var didConfirmReadback = false
+
         updateBrightnessState { state in
             if let requestedFallback {
                 state.requestedDDCBrightnessPercent = requestedFallback
             }
-            state.actualDDCBrightnessPercent = readback
+
+            let previousReadback = state.lastDDCReadbackPercent
+            let optimistic = state.activeOptimisticBrightnessPercent(now: now)
             if let readback {
                 state.lastDDCReadbackPercent = readback
                 state.lastDDCActualPercentAfter = readback
-                if state.lastAutoWriteActualBefore == nil {
-                    state.lastAutoWriteActualBefore = readback
+                let matchesOptimistic = optimistic.map {
+                    abs(readback - $0) <= 3
+                } ?? false
+                let changedAfterWrite = optimistic != nil && previousReadback.map {
+                    abs(readback - $0) > 3
+                } == true
+                let isReliable = optimistic == nil || matchesOptimistic || changedAfterWrite
+
+                if isReliable {
+                    state.actualDDCBrightnessPercent = readback
+                    state.lastConfirmedBrightnessPercent = readback
+                    state.optimisticBrightnessPercent = nil
+                    state.optimisticBrightnessExpiresAt = nil
+                    state.optimisticReadbackAttempts = 0
+                    state.readbackReliability = .reliable
+                    state.lastBrightnessSource = .ddcReadback
+                    didConfirmReadback = true
+                } else {
+                    // A stale value after an accepted write is diagnostic data,
+                    // not a new authoritative brightness value.
+                    state.optimisticReadbackAttempts += 1
+                    state.readbackReliability = .uncertainAfterWrite
                 }
-                state.lastAutoWriteActualAfter = readback
+                state.isDDCReadbackAvailable = true
+            } else {
+                state.isDDCReadbackAvailable = false
+                if optimistic != nil {
+                    state.optimisticReadbackAttempts += 1
+                    state.readbackReliability = .unavailable
+                } else if state.lastConfirmedBrightnessPercent == nil {
+                    state.readbackReliability = .unavailable
+                }
             }
-            state.isDDCReadbackAvailable = readback != nil
-            state.lastBrightnessSource = .ddcReadback
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil && !state.isManualOverrideActive
             state.isBrightnessWriteSuppressed = false
             state.lastSuppressionReason = nil
             state.suppressionReason = nil
         }
-        currentBrightness = readback ?? requestedFallback ?? currentBrightness
+
+        if didConfirmReadback {
+            brightnessAutoWriteOutcomePlanner.resetLimiterEvidence()
+            updateBrightnessState { state in
+                state.mismatchStreak = 0
+                state.limiterDetected = false
+            }
+            brightnessLimiterCooldownDisplayKey = nil
+            brightnessLimiterCooldownUntil = .distantPast
+        }
+        currentBrightness = brightnessState.referenceBrightness(now: now)
+            ?? requestedFallback
+            ?? currentBrightness
     }
 
     func applyBrightnessWriteResult(
@@ -115,38 +229,109 @@ extension DisplayCoordinator {
         source: BrightnessSource,
         result: M1DDCBrightnessWriteResult
     ) {
+        let now = Date()
+        let observedBrightness = result.actualUIPercentAfter ?? result.readbackBrightnessPercent
         updateBrightnessState { state in
             state.requestedDDCBrightnessPercent = requested
-            state.actualDDCBrightnessPercent = result.actualUIPercentAfter ?? result.readbackBrightnessPercent
-            if let readback = result.actualUIPercentAfter ?? result.readbackBrightnessPercent {
-                state.lastDDCReadbackPercent = readback
-                state.lastDDCActualPercentAfter = readback
+            if let observedBrightness {
+                state.lastDDCReadbackPercent = observedBrightness
+                state.lastDDCActualPercentAfter = observedBrightness
             }
             state.lastDDCRawCurrentBefore = result.rawBefore
             state.lastDDCRawMax = result.rawMax
             state.lastDDCRawTarget = result.computedRawTarget
             state.lastDDCRawAfter = result.rawAfter
             state.isDDCReadbackAvailable = result.readbackAvailable
-            state.lastBrightnessSource = result.success ? source : .writeFailed
-            state.lastDDCWriteSucceeded = result.success
+            state.lastBrightnessSource = result.writeAccepted ? source : .writeFailed
+            state.lastDDCWriteSucceeded = result.writeAccepted
             state.lastDDCWriteMessage = result.message
             state.lastDDCWriteStatus = result.status
             state.lastDDCMatchedTarget = result.matchedTarget
+            state.lastWriteReadbackPercent = observedBrightness
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil && !state.isManualOverrideActive
             if source == .autoDDCWrite {
                 state.lastAutoWriteAttempted = true
                 state.lastAutoWriteValue = requested
-                state.lastAutoWriteSucceeded = result.success
+                state.lastAutoWriteSucceeded = result.writeAccepted
                 state.lastAutoWriteMessage = result.message
-                state.lastAutoWriteActualAfter = result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? state.lastAutoWriteActualAfter
+                state.lastAutoWriteActualAfter = observedBrightness ?? state.lastAutoWriteActualAfter
+            }
+
+            switch result.status {
+            case .success:
+                if let observedBrightness {
+                    state.actualDDCBrightnessPercent = observedBrightness
+                    state.lastConfirmedBrightnessPercent = observedBrightness
+                    state.optimisticBrightnessPercent = nil
+                    state.optimisticBrightnessExpiresAt = nil
+                    state.optimisticReadbackAttempts = 0
+                    state.readbackReliability = .reliable
+                } else if result.writeAccepted {
+                    state.optimisticBrightnessPercent = requested
+                    state.optimisticBrightnessExpiresAt = now.addingTimeInterval(optimisticBrightnessTTL)
+                    state.optimisticReadbackAttempts = 0
+                    state.readbackReliability = .unavailable
+                }
+            case .writeAcceptedReadbackUncertain, .writeAcceptedButReadbackLimited:
+                state.optimisticBrightnessPercent = requested
+                state.optimisticBrightnessExpiresAt = now.addingTimeInterval(optimisticBrightnessTTL)
+                state.optimisticReadbackAttempts = 0
+                state.readbackReliability = .uncertainAfterWrite
+                // Keep actualDDCBrightnessPercent and lastConfirmedBrightnessPercent
+                // unchanged; the observed value may be stale.
+            case .readbackUnavailable:
+                if result.writeAccepted {
+                    state.optimisticBrightnessPercent = requested
+                    state.optimisticBrightnessExpiresAt = now.addingTimeInterval(optimisticBrightnessTTL)
+                    state.optimisticReadbackAttempts = 0
+                    state.readbackReliability = .unavailable
+                } else {
+                    state.optimisticBrightnessPercent = nil
+                    state.optimisticBrightnessExpiresAt = nil
+                    state.optimisticReadbackAttempts = 0
+                    state.readbackReliability = .unavailable
+                }
+            case .writeFailed:
+                state.optimisticBrightnessPercent = nil
+                state.optimisticBrightnessExpiresAt = nil
+                state.optimisticReadbackAttempts = 0
+                state.readbackReliability = .unavailable
+                state.actualDDCBrightnessPercent = state.lastConfirmedBrightnessPercent
             }
             state.isBrightnessWriteSuppressed = false
             state.lastSuppressionReason = nil
             state.suppressionReason = nil
         }
-        if let observedBrightness = result.actualUIPercentAfter ?? result.readbackBrightnessPercent {
-            currentBrightness = observedBrightness
-        }
+        currentBrightness = brightnessState.referenceBrightness(now: now) ?? currentBrightness
+    }
+
+    func logBrightnessWrite(
+        requested: Int,
+        source: BrightnessSource,
+        result: M1DDCBrightnessWriteResult
+    ) {
+        let state = brightnessState
+        let matchedTarget = result.matchedTarget.map { $0 ? "YES" : "NO" } ?? "UNKNOWN"
+        print(
+            """
+            [MemWatch Brightness Write]
+            brightnessControlEpoch=\(brightnessControlEpoch)
+            source=\(source.rawValue)
+            requestedUIPercent=\(requested)
+            optimisticBrightness=\(state.activeOptimisticBrightnessPercent()?.description ?? "none")
+            rawMax=\(result.rawMax.map(String.init) ?? "unavailable")
+            computedRawTarget=\(result.computedRawTarget.map(String.init) ?? "unavailable")
+            rawBefore=\(result.rawBefore.map(String.init) ?? "unavailable")
+            rawAfter=\(result.rawAfter.map(String.init) ?? "unavailable")
+            actualUIPercentAfter=\((result.actualUIPercentAfter ?? result.readbackBrightnessPercent).map(String.init) ?? "unavailable")
+            matchedTarget=\(matchedTarget)
+            readbackReliability=\(state.readbackReliability.rawValue)
+            mismatchStreak=\(state.mismatchStreak)
+            limiterDetected=\(state.limiterDetected ? "YES" : "NO")
+            status=\(result.status.rawValue)
+            writeAccepted=\(result.writeAccepted ? "YES" : "NO")
+            """
+        )
     }
 
     func brightnessMappingDiagnosticSummarySnapshot() -> BrightnessMappingDiagnosticSummary {
@@ -209,13 +394,20 @@ extension DisplayCoordinator {
         if let pending = brightnessState.pendingManualBrightnessPercent {
             return String(pending) + "%"
         }
-        if brightnessState.isDDCReadbackAvailable {
+        if let optimistic = brightnessState.activeOptimisticBrightnessPercent() {
+            return "\(optimistic)%"
+        }
+        if brightnessState.readbackReliability == .reliable {
             if let actual = brightnessState.actualDDCBrightnessPercent {
                 return "\(actual)%"
             }
             if let readback = brightnessState.lastDDCReadbackPercent {
                 return "\(readback)%"
             }
+        }
+
+        if let confirmed = brightnessState.lastConfirmedBrightnessPercent {
+            return "\(confirmed)%"
         }
 
         if let requested = brightnessState.requestedDDCBrightnessPercent {

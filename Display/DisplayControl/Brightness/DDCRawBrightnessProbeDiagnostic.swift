@@ -87,7 +87,7 @@ actor DDCRawBrightnessProbeDiagnostic {
             diagnosis.append("Raw max write matched the monitor readback.")
         } else {
             diagnosis.append("DDC write accepted but readback did not reach the requested raw max.")
-            notes.append("DDC write accepted but monitor did not change brightness. Possible monitor-side limiter.")
+            notes.append("DDC write accepted but readback is uncertain; this single mismatch is not proof of a monitor-side limiter.")
         }
 
         if let rawMax = beforeSample.rawMax, rawMax == 50, let normalizedAfterPercent, (40...55).contains(normalizedAfterPercent) {
@@ -104,7 +104,7 @@ actor DDCRawBrightnessProbeDiagnostic {
             rawCurrentBefore: beforeSample.rawCurrent,
             rawMax: beforeSample.rawMax,
             requestedRawMax: requestedRawMax,
-            writeStatus: writeResult.success && matchedMax ? .success : (writeResult.success ? .writeAcceptedButReadbackLimited : .writeFailed),
+            writeStatus: writeResult.success && matchedMax ? .success : (writeResult.success ? .writeAcceptedReadbackUncertain : .writeFailed),
             rawAfter: afterSample.rawCurrent,
             normalizedAfterPercent: normalizedAfterPercent,
             matchedMax: matchedMax,
