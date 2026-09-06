@@ -55,34 +55,162 @@ struct MemWatchApp {
 private enum MemoryRuntimeDiagnostic {
     static func run() {
         let snapshot = MemoryCollector().collect()
-        let diagnostics = SystemDiagnosticsCollector().collect(includeProcesses: true)
+        let diagnostics = SystemDiagnosticsCollector().collectWithDiagnostics(
+            includeProcesses: true,
+            processLimit: Int.max
+        )
+        let processMemory = diagnostics.processMemory
 
         print("MemWatch memory diagnostics")
-        print("total=\(bytes(snapshot.totalBytes))")
-        print("used=\(bytes(snapshot.usedBytes))")
-        print("app=\(bytes(snapshot.appMemoryBytes))")
-        print("wired=\(bytes(snapshot.wiredBytes))")
-        print("compressed=\(bytes(snapshot.compressedBytes))")
-        print("cachedFiles=\(bytes(snapshot.cachedFilesBytes))")
-        print("free=\(bytes(snapshot.freeBytes))")
-        print("available=\(bytes(snapshot.availableBytes))")
-        print("swap=\(bytes(snapshot.swapUsedBytes))/\(bytes(snapshot.swapTotalBytes))")
-        print("pressureClassification=\(snapshot.pressure.rawValue)")
-        print("processes:")
+        print("Physical Memory: \(bytes(snapshot.totalBytes))")
+        print("Memory Used: \(bytes(snapshot.usedBytes))")
+        print("App Memory: \(bytes(snapshot.appMemoryBytes))")
+        print("Wired: \(bytes(snapshot.wiredBytes))")
+        print("Compressed: \(bytes(snapshot.compressedBytes))")
+        print("Cached Files: \(bytes(snapshot.cachedFilesBytes))")
+        print("True Free: \(bytes(snapshot.freeBytes))")
+        print("Available: \(bytes(snapshot.availableBytes))")
+        print("Swap Used: \(bytes(snapshot.swapUsedBytes))")
+        print("Swap Total: \(bytes(snapshot.swapTotalBytes))")
+        print(
+            "rawBytes total=\(snapshot.totalBytes) used=\(snapshot.usedBytes) "
+                + "app=\(snapshot.appMemoryBytes) wired=\(snapshot.wiredBytes) "
+                + "compressed=\(snapshot.compressedBytes) cached=\(snapshot.cachedFilesBytes) "
+                + "trueFree=\(snapshot.freeBytes) available=\(snapshot.availableBytes) "
+                + "swapUsed=\(snapshot.swapUsedBytes)"
+        )
 
-        for process in diagnostics.topProcesses {
+        let componentUsed = clampedSum(
+            [snapshot.appMemoryBytes, snapshot.wiredBytes, snapshot.compressedBytes],
+            limit: snapshot.totalBytes
+        )
+        let headroomUsed = subtracting(
+            subtracting(snapshot.totalBytes, snapshot.freeBytes),
+            snapshot.cachedFilesBytes
+        )
+        print("componentUsed: \(bytes(componentUsed))")
+        print("headroomUsed: \(bytes(headroomUsed))")
+        print("usedDifference(component-headroom): \(signedDifference(componentUsed, headroomUsed))")
+        print("accountingClamp: per-bucket and total values are clamped to Physical Memory; arithmetic is saturating")
+        print("pressureClassification=\(snapshot.pressure.rawValue)")
+
+        guard let processMemory else {
+            print("process-groups: unavailable")
+            print("totalDiagnosticsDuration: \(duration(diagnostics.totalDuration))")
+            return
+        }
+
+        print("PID count: \(processMemory.inventoryPIDCount)")
+        print("readable PID count: \(processMemory.inventory.count)")
+        print("unavailable PID count: \(processMemory.unavailablePIDs.count)")
+        print("application root count: \(processMemory.applicationRoots.count)")
+        for root in processMemory.applicationRoots {
             print(
-                "pid=\(process.pid) name=\(process.name) "
-                    + "memory=\(bytes(process.memoryBytes)) "
-                    + "metric=\(process.memoryMetric.displayName) "
-                    + "group=\(process.groupKind.rawValue) "
-                    + "processCount=\(process.processCount)"
+                "applicationRootPID=\(root.pid) name=\(root.name) "
+                    + "bundleIdentifier=\(root.bundleIdentifier ?? "unavailable") "
+                    + "bundlePath=\(root.bundlePath ?? "unavailable")"
+            )
+        }
+        print("inventory duration: \(duration(processMemory.inventoryDuration))")
+        print("grouping duration: \(duration(processMemory.groupingDuration))")
+        print("total process collection duration: \(duration(processMemory.totalDuration))")
+        print("total diagnostics duration: \(duration(diagnostics.totalDuration))")
+        print("duplicateAssignedPIDCount: \(processMemory.aggregation.duplicateAssignedPIDCount)")
+
+        if processMemory.unavailablePIDs.isEmpty {
+            print("source=unavailable pidCount=0")
+        } else {
+            let pids = processMemory.unavailablePIDs.map(String.init).joined(separator: ",")
+            print("source=unavailable pidCount=\(processMemory.unavailablePIDs.count) pids=\(pids)")
+        }
+
+        let entriesByPID = Dictionary(
+            uniqueKeysWithValues: processMemory.inventory.map { ($0.pid, $0) }
+        )
+        print("process-groups:")
+        for process in processMemory.aggregation.snapshots {
+            let entries = process.processIDs.compactMap { entriesByPID[$0] }
+            let rssBytes = saturatingSum(entries.compactMap(\.residentBytes))
+            let rssPIDCount = entries.reduce(into: 0) { count, entry in
+                if let residentBytes = entry.residentBytes, residentBytes > 0 {
+                    count += 1
+                }
+            }
+            let physicalFootprintPIDCount = entries.reduce(into: 0) { count, entry in
+                if entry.memoryMetric == .physicalFootprint {
+                    count += 1
+                }
+            }
+            let residentFallbackPIDCount = entries.reduce(into: 0) { count, entry in
+                if entry.memoryMetric == .residentFallback {
+                    count += 1
+                }
+            }
+            let ownedPIDs = process.processIDs.map(String.init).joined(separator: ",")
+
+            print(
+                "groupName=\(process.name) "
+                    + "groupKind=\(process.groupKind.rawValue) "
+                    + "total=\(bytes(process.memoryBytes)) "
+                    + "pidCount=\(process.processCount) "
+                    + "physicalFootprintPIDCount=\(physicalFootprintPIDCount) "
+                    + "residentFallbackPIDCount=\(residentFallbackPIDCount) "
+                    + "rssTotal=\(bytes(rssBytes)) "
+                    + "rssPIDCount=\(rssPIDCount) "
+                    + "ownedPIDs=\(ownedPIDs)"
+            )
+        }
+
+        print("pid-measurements:")
+        for entry in processMemory.inventory.sorted(by: { $0.pid < $1.pid }) {
+            let owner = ownerLabel(processMemory.aggregation.ownershipByPID[entry.pid])
+            let physical = entry.physicalFootprintBytes.map(String.init) ?? "unavailable"
+            let resident = entry.residentBytes.map(String.init) ?? "unavailable"
+            print(
+                "pid=\(entry.pid) owner=\(owner) selected=\(entry.memoryMetric.rawValue) "
+                    + "ri_phys_footprint=\(physical) pti_resident_size=\(resident)"
             )
         }
     }
 
     private static func bytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
+    }
+
+    private static func duration(_ value: TimeInterval) -> String {
+        String(format: "%.4fs", value)
+    }
+
+    private static func clampedSum(_ values: [UInt64], limit: UInt64) -> UInt64 {
+        min(saturatingSum(values), limit)
+    }
+
+    private static func saturatingSum(_ values: [UInt64]) -> UInt64 {
+        values.reduce(0) { partial, value in
+            let (sum, overflow) = partial.addingReportingOverflow(value)
+            return overflow ? UInt64.max : sum
+        }
+    }
+
+    private static func subtracting(_ lhs: UInt64, _ rhs: UInt64) -> UInt64 {
+        lhs >= rhs ? lhs - rhs : 0
+    }
+
+    private static func signedDifference(_ lhs: UInt64, _ rhs: UInt64) -> String {
+        if lhs >= rhs {
+            return "+\(bytes(lhs - rhs))"
+        }
+        return "-\(bytes(rhs - lhs))"
+    }
+
+    private static func ownerLabel(_ owner: ProcessMemoryGroupOwner?) -> String {
+        guard let owner else { return "unavailable" }
+        switch owner {
+        case let .application(rootPID):
+            return "application:\(rootPID)"
+        case let .standalone(pid):
+            return "standalone:\(pid)"
+        }
     }
 }
 

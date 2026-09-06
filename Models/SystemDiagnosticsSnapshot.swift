@@ -88,6 +88,12 @@ struct ProcessMemorySnapshot: Identifiable, Equatable, Sendable {
     let executablePath: String?
     let memoryBytes: UInt64
     let memoryMetric: ProcessMemoryMetric
+    /// Validation-only RSS sum for the same PIDs. The production UI continues
+    /// to render `memoryBytes`, which prefers physical footprint.
+    let residentBytes: UInt64
+    let residentProcessCount: Int
+    let physicalFootprintProcessCount: Int
+    let residentFallbackProcessCount: Int
     let processIDs: [Int32]
     let groupKind: ProcessMemoryGroupKind
 
@@ -106,6 +112,32 @@ struct ProcessInventoryEntry: Equatable, Sendable {
     let bundleIdentifier: String?
     let memoryBytes: UInt64
     let memoryMetric: ProcessMemoryMetric
+    /// Both native values are retained for validation. `memoryBytes` remains
+    /// the single production metric selected by the resolver.
+    let physicalFootprintBytes: UInt64?
+    let residentBytes: UInt64?
+
+    init(
+        pid: Int32,
+        parentPID: Int32,
+        name: String,
+        executablePath: String?,
+        bundleIdentifier: String?,
+        memoryBytes: UInt64,
+        memoryMetric: ProcessMemoryMetric,
+        physicalFootprintBytes: UInt64? = nil,
+        residentBytes: UInt64? = nil
+    ) {
+        self.pid = pid
+        self.parentPID = parentPID
+        self.name = name
+        self.executablePath = executablePath
+        self.bundleIdentifier = bundleIdentifier
+        self.memoryBytes = memoryBytes
+        self.memoryMetric = memoryMetric
+        self.physicalFootprintBytes = physicalFootprintBytes
+        self.residentBytes = residentBytes
+    }
 }
 
 /// Value-only metadata copied from NSRunningApplication before the inventory
@@ -126,6 +158,14 @@ enum ProcessMemoryGroupOwner: Hashable, Sendable {
 struct ProcessMemoryAggregation: Sendable {
     let snapshots: [ProcessMemorySnapshot]
     let ownershipByPID: [Int32: ProcessMemoryGroupOwner]
+
+    /// Counts duplicate PID appearances in the visible grouped rows. This is
+    /// a diagnostic invariant; ownership itself is still assigned from the
+    /// de-duplicated inventory.
+    var duplicateAssignedPIDCount: Int {
+        let assignedPIDs = snapshots.flatMap(\.processIDs)
+        return assignedPIDs.count - Set(assignedPIDs).count
+    }
 }
 
 enum ProcessMemoryAggregator {
@@ -260,9 +300,9 @@ enum ProcessMemoryAggregator {
         guard let processPath,
               !processPath.isEmpty else { return false }
 
-        let processPath = standardizedPath(processPath)
+        let standardizedProcessPath = standardizedPath(processPath)
         if let executablePath = application.executablePath,
-           processPath == standardizedPath(executablePath) {
+           standardizedProcessPath == standardizedPath(executablePath) {
             return true
         }
 
@@ -272,7 +312,7 @@ enum ProcessMemoryAggregator {
         let bundlePrefix = standardizedPath(bundlePath).hasSuffix("/")
             ? standardizedPath(bundlePath)
             : standardizedPath(bundlePath) + "/"
-        return processPath.hasPrefix(bundlePrefix)
+        return standardizedProcessPath.hasPrefix(bundlePrefix)
     }
 
     private static func standardizedPath(_ path: String) -> String {
@@ -296,6 +336,22 @@ enum ProcessMemoryAggregator {
             executablePath: metadata?.executablePath,
             memoryBytes: saturatingSum(sortedEntries.map(\.memoryBytes)),
             memoryMetric: aggregateMetric(sortedEntries),
+            residentBytes: saturatingSum(sortedEntries.compactMap(\.residentBytes)),
+            residentProcessCount: sortedEntries.reduce(into: 0) { count, entry in
+                if let residentBytes = entry.residentBytes, residentBytes > 0 {
+                    count += 1
+                }
+            },
+            physicalFootprintProcessCount: sortedEntries.reduce(into: 0) { count, entry in
+                if entry.memoryMetric == .physicalFootprint {
+                    count += 1
+                }
+            },
+            residentFallbackProcessCount: sortedEntries.reduce(into: 0) { count, entry in
+                if entry.memoryMetric == .residentFallback {
+                    count += 1
+                }
+            },
             processIDs: sortedEntries.map(\.pid),
             groupKind: .application
         )
@@ -311,6 +367,10 @@ enum ProcessMemoryAggregator {
             executablePath: entry.executablePath,
             memoryBytes: entry.memoryBytes,
             memoryMetric: entry.memoryMetric,
+            residentBytes: entry.residentBytes ?? 0,
+            residentProcessCount: entry.residentBytes.map { $0 > 0 ? 1 : 0 } ?? 0,
+            physicalFootprintProcessCount: entry.memoryMetric == .physicalFootprint ? 1 : 0,
+            residentFallbackProcessCount: entry.memoryMetric == .residentFallback ? 1 : 0,
             processIDs: [entry.pid],
             groupKind: .standalone
         )

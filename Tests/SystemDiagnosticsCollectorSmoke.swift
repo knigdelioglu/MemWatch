@@ -87,7 +87,9 @@ struct SystemDiagnosticsCollectorSmoke {
                 executablePath: chrome.executablePath,
                 bundleIdentifier: chrome.bundleIdentifier,
                 memoryBytes: 100,
-                memoryMetric: .physicalFootprint
+                memoryMetric: .physicalFootprint,
+                physicalFootprintBytes: 100,
+                residentBytes: 50
             ),
             ProcessInventoryEntry(
                 pid: 101,
@@ -96,7 +98,9 @@ struct SystemDiagnosticsCollectorSmoke {
                 executablePath: "\(chromeBundle)/Google Chrome Helper",
                 bundleIdentifier: nil,
                 memoryBytes: 200,
-                memoryMetric: .physicalFootprint
+                memoryMetric: .physicalFootprint,
+                physicalFootprintBytes: 200,
+                residentBytes: 100
             ),
             ProcessInventoryEntry(
                 pid: 102,
@@ -105,7 +109,9 @@ struct SystemDiagnosticsCollectorSmoke {
                 executablePath: "\(chromeBundle)/Google Chrome Helper (Renderer)",
                 bundleIdentifier: nil,
                 memoryBytes: 300,
-                memoryMetric: .physicalFootprint
+                memoryMetric: .physicalFootprint,
+                physicalFootprintBytes: 300,
+                residentBytes: 150
             ),
             ProcessInventoryEntry(
                 pid: 200,
@@ -114,7 +120,9 @@ struct SystemDiagnosticsCollectorSmoke {
                 executablePath: "/opt/homebrew/bin/node",
                 bundleIdentifier: nil,
                 memoryBytes: 400,
-                memoryMetric: .physicalFootprint
+                memoryMetric: .physicalFootprint,
+                physicalFootprintBytes: 400,
+                residentBytes: 400
             )
         ]
 
@@ -132,11 +140,16 @@ struct SystemDiagnosticsCollectorSmoke {
         precondition(chromeSnapshot.memoryBytes == 600, "Chrome helpers must be grouped under the app")
         precondition(chromeSnapshot.processIDs == [100, 101, 102], "Chrome ownership must be deterministic")
         precondition(chromeSnapshot.groupKind == .application, "Chrome must be an application group")
+        precondition(chromeSnapshot.residentBytes == 300, "Validation RSS must sum the same Chrome PIDs")
+        precondition(chromeSnapshot.residentProcessCount == 3, "Validation RSS must be available for each Chrome PID")
+        precondition(chromeSnapshot.physicalFootprintProcessCount == 3, "Chrome footprint PID count must be explicit")
+        precondition(chromeSnapshot.residentFallbackProcessCount == 0, "Chrome should not use RSS fallback when footprint is available")
         precondition(nodeSnapshot.memoryBytes == 400, "Standalone node process must remain visible")
         precondition(nodeSnapshot.processIDs == [200], "Standalone process must own only itself")
 
         let ownedPIDs = aggregation.snapshots.flatMap(\.processIDs)
         precondition(Set(ownedPIDs).count == ownedPIDs.count, "A PID must not appear in two rows")
+        precondition(aggregation.duplicateAssignedPIDCount == 0, "Diagnostic duplicate PID invariant must remain zero")
         precondition(Set(ownedPIDs) == Set(inventory.map(\.pid)), "Every inventory PID must be assigned once")
         precondition(aggregation.ownershipByPID.count == inventory.count, "Ownership must cover every PID")
     }
