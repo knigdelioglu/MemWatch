@@ -135,17 +135,16 @@ extension DisplayCoordinator {
         let delays = AmbientLightSensorRecoveryPolicy.retryDelaysNanoseconds
         ambientLightSensorRecoveryTask = Task { @MainActor [weak self] in
             defer {
-                guard let self,
-                      self.ambientLightSensorRecoveryToken == token,
-                      self.ambientLightSensorRecoveryEpoch == brightnessEpoch else {
-                    return
+                if let self,
+                   self.ambientLightSensorRecoveryToken == token,
+                   self.ambientLightSensorRecoveryEpoch == brightnessEpoch {
+                    // Manual interaction, a newer slider intent, or a lifecycle
+                    // boundary can make this chain stale. Always release the
+                    // epoch marker so a later normal tick may start a fresh,
+                    // bounded recovery if the sensor is still unavailable.
+                    self.ambientLightSensorRecoveryTask = nil
+                    self.ambientLightSensorRecoveryEpoch = nil
                 }
-                // Manual interaction, a newer slider intent, or a lifecycle
-                // boundary can make this chain stale. Always release the
-                // epoch marker so a later normal tick may start a fresh,
-                // bounded recovery if the sensor is still unavailable.
-                self.ambientLightSensorRecoveryTask = nil
-                self.ambientLightSensorRecoveryEpoch = nil
             }
             for (attempt, delay) in delays.enumerated() {
                 do {
