@@ -33,6 +33,7 @@ struct SwapIntelligenceSample {
     let timestamp: Date
     let pressure: MemoryPressure
     let totalBytes: UInt64
+    /// MemWatch headroom: totalBytes minus App, Wired and Compressed memory.
     let availableBytes: UInt64
     let compressedBytes: UInt64
     let swapUsedBytes: UInt64
@@ -45,6 +46,12 @@ struct SwapIntelligenceConfiguration {
     var activityThresholdBytes: UInt64 = 1 * 1_024 * 1_024
     var heavySwapOutBytes: UInt64 = 64 * 1_024 * 1_024
     var criticalSwapOutBytes: UInt64 = 256 * 1_024 * 1_024
+    // The new available metric includes reclaimable file-backed memory. Keep
+    // swap activity thresholds below the old ratios so idle cache headroom is
+    // not mistaken for a pressure event while genuinely low headroom still
+    // escalates quickly.
+    var heavySwapAvailableRatio: Double = 0.16
+    var criticalSwapAvailableRatio: Double = 0.08
     var warningEnterSamples = 2
     var criticalEnterSamples = 2
     var recoverySamples = 3
@@ -121,7 +128,8 @@ final class SwapIntelligenceEngine {
             return .critical
         }
 
-        if recentSwapOut >= configuration.criticalSwapOutBytes && availableRatio < 0.10 {
+        if recentSwapOut >= configuration.criticalSwapOutBytes &&
+            availableRatio < configuration.criticalSwapAvailableRatio {
             return .critical
         }
 
@@ -130,7 +138,8 @@ final class SwapIntelligenceEngine {
         }
 
         let isWritingSwap = latest.swapOutDeltaBytes >= configuration.activityThresholdBytes
-        let heavyRecentSwap = recentSwapOut >= configuration.heavySwapOutBytes && availableRatio < 0.18
+        let heavyRecentSwap = recentSwapOut >= configuration.heavySwapOutBytes &&
+            availableRatio < configuration.heavySwapAvailableRatio
         let compressionBackedSwap = recentSwapOut > 0 && compressedRatio > 0.30
 
         if isWritingSwap || heavyRecentSwap || compressionBackedSwap {
@@ -262,7 +271,7 @@ final class SwapIntelligenceEngine {
 
     private func ratio(_ numerator: UInt64, _ denominator: UInt64) -> Double {
         guard denominator > 0 else { return 0 }
-        return Double(numerator) / Double(denominator)
+        return min(max(Double(numerator) / Double(denominator), 0), 1)
     }
 
     private func saturatingAdd(_ lhs: UInt64, _ rhs: UInt64) -> UInt64 {

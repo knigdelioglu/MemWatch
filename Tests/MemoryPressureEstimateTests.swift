@@ -7,6 +7,7 @@ struct MemoryPressureEstimateTests {
 
     static func main() {
         healthyMemoryStaysLow()
+        lowerAvailableHeadroomRaisesEstimate()
         compressedMemoryRaisesEstimate()
         activeSwapOutRaisesEstimate()
         idleSwapAllocationDoesNotRaiseEstimate()
@@ -56,6 +57,35 @@ struct MemoryPressureEstimateTests {
         )
 
         require(high.percent > low.percent, "Compression should raise the pressure estimate")
+    }
+
+    private static func lowerAvailableHeadroomRaisesEstimate() {
+        let comfortable = makeSnapshot(
+            available: 8 * gib,
+            compressed: 1 * gib,
+            swapUsed: 0,
+            pressure: .normal
+        )
+        let constrained = makeSnapshot(
+            available: 1 * gib,
+            compressed: 1 * gib,
+            swapUsed: 0,
+            pressure: .normal
+        )
+
+        let comfortableEstimate = MemoryPressureEstimate.calculate(
+            snapshot: comfortable,
+            swapOutDeltaBytes: 0
+        )
+        let constrainedEstimate = MemoryPressureEstimate.calculate(
+            snapshot: constrained,
+            swapOutDeltaBytes: 0
+        )
+
+        require(
+            constrainedEstimate.percent > comfortableEstimate.percent,
+            "Lower available headroom should raise the estimate"
+        )
     }
 
     private static func activeSwapOutRaisesEstimate() {
@@ -149,11 +179,17 @@ struct MemoryPressureEstimateTests {
             totalBytes: total,
             usedBytes: used,
             availableBytes: min(available, total),
-            freeBytes: 0,
-            activeBytes: min(used / 2, total),
-            cachedBytes: available,
+            appMemoryBytes: min(used, total),
             wiredBytes: 2 * gib,
             compressedBytes: min(compressed, total),
+            cachedFilesBytes: min(available, total),
+            freeBytes: min(available, total),
+            activeBytes: min(used / 2, total),
+            inactiveBytes: 0,
+            speculativeBytes: 0,
+            purgeableBytes: 0,
+            fileBackedBytes: min(available, total),
+            anonymousBytes: min(used, total),
             swapTotalBytes: 16 * gib,
             swapUsedBytes: swapUsed,
             swapFreeBytes: 16 * gib > swapUsed ? 16 * gib - swapUsed : 0,

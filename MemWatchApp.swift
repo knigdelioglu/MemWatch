@@ -28,12 +28,18 @@ struct MemWatchApp {
         "--cgs-mode74-without-betterdisplay",
         "--cgs-mode74-apply-experiment",
         "--hidpi-system-snapshot",
-        "--hidpi-activation-spike"
+        "--hidpi-activation-spike",
+        "--memory-diagnostics"
     ]
 
     private static func runCommandLineDiagnosticsIfRequested() -> Bool {
         guard CommandLine.arguments.dropFirst().contains(where: diagnosticArguments.contains) else {
             return false
+        }
+
+        if CommandLine.arguments.contains("--memory-diagnostics") {
+            MemoryRuntimeDiagnostic.run()
+            return true
         }
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -43,6 +49,40 @@ struct MemWatchApp {
         }
         semaphore.wait()
         return true
+    }
+}
+
+private enum MemoryRuntimeDiagnostic {
+    static func run() {
+        let snapshot = MemoryCollector().collect()
+        let diagnostics = SystemDiagnosticsCollector().collect(includeProcesses: true)
+
+        print("MemWatch memory diagnostics")
+        print("total=\(bytes(snapshot.totalBytes))")
+        print("used=\(bytes(snapshot.usedBytes))")
+        print("app=\(bytes(snapshot.appMemoryBytes))")
+        print("wired=\(bytes(snapshot.wiredBytes))")
+        print("compressed=\(bytes(snapshot.compressedBytes))")
+        print("cachedFiles=\(bytes(snapshot.cachedFilesBytes))")
+        print("free=\(bytes(snapshot.freeBytes))")
+        print("available=\(bytes(snapshot.availableBytes))")
+        print("swap=\(bytes(snapshot.swapUsedBytes))/\(bytes(snapshot.swapTotalBytes))")
+        print("pressureClassification=\(snapshot.pressure.rawValue)")
+        print("processes:")
+
+        for process in diagnostics.topProcesses {
+            print(
+                "pid=\(process.pid) name=\(process.name) "
+                    + "memory=\(bytes(process.memoryBytes)) "
+                    + "metric=\(process.memoryMetric.displayName) "
+                    + "group=\(process.groupKind.rawValue) "
+                    + "processCount=\(process.processCount)"
+            )
+        }
+    }
+
+    private static func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
     }
 }
 
@@ -565,11 +605,24 @@ private struct SmartMenuBarRootView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Memory Used")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(memoryBytes(snapshot.usedBytes)) / \(memoryBytes(snapshot.totalBytes))")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                }
+                Text("\(snapshot.usagePercent)% · Available headroom \(memoryBytes(snapshot.availableBytes))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Divider()
 
             HStack(spacing: 0) {
                 smartMetric(title: "Available", value: memoryBytes(snapshot.availableBytes))
-                smartMetric(title: "Pressure", value: "\(pressureEstimate.percent)%")
+                smartMetric(title: "Pressure estimate", value: "\(pressureEstimate.percent)%")
                 smartMetric(title: "Swap", value: swapMetricValue)
             }
         }
@@ -767,15 +820,21 @@ private struct SmartMenuBarRootView: View {
             } else {
                 ForEach(monitor.diagnostics.topProcesses.prefix(3)) { process in
                     HStack(spacing: 8) {
-                        Image(systemName: "app.fill")
+                        Image(systemName: process.groupKind.symbolName)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(width: 16)
-                        Text(process.name)
-                            .font(.body)
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(process.name)
+                                .font(.body)
+                                .lineLimit(1)
+                            Text(process.memoryMetric.displayName)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                         Spacer()
-                        Text(memoryBytes(process.residentBytes))
+                        Text(memoryBytes(process.memoryBytes))
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }

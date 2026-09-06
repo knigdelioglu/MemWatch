@@ -39,6 +39,8 @@ The smoke gate requires:
 - physical RAM > 0
 - used RAM <= physical RAM
 - available RAM <= physical RAM
+- used RAM + available headroom == physical RAM
+- App Memory, Wired, Compressed, Cached Files, and True Free are bounded by physical RAM
 - swap used <= swap total when swap is configured
 
 For diagnostics, CI prints the collector snapshot together with `vm_stat` and `sysctl vm.swapusage` output from the same macOS runner.
@@ -52,12 +54,27 @@ When validating on a development Mac, compare the following at approximately the
 | MemWatch | Activity Monitor / macOS reference |
 | --- | --- |
 | Physical RAM | Physical Memory |
+| Memory Used | Memory Used |
+| App Memory | Memory Used > App Memory |
 | Compressed | Memory Used > Compressed |
 | Wired | Memory Used > Wired Memory |
+| Cached Files | Cached Files |
+| Available headroom | Free/reclaimable headroom; do not treat it as Apple's private pressure score |
 | Swap Used | Swap Used |
 | Swap-in / Swap-out movement | `vm_stat` / Mach `swapins`, `swapouts` deltas |
 
 Small differences are expected because values change continuously and the tools may sample at different instants.
+
+For a single point-in-time diagnostic dump from the built app, run:
+
+```bash
+/path/to/MemWatch.app/Contents/MacOS/MemWatch --memory-diagnostics
+```
+
+The dump includes the system accounting buckets and each returned process row's
+PID, group, process count, memory metric, and physical-footprint/RSS-fallback
+source. In separate terminals, compare it with `vm_stat`, `sysctl vm.swapusage`,
+and `top -o mem` taken at roughly the same moment.
 
 ## Product rule
 

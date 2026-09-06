@@ -16,38 +16,36 @@ final class SystemDiagnosticsCollector {
         )
     }
 
-    func residentMemoryBytes(for pid: Int32) -> UInt64? {
+    /// Primary process-memory metric. This is the metric closest to the
+    /// per-process value shown by Activity Monitor.
+    func physicalFootprintBytes(for pid: Int32) -> UInt64? {
         guard pid > 0 else { return nil }
 
-        var taskInfo = proc_taskinfo()
-        let expectedSize = Int32(MemoryLayout<proc_taskinfo>.size)
-        let result = withUnsafeMutablePointer(to: &taskInfo) { pointer in
-            proc_pidinfo(pid, PROC_PIDTASKINFO, 0, pointer, expectedSize)
+        var usage = rusage_info_v4()
+        let result = withUnsafeMutablePointer(to: &usage) { pointer in
+            proc_pid_rusage(pid, RUSAGE_INFO_V4, pointer)
         }
 
-        guard result == expectedSize else { return nil }
-        return taskInfo.pti_resident_size
+        guard result == 0, usage.ri_phys_footprint > 0 else { return nil }
+        return usage.ri_phys_footprint
     }
 
-    func aggregateResidentMemoryBytes(for rootPID: Int32) -> UInt64 {
-        guard rootPID > 0 else { return 0 }
-
-        var total: UInt64 = 0
-        var visited = Set<Int32>()
-        var pending: [Int32] = [rootPID]
-
-        while let pid = pending.popLast() {
-            guard visited.insert(pid).inserted else { continue }
-
-            if let resident = residentMemoryBytes(for: pid) {
-                let (next, overflow) = total.addingReportingOverflow(resident)
-                total = overflow ? UInt64.max : next
-            }
-
-            pending.append(contentsOf: childPIDs(of: pid))
+    /// RSS is retained only as the documented fallback for processes for
+    /// which proc_pid_rusage is unavailable or denied.
+    func residentFallbackBytes(for pid: Int32) -> UInt64? {
+        guard pid > 0,
+              let info = taskAllInfo(for: pid),
+              info.ptinfo.pti_resident_size > 0 else {
+            return nil
         }
+        return info.ptinfo.pti_resident_size
+    }
 
-        return total
+    func processMemoryMeasurement(for pid: Int32) -> ProcessMemoryMeasurement? {
+        ProcessMemoryMeasurementResolver.resolve(
+            physicalFootprintBytes: physicalFootprintBytes(for: pid),
+            residentFallbackBytes: residentFallbackBytes(for: pid)
+        )
     }
 
     private func collectCPUUsagePercent() -> Double? {
@@ -106,46 +104,169 @@ final class SystemDiagnosticsCollector {
         }
     }
 
+    private struct RunningApplicationRecord {
+        let metadata: ProcessApplicationMetadata
+        let isApplicationRoot: Bool
+    }
+
     private func collectTopProcesses(limit: Int) -> [ProcessMemorySnapshot] {
-        NSWorkspace.shared.runningApplications
-            .filter { !$0.isTerminated && $0.activationPolicy != .prohibited }
-            .compactMap { application -> ProcessMemorySnapshot? in
-                let pid = application.processIdentifier
-                let residentBytes = aggregateResidentMemoryBytes(for: pid)
-                guard residentBytes > 0 else { return nil }
+        let records = collectRunningApplications()
 
-                let name = application.localizedName
-                    ?? application.bundleURL?.deletingPathExtension().lastPathComponent
-                    ?? "PID \(pid)"
+        var metadataByPID: [Int32: ProcessApplicationMetadata] = [:]
+        for record in records where metadataByPID[record.metadata.pid] == nil {
+            metadataByPID[record.metadata.pid] = record.metadata
+        }
 
-                return ProcessMemorySnapshot(
+        let applicationRoots = records
+            .filter(\.isApplicationRoot)
+            .map(\.metadata)
+
+        let inventory = collectProcessInventory(metadataByPID: metadataByPID)
+        return ProcessMemoryAggregator.aggregate(
+            inventory: inventory,
+            applications: applicationRoots,
+            limit: limit
+        ).snapshots
+    }
+
+    private func collectRunningApplications() -> [RunningApplicationRecord] {
+        NSWorkspace.shared.runningApplications.compactMap { application in
+            guard !application.isTerminated else { return nil }
+
+            let pid = application.processIdentifier
+            guard pid > 0 else { return nil }
+
+            let executablePath = application.executableURL?.standardizedFileURL.path
+            let bundlePath = application.bundleURL?.standardizedFileURL.path
+            let fallbackName = executablePath.map {
+                URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+            }
+            let name = application.localizedName
+                ?? fallbackName
+                ?? "PID \(pid)"
+
+            return RunningApplicationRecord(
+                metadata: ProcessApplicationMetadata(
                     pid: pid,
                     name: name,
                     bundleIdentifier: application.bundleIdentifier,
-                    residentBytes: residentBytes
-                )
-            }
-            .sorted {
-                if $0.residentBytes == $1.residentBytes {
-                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                return $0.residentBytes > $1.residentBytes
-            }
-            .prefix(limit)
-            .map { $0 }
+                    bundlePath: bundlePath,
+                    executablePath: executablePath
+                ),
+                isApplicationRoot: application.activationPolicy != .prohibited
+            )
+        }
     }
 
-    private func childPIDs(of parentPID: Int32) -> [Int32] {
-        let count = proc_listchildpids(parentPID, nil, 0)
-        guard count > 0 else { return [] }
+    private func collectProcessInventory(
+        metadataByPID: [Int32: ProcessApplicationMetadata]
+    ) -> [ProcessInventoryEntry] {
+        allPIDs().compactMap { pid in
+            guard let info = taskAllInfo(for: pid) else { return nil }
 
-        var pids = [pid_t](repeating: 0, count: Int(count))
-        let bufferSize = Int32(pids.count * MemoryLayout<pid_t>.stride)
-        let returned: Int32 = pids.withUnsafeMutableBytes { buffer in
-            proc_listchildpids(parentPID, buffer.baseAddress, bufferSize)
+            let application = metadataByPID[pid]
+            let executablePath = processPath(for: pid) ?? application?.executablePath
+            let name = application?.name
+                ?? processName(for: pid)
+                ?? executablePath.map {
+                    URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+                }
+                ?? "PID \(pid)"
+
+            // The task-all-info call already supplies RSS for the fallback
+            // path, so only the primary footprint API is repeated per PID.
+            let measurement = ProcessMemoryMeasurementResolver.resolve(
+                physicalFootprintBytes: physicalFootprintBytes(for: pid),
+                residentFallbackBytes: info.ptinfo.pti_resident_size
+            )
+            guard let measurement else { return nil }
+
+            return ProcessInventoryEntry(
+                pid: pid,
+                parentPID: Int32(info.pbsd.pbi_ppid),
+                name: name,
+                executablePath: executablePath,
+                bundleIdentifier: application?.bundleIdentifier,
+                memoryBytes: measurement.bytes,
+                memoryMetric: measurement.metric
+            )
+        }
+    }
+
+    private func taskAllInfo(for pid: Int32) -> proc_taskallinfo? {
+        guard pid > 0 else { return nil }
+
+        var info = proc_taskallinfo()
+        let expectedSize = Int32(MemoryLayout<proc_taskallinfo>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, pointer, expectedSize)
         }
 
-        guard returned > 0 else { return [] }
-        return pids.prefix(Int(returned)).filter { $0 > 0 }
+        guard result == expectedSize else { return nil }
+        return info
+    }
+
+    private func allPIDs() -> [Int32] {
+        let reportedBytes = proc_listpids(PROC_ALL_PIDS, 0, nil, 0)
+        guard reportedBytes > 0 else { return [] }
+
+        let pidStride = MemoryLayout<pid_t>.stride
+        let maximumProcessCount = 16_384
+        var capacity = min(
+            maximumProcessCount,
+            max(Int(reportedBytes) / pidStride + 64, 256)
+        )
+
+        for _ in 0..<2 {
+            var pids = [pid_t](repeating: 0, count: capacity)
+            let bufferSize = Int32(clamping: pids.count * pidStride)
+            let returnedBytes = pids.withUnsafeMutableBytes { buffer in
+                proc_listpids(
+                    PROC_ALL_PIDS,
+                    0,
+                    buffer.baseAddress,
+                    bufferSize
+                )
+            }
+
+            guard returnedBytes > 0 else { return [] }
+            let returnedCount = min(
+                Int(returnedBytes) / pidStride,
+                pids.count
+            )
+            let result = pids.prefix(returnedCount)
+                .map { Int32($0) }
+                .filter { $0 > 0 }
+
+            if Int(returnedBytes) < pids.count * pidStride || capacity == maximumProcessCount {
+                return result
+            }
+
+            capacity = min(capacity * 2, maximumProcessCount)
+        }
+
+        return []
+    }
+
+    private func processName(for pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 256)
+        let bufferSize = UInt32(buffer.count)
+        let length = buffer.withUnsafeMutableBytes { rawBuffer in
+            proc_name(pid, rawBuffer.baseAddress, bufferSize)
+        }
+
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    private func processPath(for pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let bufferSize = UInt32(buffer.count)
+        let length = buffer.withUnsafeMutableBytes { rawBuffer in
+            proc_pidpath(pid, rawBuffer.baseAddress, bufferSize)
+        }
+
+        guard length > 0 else { return nil }
+        return String(cString: buffer)
     }
 }

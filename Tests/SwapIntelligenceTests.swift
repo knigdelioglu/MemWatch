@@ -12,6 +12,7 @@ struct SwapIntelligenceTests {
         testSustainedSwapWritesEscalate()
         testRecoveryRequiresQuietSamples()
         testReadbackIsDistinguishedFromSwapWrites()
+        testAvailableHeadroomCalibratesHeavySwap()
         testPressureEscalationUsesHysteresis()
         testCriticalEscalationUsesHysteresis()
         testHistoryIsBounded()
@@ -66,6 +67,25 @@ struct SwapIntelligenceTests {
         let result = engine.ingest(sample(swapUsed: 1 * gib, swapIn: 16 * mib))
 
         expect(result.state == .readback, "Swap-in without swap-out must be classified as readback")
+    }
+
+    private static func testAvailableHeadroomCalibratesHeavySwap() {
+        var configuration = SwapIntelligenceConfiguration()
+        configuration.activityThresholdBytes = 128 * mib
+        configuration.heavySwapOutBytes = 64 * mib
+        configuration.heavySwapAvailableRatio = 0.16
+
+        let lowHeadroom = SwapIntelligenceEngine(configuration: configuration)
+        _ = lowHeadroom.ingest(sample(available: 2 * gib, swapUsed: 1 * gib, swapOut: 64 * mib))
+        let escalated = lowHeadroom.ingest(sample(available: 2 * gib, swapUsed: 1 * gib, swapOut: 64 * mib))
+        expect(escalated.state == .activeSwap, "Heavy swap should escalate below the calibrated headroom ratio")
+
+        let reclaimableHeadroom = SwapIntelligenceEngine(configuration: configuration)
+        let result = reclaimableHeadroom.ingest(sample(available: 3 * gib, swapUsed: 1 * gib, swapOut: 64 * mib))
+        expect(
+            result.state == .idleSwap,
+            "Reclaimable headroom above the calibrated ratio should not look like active swap"
+        )
     }
 
     private static func testPressureEscalationUsesHysteresis() {

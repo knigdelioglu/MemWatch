@@ -8,37 +8,35 @@ final class MemoryCollector {
         let swap = readSwapUsage()
         let pageSize = UInt64(vm_kernel_page_size)
 
-        let freeBytes = UInt64(vm.free_count) * pageSize
-        let activeBytes = UInt64(vm.active_count) * pageSize
-        let inactiveBytes = UInt64(vm.inactive_count) * pageSize
-        let speculativeBytes = UInt64(vm.speculative_count) * pageSize
-        let purgeableBytes = UInt64(vm.purgeable_count) * pageSize
-        let wiredBytes = UInt64(vm.wire_count) * pageSize
-        let compressedBytes = UInt64(vm.compressor_page_count) * pageSize
-        let swapInBytes = UInt64(vm.swapins) * pageSize
-        let swapOutBytes = UInt64(vm.swapouts) * pageSize
+        let accounting = MemoryAccounting.calculate(
+            from: VMAccountingInput(
+                totalBytes: totalBytes,
+                pageSize: pageSize,
+                freeCount: UInt64(vm.free_count),
+                activeCount: UInt64(vm.active_count),
+                inactiveCount: UInt64(vm.inactive_count),
+                speculativeCount: UInt64(vm.speculative_count),
+                purgeableCount: UInt64(vm.purgeable_count),
+                wireCount: UInt64(vm.wire_count),
+                compressorPageCount: UInt64(vm.compressor_page_count),
+                externalPageCount: UInt64(vm.external_page_count),
+                internalPageCount: UInt64(vm.internal_page_count)
+            )
+        )
 
-        let cachedBytes = inactiveBytes + speculativeBytes + purgeableBytes
-        let availableBytes = min(totalBytes, freeBytes + cachedBytes)
-        let usedBytes = totalBytes > availableBytes ? totalBytes - availableBytes : 0
+        let swapInBytes = MemoryAccounting.pageBytes(UInt64(vm.swapins), pageSize: pageSize)
+        let swapOutBytes = MemoryAccounting.pageBytes(UInt64(vm.swapouts), pageSize: pageSize)
 
         let pressure = classifyPressure(
             totalBytes: totalBytes,
-            availableBytes: availableBytes,
-            compressedBytes: compressedBytes,
+            availableBytes: accounting.availableBytes,
+            compressedBytes: accounting.compressedBytes,
             swapUsedBytes: swap.used
         )
 
         return MemorySnapshot(
             timestamp: .now,
-            totalBytes: totalBytes,
-            usedBytes: usedBytes,
-            availableBytes: availableBytes,
-            freeBytes: freeBytes,
-            activeBytes: activeBytes,
-            cachedBytes: cachedBytes,
-            wiredBytes: wiredBytes,
-            compressedBytes: compressedBytes,
+            accounting: accounting,
             swapTotalBytes: swap.total,
             swapUsedBytes: swap.used,
             swapFreeBytes: swap.free,
@@ -98,18 +96,27 @@ final class MemoryCollector {
     ) -> MemoryPressure {
         guard totalBytes > 0 else { return .normal }
 
-        let availableRatio = Double(availableBytes) / Double(totalBytes)
-        let compressedRatio = Double(compressedBytes) / Double(totalBytes)
-        let swapRatio = Double(swapUsedBytes) / Double(totalBytes)
+        let availableRatio = ratio(availableBytes, totalBytes)
+        let compressedRatio = ratio(compressedBytes, totalBytes)
+        let swapRatio = ratio(swapUsedBytes, totalBytes)
 
+        // These are MemWatch health thresholds, not Apple's private pressure
+        // algorithm. The availability thresholds are calibrated for the new
+        // `total - (App + Wired + Compressed)` headroom metric, which already
+        // includes reclaimable file-backed memory.
         if availableRatio < 0.08 || (availableRatio < 0.12 && swapRatio > 0.20) {
             return .critical
         }
 
-        if availableRatio < 0.18 || compressedRatio > 0.30 || swapRatio > 0.10 {
+        if availableRatio < 0.16 || compressedRatio > 0.30 || swapRatio > 0.10 {
             return .warning
         }
 
         return .normal
+    }
+
+    private func ratio(_ numerator: UInt64, _ denominator: UInt64) -> Double {
+        guard denominator > 0 else { return 0 }
+        return min(max(Double(numerator) / Double(denominator), 0), 1)
     }
 }

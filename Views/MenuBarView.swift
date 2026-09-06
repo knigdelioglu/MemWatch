@@ -64,7 +64,7 @@ struct MenuBarView: View {
                         route: .memory,
                         title: "Memory",
                         symbol: "memorychip",
-                        value: "Pressure \(pressureEstimate.percent)%",
+                        value: "Pressure estimate \(pressureEstimate.percent)%",
                         detail: "RAM \(snapshot.usagePercent)% · Swap \(shortBytes(snapshot.swapUsedBytes))",
                         accent: pressureColor
                     )
@@ -128,7 +128,7 @@ struct MenuBarView: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(healthColor)
                 Spacer()
-                Text("\(snapshot.usagePercent)% RAM")
+                Text("\(snapshot.usagePercent)% RAM used")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -273,22 +273,36 @@ struct MenuBarView: View {
     private var memoryDetailView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Memory Used")
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(bytes(snapshot.usedBytes)) / \(bytes(snapshot.totalBytes)) · \(snapshot.usagePercent)%")
+                        .font(.title3.monospacedDigit().weight(.semibold))
+                    Text("Available headroom: \(bytes(snapshot.availableBytes))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 HStack(spacing: 16) {
                     MemoryDonutChart(snapshot: snapshot)
                         .frame(width: 190, height: 190)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        memoryLegend("Active", bytes: snapshot.activeBytes, color: .cyan)
+                        memoryLegend("App Memory", bytes: snapshot.appMemoryBytes, color: .cyan)
                         memoryLegend("Wired", bytes: snapshot.wiredBytes, color: .blue)
                         memoryLegend("Compressed", bytes: snapshot.compressedBytes, color: .indigo)
-                        memoryLegend("Other", bytes: memoryOtherBytes, color: .purple)
+                        memoryLegend("Cached Files", bytes: snapshot.cachedFilesBytes, color: .purple)
+                        Text("Cached Files is reclaimable and separate from Memory Used.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 HStack(alignment: .top, spacing: 10) {
                     memoryInfoCard(
-                        title: "Pressure",
+                        title: "Pressure Estimate",
                         value: "\(pressureEstimate.percent)%",
                         subtitle: monitor.pressure.displayName,
                         explanation: pressureExplanation,
@@ -306,7 +320,7 @@ struct MenuBarView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Top Consumers")
+                        Text("Top Memory Users")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
                         Button("Refresh") {
@@ -316,21 +330,31 @@ struct MenuBarView: View {
                         .font(.caption)
                     }
 
+                    Text("App helpers are grouped; standalone system and CLI processes remain visible.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
                     if monitor.diagnostics.topProcesses.isEmpty {
-                        Text("No application memory snapshot available yet")
+                        Text("No process memory snapshot available yet")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(monitor.diagnostics.topProcesses.prefix(7)) { process in
                             HStack(spacing: 9) {
-                                Image(systemName: "app.fill")
+                                Image(systemName: process.groupKind.symbolName)
                                     .foregroundStyle(.secondary)
                                     .frame(width: 18)
-                                Text(process.name)
-                                    .font(.caption)
-                                    .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(process.name)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    Text(process.memoryMetric.displayName)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
                                 Spacer()
-                                Text(bytes(process.residentBytes))
+                                Text(bytes(process.memoryBytes))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
@@ -571,11 +595,6 @@ struct MenuBarView: View {
         }
     }
 
-    private var memoryOtherBytes: UInt64 {
-        let accounted = saturatingAdd(snapshot.activeBytes, snapshot.wiredBytes, snapshot.compressedBytes)
-        return snapshot.usedBytes > accounted ? snapshot.usedBytes - accounted : 0
-    }
-
     private var pressureExplanation: String {
         switch monitor.pressure {
         case .normal: return "Your Mac still has comfortable memory headroom."
@@ -677,12 +696,6 @@ struct MenuBarView: View {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 
-    private func saturatingAdd(_ values: UInt64...) -> UInt64 {
-        values.reduce(0) { partial, value in
-            let (result, overflow) = partial.addingReportingOverflow(value)
-            return overflow ? UInt64.max : result
-        }
-    }
 }
 
 private struct MemoryDonutChart: View {
@@ -717,25 +730,22 @@ private struct MemoryDonutChart: View {
                 Text("of \(bytes(snapshot.totalBytes))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text("available")
+                Text("available headroom")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             .multilineTextAlignment(.center)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Available memory")
+        .accessibilityLabel("Memory Used breakdown")
         .accessibilityValue("\(bytes(snapshot.availableBytes)) of \(bytes(snapshot.totalBytes))")
     }
 
     private var segments: [Segment] {
-        let accounted = saturatingAdd(snapshot.activeBytes, snapshot.wiredBytes, snapshot.compressedBytes)
-        let other = snapshot.usedBytes > accounted ? snapshot.usedBytes - accounted : 0
         return [
-            Segment(name: "Active", bytes: snapshot.activeBytes, color: .cyan),
+            Segment(name: "App Memory", bytes: snapshot.appMemoryBytes, color: .cyan),
             Segment(name: "Wired", bytes: snapshot.wiredBytes, color: .blue),
-            Segment(name: "Compressed", bytes: snapshot.compressedBytes, color: .indigo),
-            Segment(name: "Other", bytes: other, color: .purple)
+            Segment(name: "Compressed", bytes: snapshot.compressedBytes, color: .indigo)
         ]
     }
 
@@ -759,10 +769,4 @@ private struct MemoryDonutChart: View {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
     }
 
-    private func saturatingAdd(_ values: UInt64...) -> UInt64 {
-        values.reduce(0) { partial, value in
-            let (result, overflow) = partial.addingReportingOverflow(value)
-            return overflow ? UInt64.max : result
-        }
-    }
 }

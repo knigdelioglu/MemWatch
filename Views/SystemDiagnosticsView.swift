@@ -58,7 +58,7 @@ struct SystemDiagnosticsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("Top memory apps")
+                    Text("Top memory users")
                         .font(.caption.weight(.semibold))
                     Spacer()
                     Button("Refresh") {
@@ -68,25 +68,31 @@ struct SystemDiagnosticsView: View {
                     .font(.caption2)
                 }
 
-                Text("Includes helper and child processes for each app.")
+                Text("App helpers are grouped; standalone system and CLI processes stay visible. Physical footprint is preferred and RSS fallback is marked.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
                 if diagnostics.topProcesses.isEmpty {
-                    Text("No application memory snapshot available yet")
+                    Text("No process memory snapshot available yet")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(diagnostics.topProcesses.prefix(6)) { process in
                         HStack(spacing: 8) {
-                            Image(systemName: "app.fill")
+                            Image(systemName: process.groupKind.symbolName)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text(process.name)
-                                .font(.caption)
-                                .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(process.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Text("\(process.processCount) process\(process.processCount == 1 ? "" : "es") · \(process.memoryMetric.displayName)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
                             Spacer()
-                            Text(memoryString(process.residentBytes))
+                            Text(memoryString(process.memoryBytes))
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }

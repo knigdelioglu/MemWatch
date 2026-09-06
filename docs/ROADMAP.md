@@ -15,7 +15,7 @@
 - [x] Read used/free memory
 - [x] Read compressed memory
 - [x] Read wired memory
-- [x] Read cached memory
+- [x] Read Cached Files accounting
 - [x] Read swap total/used/free
 - [x] Read Mach swap-in / swap-out counters
 - [x] Add MemWatch memory pressure fallback classification
@@ -79,8 +79,8 @@
 
 ## Phase 6 - Advanced Diagnostics — Sprint 6 Complete
 
-- [x] Capture process resident-memory snapshots
-- [x] Identify and rank memory-heavy running applications
+- [x] Capture process physical-footprint snapshots with explicit RSS fallback
+- [x] Identify and rank memory-heavy applications and standalone system/CLI processes
 - [x] Refresh expensive process snapshots every 30 seconds
 - [x] Add 10-minute CPU + RAM timeline
 - [x] Monitor system thermal state through public ProcessInfo API

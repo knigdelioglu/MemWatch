@@ -14,9 +14,10 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 
 - Menü çubuğunda anlık RAM yüzdesi
 - Kullanılan ve kullanılabilir RAM
+- App Memory / Cached Files ayrımı
 - Wired Memory
 - Compressed Memory
-- Cached Memory
+- Cached Files
 - Native macOS memory-pressure event takibi
 - 0–100 arası MemWatch memory-pressure yüzdesi
 - Swap total / used / free
@@ -69,9 +70,9 @@ MemWatch gerçek bir menu-bar-only uygulamadır: Dock'ta uygulama ikonu gösterm
 - Son 10 dakikalık CPU + RAM geçmişi
 - macOS sistem termal durumu: Nominal / Warm / Hot / Critical
 - Low Power Mode durumu
-- Çalışan uygulamaların resident-memory snapshot'ı
-- Uygulama RAM toplamına helper/child process'leri dahil etme
-- En çok RAM kullanan uygulamaların sıralanması
+- Erişilebilir süreçlerin physical-footprint snapshot'ı; gerektiğinde açık RSS fallback etiketi
+- Uygulama RAM toplamına helper/child process'leri tekil PID ownership ile dahil etme
+- GUI dışı system/CLI süreçlerini de içeren en yüksek memory users sıralaması
 - Ağır süreç taramasını 30 saniyede bir yenileyerek düşük overhead
 - Login-at-startup kontrolü
 - macOS Login Items durumunu ve onay ihtiyacını gösterme
@@ -114,6 +115,7 @@ MemWatch --cgs-mode74-without-betterdisplay
 MemWatch --cgs-mode74-apply-experiment
 MemWatch --hidpi-system-snapshot <output-directory>
 MemWatch --hidpi-activation-spike
+MemWatch --memory-diagnostics
 ```
 
 Bu yollar donanım ve WindowServer durumuna bağlıdır; başarıları fiziksel doğrulama yerine geçmez.
