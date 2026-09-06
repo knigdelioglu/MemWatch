@@ -67,11 +67,28 @@ extension DisplayCoordinator {
         !Task.isCancelled && brightnessControlEpoch == epoch
     }
 
+    /// Clears ambient-derived presentation state before a new sensor sample
+    /// is accepted. This prevents an old target from looking current while an
+    /// ALS client is being rebound.
+    func resetAmbientBrightnessObservation(source: BrightnessSource) {
+        luxFilter.reset()
+        lastSmoothedLux = nil
+        currentLux = nil
+        updateBrightnessState { state in
+            state.ambientSensorRawValue = nil
+            state.ambientNormalizedValue = nil
+            state.autoTargetBrightnessPercent = nil
+            state.smoothedRequestedBrightnessPercent = nil
+            state.lastBrightnessSource = source
+        }
+    }
+
     /// Starts a fresh brightness-control epoch after a display-parameter or
     /// target transition. Values from the previous mode can remain only as a
     /// presentation fallback. An accepted command may remain as logical user
     /// intent, but its readback confidence and hardware truth are reset.
     func beginBrightnessControlEpoch(reason: String) {
+        cancelAmbientLightSensorRecovery()
         brightnessControlEpoch &+= 1
         brightnessAutoWriteOutcomePlanner.resetLimiterEvidence()
         manualBrightnessWriteTask?.cancel()
@@ -86,6 +103,9 @@ extension DisplayCoordinator {
             ?? brightnessState.actualDDCBrightnessPercent
             ?? brightnessState.persistedBrightnessPercent
         let displayKey = currentDisplayInfo?.displayKey
+        luxFilter.reset()
+        lastSmoothedLux = nil
+        currentLux = nil
         // A mode transition can temporarily expose a new DDC identity for the
         // same panel, so invalidate every cached brightness sample. The next
         // read must be classified from its transport source, never inferred
@@ -93,6 +113,9 @@ extension DisplayCoordinator {
         brightnessCoordinator.invalidateDDCBrightnessCache(for: nil)
 
         updateBrightnessState { state in
+            state.ambientSensorRawValue = nil
+            state.ambientNormalizedValue = nil
+            state.autoTargetBrightnessPercent = nil
             state.pendingManualBrightnessPercent = nil
             // Keep an accepted command as logical intent across a mode epoch;
             // the transition-unverified reliability below prevents it from
@@ -136,7 +159,7 @@ extension DisplayCoordinator {
             state.isDDCReadbackAvailable = false
             state.isManualOverrideActive = false
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil
-            state.lastBrightnessSource = .ambientComputed
+            state.lastBrightnessSource = .transition
             state.isBrightnessWriteSuppressed = false
             state.lastSuppressionReason = nil
             state.suppressionReason = nil
@@ -223,9 +246,12 @@ extension DisplayCoordinator {
         var didConfirmReadback = false
 
         updateBrightnessState { state in
-            if let requestedFallback, state.commandedBrightnessPercent == nil {
-                // A persisted/discovery fallback must not overwrite an
-                // accepted command while its hardware readback is uncertain.
+            if let requestedFallback,
+               state.commandedBrightnessPercent == nil,
+               state.persistedBrightnessPercent == nil {
+                // A persisted/discovery fallback may seed presentation state,
+                // but must not overwrite continuity already retained for the
+                // same physical panel during a mode transition.
                 state.persistedBrightnessPercent = requestedFallback
             }
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil && !state.isManualOverrideActive
@@ -284,17 +310,50 @@ extension DisplayCoordinator {
                     state.optimisticBrightnessExpiresAt = nil
                     state.optimisticReadbackAttempts = 0
                     state.readbackReliability = .reliable
+                    state.transitionReadbackSampleCount = 0
                     state.transitionReadbackCandidatePercent = nil
                     state.transitionReadbackStableCount = 0
                     state.transitionPreviousReadbackPercent = nil
                     state.lastBrightnessSource = .ddcReadback
                     didConfirmReadback = true
                 } else {
-                    // A fresh DDC response that misses the accepted command is
-                    // still only diagnostic evidence; changing from the prior
-                    // response does not make it authoritative.
+                    // A single fresh response that misses the accepted command
+                    // is still only diagnostic evidence. Require a stable,
+                    // repeated value before allowing a genuinely different
+                    // hardware state to replace the accepted intent. The
+                    // previous-epoch marker filters the common stale GET that
+                    // simply repeats the value from before HDR/SDR.
                     state.optimisticReadbackAttempts += 1
                     state.readbackReliability = .uncertainAfterWrite
+                    state.transitionReadbackSampleCount += 1
+                    if let candidate = state.transitionReadbackCandidatePercent,
+                       abs(readback - candidate) <= readbackTolerance {
+                        state.transitionReadbackStableCount += 1
+                    } else {
+                        state.transitionReadbackCandidatePercent = readback
+                        state.transitionReadbackStableCount = 1
+                    }
+
+                    let differsFromPreviousState = state.transitionPreviousReadbackPercent.map {
+                        abs(readback - $0) > readbackTolerance
+                    } ?? true
+                    if state.transitionReadbackStableCount >= requiredTransitionSamples,
+                       differsFromPreviousState {
+                        state.actualDDCBrightnessPercent = readback
+                        state.lastConfirmedBrightnessPercent = readback
+                        state.persistedBrightnessPercent = readback
+                        state.commandedBrightnessPercent = nil
+                        state.optimisticBrightnessPercent = nil
+                        state.optimisticBrightnessExpiresAt = nil
+                        state.optimisticReadbackAttempts = 0
+                        state.readbackReliability = .reliable
+                        state.transitionReadbackSampleCount = 0
+                        state.transitionReadbackCandidatePercent = nil
+                        state.transitionReadbackStableCount = 0
+                        state.transitionPreviousReadbackPercent = nil
+                        state.lastBrightnessSource = .ddcReadback
+                        didConfirmReadback = true
+                    }
                 }
             } else if state.readbackReliability == .transitionUnverified {
                 state.transitionReadbackSampleCount += 1
@@ -420,13 +479,27 @@ extension DisplayCoordinator {
                     state.optimisticBrightnessExpiresAt = nil
                     state.optimisticReadbackAttempts = 0
                     state.readbackReliability = .reliable
+                    state.lastBrightnessSource = .ddcReadback
                 } else {
+                    // The previous confirmed value is history, not current
+                    // hardware truth while this command is unresolved.
+                    state.actualDDCBrightnessPercent = nil
                     state.optimisticBrightnessPercent = requested
                     state.optimisticBrightnessExpiresAt = now.addingTimeInterval(optimisticBrightnessTTL)
                     state.optimisticReadbackAttempts = 0
                     state.readbackReliability = result.readbackAvailable
                         ? .uncertainAfterWrite
                         : .unavailable
+                    let previousReadback = previousTransitionReadback
+                        ?? previousActualBrightness
+                        ?? previousConfirmedBrightness
+                        ?? previousPersistedBrightness
+                    state.transitionPreviousReadbackPercent = previousReadback
+                    if let observedBrightness {
+                        state.transitionReadbackSampleCount = 1
+                        state.transitionReadbackCandidatePercent = observedBrightness
+                        state.transitionReadbackStableCount = 1
+                    }
                 }
             } else {
                 // A failed command must roll back the logical command and
@@ -545,30 +618,13 @@ extension DisplayCoordinator {
     }
 
     var brightnessActualText: String {
-        if let pending = brightnessState.pendingManualBrightnessPercent {
-            return String(pending) + "%"
-        }
-        if let commanded = brightnessState.commandedBrightnessPercent {
-            return "\(commanded)%"
-        }
-        if brightnessState.readbackReliability == .reliable {
-            if let actual = brightnessState.actualDDCBrightnessPercent {
-                return "\(actual)%"
-            }
-            if let confirmed = brightnessState.lastConfirmedBrightnessPercent {
-                return "\(confirmed)%"
-            }
-        }
+        brightnessState.authoritativeDDCBrightnessPercent.map { "\($0)%" } ?? "—"
+    }
 
-        if let persisted = brightnessState.persistedBrightnessPercent {
-            return "\(persisted)%"
-        }
-
-        if let target = brightnessState.autoTargetBrightnessPercent {
-            return "\(target)% (target)"
-        }
-
-        return "—"
+    /// The value shown next to the external-display slider follows UI
+    /// precedence, while `brightnessActualText` remains hardware-truth-only.
+    var brightnessControlText: String {
+        "\(brightnessState.uiSliderBrightnessPercent)%"
     }
 
     var brightnessLastSourceText: String {
@@ -580,7 +636,16 @@ extension DisplayCoordinator {
     }
 
     var brightnessDiagnosticInlineText: String {
-        "Sensor target: \(brightnessSensorTargetText) · DDC actual: \(brightnessActualText) · Last source: \(brightnessLastSourceText) · Readback: \(brightnessReadbackText)"
+        var fields = ["Sensor target: \(brightnessSensorTargetText)"]
+        if let pending = brightnessState.pendingManualBrightnessPercent {
+            fields.append("Pending: \(pending)%")
+        } else if let commanded = brightnessState.commandedBrightnessPercent {
+            fields.append("Commanded: \(commanded)%")
+        }
+        fields.append("DDC actual: \(brightnessActualText)")
+        fields.append("Last source: \(brightnessLastSourceText)")
+        fields.append("Readback: \(brightnessReadbackText)")
+        return fields.joined(separator: " · ")
     }
 
     var keepAwakeSummaryText: String {

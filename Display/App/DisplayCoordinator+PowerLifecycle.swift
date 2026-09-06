@@ -2,6 +2,16 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+private enum AmbientLightSensorRecoveryPolicy {
+    static let retryDelaysNanoseconds: [UInt64] = [
+        0,
+        250_000_000,
+        500_000_000,
+        1_000_000_000,
+        2_000_000_000
+    ]
+}
+
 extension DisplayCoordinator {
     func displayPowerLifecycleSnapshot() -> DisplayPowerLifecycleSnapshot {
         _ = targetDisplayReadiness
@@ -62,7 +72,9 @@ extension DisplayCoordinator {
         // the CGS transaction is running. Establish the brightness/ALS epoch
         // explicitly here so that a self-generated display-parameter change
         // cannot bypass the transition reset.
+        let powerGeneration = displayPowerGeneration
         beginBrightnessControlEpoch(reason: "display parameter transition")
+        let brightnessEpoch = brightnessControlEpoch
         let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
         traceRuntime(
             "ALS rebind reason=display parameter transition (HiDPI reapply) " +
@@ -71,8 +83,178 @@ extension DisplayCoordinator {
                 "rebindCount=\(brightnessCoordinator.ambientLightSensorRebindCount)"
         )
         Task { @MainActor [weak self] in
-            guard let self, self.externalDisplayReadOperationsAllowed else { return }
+            guard let self,
+                  self.externalDisplayReadOperationsAllowed,
+                  self.acceptsDisplayPowerGeneration(powerGeneration),
+                  self.acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
             await self.reloadDisplayModes(allowDuringPostWake: true)
+            guard self.externalDisplayReadOperationsAllowed,
+                  self.acceptsDisplayPowerGeneration(powerGeneration),
+                  self.acceptsBrightnessControlEpoch(brightnessEpoch) else { return }
+            self.beginAmbientLightSensorRecovery(reason: "display parameter transition")
+        }
+    }
+
+    /// Starts one bounded ALS recovery chain for the current active display
+    /// epoch. Sensor rebinding is target-gated and never continues across a
+    /// power or brightness epoch change.
+    func beginAmbientLightSensorRecovery(reason: String) {
+        guard isRunning,
+              displayPowerState == .active,
+              externalDisplayReadOperationsAllowed else { return }
+
+        guard brightnessCoordinator.reader != nil else {
+            updateBrightnessState { state in
+                state.lastBrightnessSource = .unavailable
+                state.suppressionReason = "Ambient light sensor unavailable"
+            }
+            return
+        }
+
+        let powerGeneration = displayPowerGeneration
+        let brightnessEpoch = brightnessControlEpoch
+        guard ambientLightSensorRecoveryEpoch != brightnessEpoch else { return }
+
+        ambientLightSensorRecoveryTask?.cancel()
+        ambientLightSensorRecoveryTask = nil
+        ambientLightSensorRecoveryToken &+= 1
+        let token = ambientLightSensorRecoveryToken
+        ambientLightSensorRecoveryEpoch = brightnessEpoch
+        traceRuntime(
+            "ALS recovery begin reason=\(reason) powerGeneration=\(powerGeneration) " +
+                "brightnessEpoch=\(brightnessEpoch) token=\(token)"
+        )
+        updateBrightnessState { state in
+            state.suppressionReason = "Ambient light sensor recovery in progress"
+        }
+
+        let delays = AmbientLightSensorRecoveryPolicy.retryDelaysNanoseconds
+        ambientLightSensorRecoveryTask = Task { @MainActor [weak self] in
+            for (attempt, delay) in delays.enumerated() {
+                do {
+                    if delay > 0 {
+                        try await Task.sleep(nanoseconds: delay)
+                    }
+                    try Task.checkCancellation()
+                } catch {
+                    return
+                }
+
+                guard let self,
+                      self.acceptsAmbientLightSensorRecovery(
+                          powerGeneration: powerGeneration,
+                          brightnessEpoch: brightnessEpoch,
+                          token: token
+                      ) else {
+                    return
+                }
+
+                let didRebind = self.brightnessCoordinator.rebindAmbientLightSensor()
+                let lux = self.brightnessCoordinator.reader?.readLux()
+                guard self.acceptsAmbientLightSensorRecovery(
+                    powerGeneration: powerGeneration,
+                    brightnessEpoch: brightnessEpoch,
+                    token: token
+                ) else {
+                    return
+                }
+
+                self.traceRuntime(
+                    "ALS recovery attempt=\(attempt + 1)/\(delays.count) rebind=\(didRebind) " +
+                        "lux=\(lux.map { String(format: "%.1f", $0) } ?? "nil")"
+                )
+                guard let lux else { continue }
+
+                self.luxFilter.reset()
+                self.lastSmoothedLux = nil
+                self.currentLux = nil
+                // Do not use the recovery read as a side door around the
+                // interactive gate. The normal tick owns target/reference
+                // selection and will simply wait if post-wake work is active.
+                if self.externalDisplayInteractiveOperationsAllowed {
+                    await self.runRecoveredAmbientTick(
+                        lux: lux,
+                        powerGeneration: powerGeneration,
+                        brightnessEpoch: brightnessEpoch,
+                        token: token
+                    )
+                }
+                guard self.ambientLightSensorRecoveryToken == token else { return }
+                self.ambientLightSensorRecoveryTask = nil
+                self.ambientLightSensorRecoveryEpoch = nil
+                return
+            }
+
+            guard let self,
+                  self.acceptsAmbientLightSensorRecovery(
+                      powerGeneration: powerGeneration,
+                      brightnessEpoch: brightnessEpoch,
+                      token: token
+                  ) else {
+                return
+            }
+            self.ambientLightSensorRecoveryTask = nil
+            self.updateBrightnessState { state in
+                state.lastBrightnessSource = .unavailable
+                state.suppressionReason = "Ambient light sensor recovery exhausted"
+            }
+            self.updateStatus("Sensör kullanılamıyor; ALS kurtarma başarısız")
+            self.traceRuntime(
+                "ALS recovery exhausted powerGeneration=\(powerGeneration) " +
+                    "brightnessEpoch=\(brightnessEpoch) token=\(token)"
+            )
+        }
+    }
+
+    func cancelAmbientLightSensorRecovery() {
+        ambientLightSensorRecoveryTask?.cancel()
+        ambientLightSensorRecoveryTask = nil
+        ambientLightSensorRecoveryEpoch = nil
+        ambientLightSensorRecoveryToken &+= 1
+    }
+
+    private func acceptsAmbientLightSensorRecovery(
+        powerGeneration: UInt64,
+        brightnessEpoch: UInt64,
+        token: UInt64
+    ) -> Bool {
+        !Task.isCancelled &&
+            isRunning &&
+            displayPowerState == .active &&
+            displayPowerGeneration == powerGeneration &&
+            brightnessControlEpoch == brightnessEpoch &&
+            ambientLightSensorRecoveryToken == token &&
+            externalDisplayReadOperationsAllowed
+    }
+
+    /// Hands a recovered sample back to the normal tick without racing an
+    /// already-running DDC pass. The wait is deliberately bounded; the
+    /// scheduler remains the fallback if a competing tick never yields.
+    private func runRecoveredAmbientTick(
+        lux: Double,
+        powerGeneration: UInt64,
+        brightnessEpoch: UInt64,
+        token: UInt64
+    ) async {
+        for _ in 0..<5 {
+            guard acceptsAmbientLightSensorRecovery(
+                      powerGeneration: powerGeneration,
+                      brightnessEpoch: brightnessEpoch,
+                      token: token
+                  ),
+                  externalDisplayInteractiveOperationsAllowed else {
+                return
+            }
+            guard !isTickRunning else {
+                do {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                } catch {
+                    return
+                }
+                continue
+            }
+            await tick(recoveredLux: lux)
+            return
         }
     }
 

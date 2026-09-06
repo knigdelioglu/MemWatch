@@ -319,7 +319,7 @@ struct UnifiedSettingsView: View {
     private var settingsExternalBrightnessText: String {
         isAdjustingBrightness
             ? "\(Int(brightnessDraft.rounded()))%"
-            : display.brightnessActualText
+            : display.brightnessControlText
     }
 
     private func scheduleBrightnessWrite(_ newValue: Double) {

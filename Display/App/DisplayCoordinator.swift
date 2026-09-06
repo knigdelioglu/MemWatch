@@ -25,6 +25,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
     var targetRecoveryToken = 0
     var displayTickTask: Task<Void, Never>?
     var displayTickTaskToken = 0
+    var ambientLightSensorRecoveryTask: Task<Void, Never>?
+    var ambientLightSensorRecoveryEpoch: UInt64?
+    var ambientLightSensorRecoveryToken: UInt64 = 0
     var isPostWakeRefreshInProgress = false
     var volumeKeyRouter: MonitorVolumeKeyRouter?
     lazy var keepAwakeCoordinator = KeepAwakeCoordinator(app: self)

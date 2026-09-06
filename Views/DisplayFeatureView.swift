@@ -122,7 +122,7 @@ struct DisplayFeatureView: View {
 
             HStack(spacing: 12) {
                 statusMetric(title: "Ambient", value: luxText)
-                statusMetric(title: "Brightness", value: display.brightnessActualText)
+                statusMetric(title: "Brightness", value: display.brightnessControlText)
                 statusMetric(title: "HiDPI", value: display.isHiDPIActive ? "On" : "Off")
             }
         }
@@ -401,7 +401,7 @@ struct DisplayFeatureView: View {
     private var externalBrightnessText: String {
         isAdjustingBrightness
             ? "\(Int(brightnessDraft.rounded()))%"
-            : display.brightnessActualText
+            : display.brightnessControlText
     }
 
     private var volumeText: String {

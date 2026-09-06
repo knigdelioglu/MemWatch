@@ -20,6 +20,8 @@ struct LatestValueWriteGate: Equatable, Sendable {
 }
 
 enum BrightnessSource: String, Codable, Sendable {
+    case transition
+    case unavailable
     case ambientComputed
     case autoDDCWrite
     case quickPanelSlider
@@ -75,7 +77,7 @@ struct BrightnessState: Sendable {
     var lastDDCActualPercentAfter: Int?
     var isAutoBrightnessEnabled: Bool = true
     var isManualOverrideActive: Bool = false
-    var lastBrightnessSource: BrightnessSource = .ambientComputed
+    var lastBrightnessSource: BrightnessSource = .unavailable
     var isDDCReadbackAvailable: Bool = false
     var lastDDCWriteSucceeded: Bool?
     var lastDDCWriteMessage: String?
@@ -138,19 +140,27 @@ struct BrightnessState: Sendable {
         // in the API for callers that already provide it and for future
         // confidence policy, while command authority is lifecycle-based.
         _ = now
-        pendingManualBrightnessPercent
+        return pendingManualBrightnessPercent
             ?? commandedBrightnessPercent
-            ?? (readbackReliability == .reliable
-                ? actualDDCBrightnessPercent ?? lastConfirmedBrightnessPercent ?? lastDDCReadbackPercent
-                : nil)
+            ?? authoritativeDDCBrightnessPercent
     }
 
+    /// Only a reliable readback is hardware truth. Persisted values and
+    /// unverified samples remain presentation/diagnostic data.
+    var authoritativeDDCBrightnessPercent: Int? {
+        guard readbackReliability == .reliable else { return nil }
+        return actualDDCBrightnessPercent
+            ?? lastConfirmedBrightnessPercent
+            ?? lastDDCReadbackPercent
+    }
+
+    /// UI precedence is intentionally broader than hardware/reference
+    /// precedence: it keeps an accepted user intent visible while the panel
+    /// is transitioning or a fresh DDC readback is unavailable.
     var uiSliderBrightnessPercent: Int {
         return pendingManualBrightnessPercent
             ?? commandedBrightnessPercent
-            ?? (readbackReliability == .reliable
-                ? actualDDCBrightnessPercent ?? lastConfirmedBrightnessPercent ?? lastDDCReadbackPercent
-                : nil)
+            ?? authoritativeDDCBrightnessPercent
             ?? persistedBrightnessPercent
             ?? autoTargetBrightnessPercent
             ?? 50

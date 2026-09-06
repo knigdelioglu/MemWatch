@@ -5,6 +5,7 @@ struct DisplayFeatureSmoke {
     @MainActor
     static func main() async {
         testBrightnessCurve()
+        testBrightnessStateAuthority()
         testDDCBrightnessParsing()
         testDDCBrightnessScale()
         testLuxFilter()
@@ -43,6 +44,37 @@ struct DisplayFeatureSmoke {
         precondition(dark == 0)
         precondition(dark <= medium && medium <= bright)
         precondition((0...100).contains(bright))
+    }
+
+    private static func testBrightnessStateAuthority() {
+        var state = BrightnessState()
+        precondition(state.lastBrightnessSource.rawValue == "unavailable")
+
+        state.persistedBrightnessPercent = 66
+        state.autoTargetBrightnessPercent = 70
+        state.readbackReliability = .transitionUnverified
+        state.actualDDCBrightnessPercent = 66
+        precondition(state.referenceBrightness() == nil)
+        precondition(state.authoritativeDDCBrightnessPercent == nil)
+        precondition(state.uiSliderBrightnessPercent == 66)
+
+        state.commandedBrightnessPercent = 90
+        state.lastDDCReadbackPercent = 66
+        state.readbackReliability = .uncertainAfterWrite
+        precondition(state.referenceBrightness() == 90)
+        precondition(state.uiSliderBrightnessPercent == 90)
+        precondition(state.authoritativeDDCBrightnessPercent == nil)
+
+        state.pendingManualBrightnessPercent = 95
+        precondition(state.uiSliderBrightnessPercent == 95)
+
+        state.pendingManualBrightnessPercent = nil
+        state.commandedBrightnessPercent = nil
+        state.readbackReliability = .reliable
+        state.actualDDCBrightnessPercent = 74
+        precondition(state.referenceBrightness() == 74)
+        precondition(state.uiSliderBrightnessPercent == 74)
+        precondition(state.authoritativeDDCBrightnessPercent == 74)
     }
 
     private static func testDDCBrightnessScale() {
@@ -858,6 +890,54 @@ struct DisplayFeatureSmoke {
             ioLocation: nil
         )
         precondition(fallbackIdentity.displayKey == "Samsung S60UD|uuid-43")
+        let samePanelWithNewRuntimeKey = ExternalDisplayInfo(
+            displayIndex: "9",
+            displayID: 9,
+            productName: "LS32D60xU",
+            serial: "SN-42",
+            systemUUID: "uuid-42",
+            ioLocation: nil
+        )
+        precondition(serialIdentity.isSamePhysicalDisplay(as: samePanelWithNewRuntimeKey))
+
+        let sameSerialDifferentRuntimeUUID = ExternalDisplayInfo(
+            displayIndex: "10",
+            displayID: 10,
+            productName: "Samsung S60UD",
+            serial: " SN-42 ",
+            systemUUID: "uuid-after-mode-change",
+            ioLocation: nil
+        )
+        precondition(serialIdentity.isSamePhysicalDisplay(as: sameSerialDifferentRuntimeUUID))
+
+        let differentSerialSameRuntimeUUID = ExternalDisplayInfo(
+            displayIndex: "11",
+            displayID: 11,
+            productName: "Samsung S60UD",
+            serial: "SN-99",
+            systemUUID: "uuid-42",
+            ioLocation: nil
+        )
+        precondition(!serialIdentity.isSamePhysicalDisplay(as: differentSerialSameRuntimeUUID))
+
+        let differentPanelOnSamePort = ExternalDisplayInfo(
+            displayIndex: "3",
+            displayID: 3,
+            productName: "Samsung S60UD",
+            serial: "SN-43",
+            systemUUID: "uuid-43",
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        let oldPanelOnSamePort = ExternalDisplayInfo(
+            displayIndex: "4",
+            displayID: 4,
+            productName: "Samsung S60UD",
+            serial: "SN-42",
+            systemUUID: "uuid-42",
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        precondition(!oldPanelOnSamePort.isSamePhysicalDisplay(as: differentPanelOnSamePort))
+        precondition(fallbackIdentity.physicalDisplayFingerprint == "uuid:uuid-43")
         precondition(DisplayConnectionIdentity.samsungS60UD.vendorID == 0x4C2D)
         precondition(DisplayConnectionIdentity.samsungS60UD.productID == 0x76AB)
     }

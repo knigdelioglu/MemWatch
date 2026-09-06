@@ -65,6 +65,7 @@ extension DisplayCoordinator {
             return
         }
         let previousDisplayKey = currentDisplayInfo?.displayKey
+        let previousDisplayInfo = currentDisplayInfo
         let discoveredDisplay = await brightnessCoordinator.writer.refreshDisplay(preferredKey: store.preferences.selectedDisplayKey)
         guard acceptsDisplayPowerGeneration(powerGeneration),
               targetDisplayOperationGate.accepts(
@@ -79,7 +80,14 @@ extension DisplayCoordinator {
         if let display = discoveredDisplay {
             publishCurrentDisplayInfo(display, reason: "writer.refreshDisplay non-nil")
             store.setSelectedDisplayKey(display.displayKey)
-            if display.displayKey != previousDisplayKey {
+            let samePhysicalDisplay = previousDisplayInfo?.isSamePhysicalDisplay(as: display) ?? false
+            let physicalIdentityChanged = previousDisplayInfo.map {
+                $0.hasStablePhysicalIdentity &&
+                    display.hasStablePhysicalIdentity &&
+                    !samePhysicalDisplay
+            } ?? false
+            let displayIdentityChanged = display.displayKey != previousDisplayKey || physicalIdentityChanged
+            if displayIdentityChanged {
                 beginBrightnessControlEpoch(reason: "display identity changed")
                 brightnessEpoch = brightnessControlEpoch
                 let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
@@ -88,11 +96,15 @@ extension DisplayCoordinator {
                         "clientGeneration=\(brightnessCoordinator.ambientLightSensorClientGeneration) " +
                         "rebindCount=\(brightnessCoordinator.ambientLightSensorRebindCount)"
                 )
+                traceRuntime(
+                    "display identity transition samePhysical=\(samePhysicalDisplay) " +
+                        "previousFingerprint=\(previousDisplayInfo?.physicalDisplayFingerprint ?? "nil") " +
+                        "nextFingerprint=\(display.physicalDisplayFingerprint ?? "nil")"
+                )
                 invalidateManualBrightnessWrites()
                 invalidateManualVolumeWrites()
                 cancelPendingManualBrightnessWrite()
                 cancelPendingManualVolumeWrite()
-                luxFilter.reset()
                 lastWriteDate = .distantPast
                 lastBrightnessReadDate = .distantPast
                 lastDisplaySearchDate = Date()
@@ -107,15 +119,16 @@ extension DisplayCoordinator {
                 ddcRawBrightnessProbeSummary = nil
                 brightnessMappingDiagnosticSummary = nil
                 updateBrightnessState { state in
-                    state.persistedBrightnessPercent = store.lastBrightness(for: display.displayKey)
-                    if previousDisplayKey != nil || state.commandedBrightnessPercent != nil {
+                    if !samePhysicalDisplay {
                         // A new physical display, including one discovered
                         // after a disconnect, must not inherit the prior
-                        // panel's accepted command. A same-panel HDR/SDR
-                        // transition may preserve logical intent instead.
+                        // panel's accepted command. Same-panel HDR/SDR and
+                        // display-mode transitions keep the command captured
+                        // by beginBrightnessControlEpoch().
                         state.commandedBrightnessPercent = nil
+                        state.persistedBrightnessPercent = store.lastBrightness(for: display.displayKey)
                     }
-                    if previousDisplayKey != nil {
+                    if previousDisplayInfo != nil {
                         state.transitionPreviousReadbackPercent = nil
                     }
                 }

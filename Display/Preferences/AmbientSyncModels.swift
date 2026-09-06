@@ -115,6 +115,73 @@ struct ExternalDisplayInfo: Hashable, Sendable {
         return "\(productName)|\(identity)"
     }
 
+    /// A display key is also used as a settings key and may change when the
+    /// DDC enumeration is rebuilt. Keep physical continuity separate from
+    /// that operational/persistence identifier.
+    var physicalDisplayFingerprint: String? {
+        if let serial = normalizedSerial {
+            return "serial:\(serial)"
+        }
+        if let systemUUID = normalizedSystemUUID {
+            return "uuid:\(systemUUID)"
+        }
+        if let ioLocation = normalizedIOLocation {
+            return "location:\(ioLocation)"
+        }
+        return nil
+    }
+
+    var hasStablePhysicalIdentity: Bool {
+        physicalDisplayFingerprint != nil
+    }
+
+    /// Returns true only when the available stable identity agrees. A
+    /// display index/CGDirectDisplayID is deliberately not used: those values
+    /// can be reassigned during HDR/SDR and display-mode transitions.
+    func isSamePhysicalDisplay(as other: ExternalDisplayInfo) -> Bool {
+        if let lhsSerial = normalizedSerial,
+           let rhsSerial = other.normalizedSerial {
+            return lhsSerial == rhsSerial
+        }
+
+        if let lhsUUID = normalizedSystemUUID,
+           let rhsUUID = other.normalizedSystemUUID {
+            return lhsUUID == rhsUUID
+        }
+
+        // IO location is a useful last-resort bridge only when neither side
+        // exposes a stronger identity. Do not let two different serials or
+        // UUIDs on the same port inherit one another's accepted brightness.
+        guard normalizedSystemUUID == nil,
+              other.normalizedSystemUUID == nil,
+              normalizedSerial == nil,
+              other.normalizedSerial == nil,
+              let lhsLocation = normalizedIOLocation,
+              let rhsLocation = other.normalizedIOLocation else {
+            return false
+        }
+        return lhsLocation == rhsLocation
+    }
+
+    private var normalizedSystemUUID: String? {
+        normalizedIdentityValue(systemUUID)
+    }
+
+    private var normalizedSerial: String? {
+        normalizedIdentityValue(serial)
+    }
+
+    private var normalizedIOLocation: String? {
+        normalizedIdentityValue(ioLocation)
+    }
+
+    private func normalizedIdentityValue(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        return normalized.lowercased()
+    }
+
     var displayLabel: String {
         productName.isEmpty ? "External display" : productName
     }

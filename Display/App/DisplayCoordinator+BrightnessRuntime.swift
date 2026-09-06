@@ -1,7 +1,7 @@
 import Foundation
 
 extension DisplayCoordinator {
-    func tick(allowDuringPostWake: Bool = false) async {
+    func tick(allowDuringPostWake: Bool = false, recoveredLux: Double? = nil) async {
         guard displayReadOperationsAllowed,
               allowDuringPostWake || !isPostWakeRefreshInProgress else { return }
         guard !isTickRunning else { return }
@@ -62,18 +62,30 @@ extension DisplayCoordinator {
         }
 
         guard let reader = brightnessCoordinator.reader else {
+            resetAmbientBrightnessObservation(source: .unavailable)
             updateStatus("Işık sensörü bulunamadı")
             updateBrightnessState { state in
                 state.suppressionReason = "Işık sensörü bulunamadı"
             }
+            beginAmbientLightSensorRecovery(reason: "ALS reader unavailable")
             return
         }
 
-        guard let lux = reader.readLux() else {
+        let lux: Double
+        if let recoveredLux {
+            lux = recoveredLux
+        } else if let readLux = reader.readLux() {
+            lux = readLux
+        } else {
+            let source: BrightnessSource = brightnessState.readbackReliability == .transitionUnverified
+                ? .transition
+                : .unavailable
+            resetAmbientBrightnessObservation(source: source)
             updateStatus("Sensör bekleniyor")
             updateBrightnessState { state in
                 state.suppressionReason = "Sensör bekleniyor"
             }
+            beginAmbientLightSensorRecovery(reason: "ALS lux unavailable")
             return
         }
 
@@ -144,6 +156,7 @@ extension DisplayCoordinator {
             state.ambientNormalizedValue = ambientNormalizedValue
             state.autoTargetBrightnessPercent = autoTargetBrightnessPercent
             state.smoothedRequestedBrightnessPercent = smoothedRequestedPercent
+            state.lastBrightnessSource = .ambientComputed
             state.isManualOverrideActive = isManualOverrideActive
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && !isManualOverrideActive && calibrationSession == nil
             state.manualOverridePausedUntil = manualBrightnessOverrideUntil != .distantPast ? manualBrightnessOverrideUntil : nil
