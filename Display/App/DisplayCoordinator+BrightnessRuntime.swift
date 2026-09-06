@@ -17,7 +17,8 @@ extension DisplayCoordinator {
         // next await resumes.
         let tickBrightnessWriteGeneration = currentManualBrightnessWriteGeneration
         let tickBrightnessControlEpoch = brightnessControlEpoch
-        guard !manualBrightnessInteractionActive else { return }
+        guard !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else { return }
 
         traceRuntime("tick entered currentDisplay=\(currentDisplayInfo?.displayKey ?? "nil")")
 
@@ -52,11 +53,13 @@ extension DisplayCoordinator {
             refreshSharedRuntimeFeatures()
         }
 
-        if manualBrightnessInteractionActive {
+        if manualBrightnessInteractionActive || brightnessState.pendingManualBrightnessPercent != nil {
             updateBrightnessState { state in
                 state.isManualOverrideActive = true
                 state.isAutoBrightnessEnabled = false
-                state.suppressionReason = "Manual brightness interaction active"
+                state.suppressionReason = manualBrightnessInteractionActive
+                    ? "Manual brightness interaction active"
+                    : "Manual brightness intent pending"
             }
             return
         }
@@ -89,7 +92,9 @@ extension DisplayCoordinator {
             return
         }
 
-        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration), !manualBrightnessInteractionActive else {
+        guard acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else {
             return
         }
 
@@ -101,9 +106,9 @@ extension DisplayCoordinator {
             return
         }
 
-        store.setSelectedDisplayKey(display.displayKey)
+        store.setSelectedDisplay(display)
 
-        let settings = store.ensureSettings(for: display.displayKey)
+        let settings = store.ensureSettings(for: display)
         let profile = store.profile(id: settings.selectedProfileID)
 
         let smoothedLux = luxFilter.push(lux, baseSmoothing: profile.smoothing)
@@ -129,7 +134,7 @@ extension DisplayCoordinator {
                   brightnessState.pendingManualBrightnessPercent == nil else {
                 return
             }
-            applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
+            applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display))
             lastBrightnessReadDate = now
         }
 
@@ -194,7 +199,10 @@ extension DisplayCoordinator {
         await refreshCurrentVolume()
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot),
-              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
+              acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else { return }
         refreshSharedRuntimeFeatures()
 
         let target = autoTargetBrightnessPercent
@@ -217,7 +225,10 @@ extension DisplayCoordinator {
         let preflightDDCAvailable = await brightnessCoordinator.isDDCAvailable()
         guard acceptsDisplayPowerGeneration(tickPowerGeneration),
               acceptsTargetDisplayOperation(tickTargetSnapshot),
-              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch) else { return }
+              acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
+              acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else { return }
 
         let preflight = brightnessAutoLoopPlanner.preflight(
             context: BrightnessAutoLoopPreflightContext(
@@ -242,7 +253,8 @@ extension DisplayCoordinator {
               acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
-              !manualBrightnessInteractionActive else {
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else {
             return
         }
 
@@ -288,7 +300,8 @@ extension DisplayCoordinator {
               acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
-              !manualBrightnessInteractionActive else {
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else {
             return
         }
         let result = await brightnessCoordinator.writer.setBrightness(writeCandidate, preferredKey: display.displayKey)
@@ -296,7 +309,8 @@ extension DisplayCoordinator {
               acceptsTargetDisplayOperation(tickTargetSnapshot),
               acceptsBrightnessControlEpoch(tickBrightnessControlEpoch),
               acceptsManualBrightnessWrite(tickBrightnessWriteGeneration),
-              !manualBrightnessInteractionActive else {
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil else {
             return
         }
 
@@ -305,7 +319,7 @@ extension DisplayCoordinator {
                 result: result,
                 candidate: writeCandidate,
                 currentActual: currentActual,
-                displayKey: display.displayKey
+                display: display
             )
         } else {
             handleAutoBrightnessWriteFailure(
@@ -320,8 +334,9 @@ extension DisplayCoordinator {
         result: M1DDCBrightnessWriteResult,
         candidate: Int,
         currentActual: Int,
-        displayKey: String
+        display: ExternalDisplayInfo
     ) {
+        let displayKey = display.displayKey
         let outcome = brightnessAutoWriteOutcomePlanner.plan(
             result: result,
             candidate: candidate,
@@ -331,7 +346,7 @@ extension DisplayCoordinator {
 
         if let readback = outcome.persistedReadback {
             lastBrightnessReadDate = lastWriteDate
-            store.setLastBrightness(readback, for: displayKey)
+            store.setLastBrightness(readback, for: display)
         }
 
         applyBrightnessWriteResult(requested: candidate, source: .autoDDCWrite, result: result)

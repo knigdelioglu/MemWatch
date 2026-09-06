@@ -36,7 +36,18 @@ struct DisplaySettings: Codable, Hashable {
 }
 
 struct AppPreferences: Codable, Hashable {
+    /// Operational DDC selection. This may change when macOS rebuilds the
+    /// display enumeration after a mode transition and must not be used as
+    /// the durable settings identity.
     var selectedDisplayKey: String?
+    /// Stable physical identity of the selected display, when discovery can
+    /// prove one. This is also used to migrate a legacy raw-key record safely.
+    var selectedDisplayFingerprint: String?
+    /// Last complete discovered identity. The runtime display key may change
+    /// across HDR/SDR, so this is a restart-safe bridge between two verified
+    /// representations of the same panel (for example serial -> UUID).
+    /// It is stored only when a durable serial or verified display UUID exists.
+    var selectedDisplayIdentity: ExternalDisplayInfo?
     var profiles: [AmbientSyncProfile]
     var displaySettingsByKey: [String: DisplaySettings]
 
@@ -45,6 +56,8 @@ struct AppPreferences: Codable, Hashable {
     static func `default`() -> AppPreferences {
         AppPreferences(
             selectedDisplayKey: nil,
+            selectedDisplayFingerprint: nil,
+            selectedDisplayIdentity: nil,
             profiles: AmbientSyncProfile.defaultProfiles,
             displaySettingsByKey: [:]
         )
@@ -59,6 +72,10 @@ struct CalibrationSession: Hashable {
     }
 
     var displayKey: String
+    /// The complete identity captured when calibration started. Keeping this
+    /// separate from the operational display key prevents a mode transition
+    /// from saving calibration into a different physical panel's settings.
+    var displayIdentity: ExternalDisplayInfo?
     var profileID: String
     var step: Step
     var lowLux: Double?
@@ -100,7 +117,7 @@ struct CalibrationSession: Hashable {
     }
 }
 
-struct ExternalDisplayInfo: Hashable, Sendable {
+struct ExternalDisplayInfo: Codable, Hashable, Sendable {
     var displayIndex: String
     var displayID: UInt32?
     var productName: String
@@ -115,24 +132,50 @@ struct ExternalDisplayInfo: Hashable, Sendable {
         return "\(productName)|\(identity)"
     }
 
-    /// A display key is also used as a settings key and may change when the
-    /// DDC enumeration is rebuilt. Keep physical continuity separate from
-    /// that operational/persistence identifier.
+    /// A display key is an operational DDC identifier and may change when the
+    /// DDC enumeration is rebuilt. Keep physical continuity separate from it.
+    /// `systemUUID` is accepted as a physical identity only after the DDC
+    /// discovery path verifies it against CoreGraphics' display-scoped UUID;
+    /// a Mac/host UUID must never be passed here.
     var physicalDisplayFingerprint: String? {
+        durablePhysicalDisplayFingerprint
+    }
+
+    /// Only a serial or verified display UUID is safe for physical continuity
+    /// and persisted settings. A port/location identifies the connection path,
+    /// not the panel, so it must not make a hot-swapped monitor inherit state.
+    var durablePhysicalDisplayFingerprint: String? {
         if let serial = normalizedSerial {
+            // A real panel serial is the strongest durable identity and wins
+            // over a mode-specific UUID representation.
             return "serial:\(serial)"
         }
         if let systemUUID = normalizedSystemUUID {
             return "uuid:\(systemUUID)"
-        }
-        if let ioLocation = normalizedIOLocation {
-            return "location:\(ioLocation)"
         }
         return nil
     }
 
     var hasStablePhysicalIdentity: Bool {
         physicalDisplayFingerprint != nil
+    }
+
+    /// A legacy runtime key is safe to migrate directly only when its own
+    /// identity component is a serial or verified display UUID. An index-only
+    /// key can be reused for a different panel.
+    var hasStableDisplayKeyIdentity: Bool {
+        normalizedSerial != nil || normalizedSystemUUID != nil
+    }
+
+    /// Matches the identity component of a legacy `productName|identity` key
+    /// without trusting the product name, which may also change during a
+    /// display-parameter transition.
+    func legacyDisplayKeyMatchesStableIdentity(_ key: String) -> Bool {
+        guard let keyIdentity = key.split(separator: "|").last.map(String.init),
+              let normalizedKeyIdentity = normalizedIdentityValue(keyIdentity) else {
+            return false
+        }
+        return normalizedSerial == normalizedKeyIdentity || normalizedSystemUUID == normalizedKeyIdentity
     }
 
     /// Returns true only when the available stable identity agrees. A
@@ -149,18 +192,10 @@ struct ExternalDisplayInfo: Hashable, Sendable {
             return lhsUUID == rhsUUID
         }
 
-        // IO location is a useful last-resort bridge only when neither side
-        // exposes a stronger identity. Do not let two different serials or
-        // UUIDs on the same port inherit one another's accepted brightness.
-        guard normalizedSystemUUID == nil,
-              other.normalizedSystemUUID == nil,
-              normalizedSerial == nil,
-              other.normalizedSerial == nil,
-              let lhsLocation = normalizedIOLocation,
-              let rhsLocation = other.normalizedIOLocation else {
-            return false
-        }
-        return lhsLocation == rhsLocation
+        // Without a serial or verified display UUID there is no proof of
+        // panel continuity. In particular, never use a reused IO location or
+        // display index to transfer accepted brightness/settings.
+        return false
     }
 
     private var normalizedSystemUUID: String? {
@@ -169,10 +204,6 @@ struct ExternalDisplayInfo: Hashable, Sendable {
 
     private var normalizedSerial: String? {
         normalizedIdentityValue(serial)
-    }
-
-    private var normalizedIOLocation: String? {
-        normalizedIdentityValue(ioLocation)
     }
 
     private func normalizedIdentityValue(_ value: String?) -> String? {
@@ -189,6 +220,8 @@ struct ExternalDisplayInfo: Hashable, Sendable {
 
 @MainActor
 final class AmbientSyncStore: ObservableObject {
+    private static let physicalSettingsKeyPrefix = "physical:"
+
     @Published var preferences: AppPreferences {
         didSet { save() }
     }
@@ -221,72 +254,177 @@ final class AmbientSyncStore: ObservableObject {
         profile(id: settings(for: displayKey).selectedProfileID)
     }
 
+    func activeProfile(for display: ExternalDisplayInfo) -> AmbientSyncProfile {
+        profile(id: settings(for: display).selectedProfileID)
+    }
+
     func settings(for displayKey: String) -> DisplaySettings {
-        if let existing = preferences.displaySettingsByKey[displayKey] {
+        let resolvedKey = resolvedSettingsKey(for: displayKey)
+        if let existing = preferences.displaySettingsByKey[resolvedKey] {
             return existing
         }
-        return DisplaySettings(
-            selectedProfileID: AmbientSyncProfile.defaultProfiles[0].id,
-            calibration: .default,
-            lastBrightness: nil
-        )
+        return Self.defaultDisplaySettings()
+    }
+
+    /// Returns settings under the stable physical key when one is available.
+    /// The first access also performs a safe, one-way migration from a legacy
+    /// runtime display key so old brightness/profile/calibration data is not
+    /// stranded when macOS exposes the same panel under a new display key.
+    func settings(for display: ExternalDisplayInfo) -> DisplaySettings {
+        let key = canonicalizeSettings(for: display)
+        return preferences.displaySettingsByKey[key] ?? Self.defaultDisplaySettings()
     }
 
     func ensureSettings(for displayKey: String) -> DisplaySettings {
-        if let existing = preferences.displaySettingsByKey[displayKey] {
+        let resolvedKey = resolvedSettingsKey(for: displayKey)
+        if let existing = preferences.displaySettingsByKey[resolvedKey] {
             return existing
         }
-        let created = DisplaySettings(
-            selectedProfileID: AmbientSyncProfile.defaultProfiles[0].id,
-            calibration: .default,
-            lastBrightness: nil
-        )
+        let created = Self.defaultDisplaySettings()
         var updated = preferences
-        updated.displaySettingsByKey[displayKey] = created
+        updated.displaySettingsByKey[resolvedKey] = created
         preferences = updated
         return created
+    }
+
+    func ensureSettings(for display: ExternalDisplayInfo) -> DisplaySettings {
+        var updated = preferences
+        let key = prepareSettings(for: display, in: &updated)
+        if let existing = updated.displaySettingsByKey[key] {
+            if updated != preferences {
+                preferences = updated
+            }
+            return existing
+        }
+
+        let created = Self.defaultDisplaySettings()
+        updated.displaySettingsByKey[key] = created
+        preferences = updated
+        return created
+    }
+
+    /// Canonical key used only for durable per-display settings. DDC calls
+    /// continue to use `ExternalDisplayInfo.displayKey` as their operational
+    /// selector.
+    func storageKey(for display: ExternalDisplayInfo) -> String {
+        guard let fingerprint = display.durablePhysicalDisplayFingerprint else {
+            // Without a stable identity, retain the existing runtime-key
+            // isolation rather than guessing that two panels are the same.
+            return display.displayKey
+        }
+        return Self.physicalSettingsKey(for: fingerprint)
+    }
+
+    /// Records the runtime selector and the stable physical identity
+    /// independently. `previousDisplay` allows a running process to bridge a
+    /// fingerprint representation change (for example serial -> UUID) after
+    /// a display-parameter transition.
+    func setSelectedDisplay(
+        _ display: ExternalDisplayInfo,
+        previousDisplay: ExternalDisplayInfo? = nil
+    ) {
+        var updated = preferences
+        // On a cold start there is no in-memory previousDisplayInfo. Reuse
+        // only the last verified durable identity as the continuity witness;
+        // an IO location alone is intentionally never persisted as one.
+        let continuityDisplay = previousDisplay ?? updated.selectedDisplayIdentity
+
+        if let continuityDisplay,
+           continuityDisplay.isSamePhysicalDisplay(as: display) {
+            let previousKey = storageKey(for: continuityDisplay)
+            _ = prepareSettings(for: continuityDisplay, in: &updated)
+            let nextKey = prepareSettings(for: display, in: &updated)
+
+            if previousKey != nextKey {
+                if let previousSettings = updated.displaySettingsByKey[previousKey] {
+                    // A mode transition can leave behind a duplicate B
+                    // record, including a stale non-default brightness. The
+                    // settings attached to the currently active, verified
+                    // continuityDisplay are the winning state for this panel.
+                    updated.displaySettingsByKey[nextKey] = previousSettings
+                }
+                updated.displaySettingsByKey.removeValue(forKey: previousKey)
+            }
+        } else {
+            _ = prepareSettings(for: display, in: &updated)
+        }
+
+        updated.selectedDisplayKey = display.displayKey
+        updated.selectedDisplayFingerprint = display.durablePhysicalDisplayFingerprint
+        updated.selectedDisplayIdentity = display.durablePhysicalDisplayFingerprint == nil ? nil : display
+        if updated != preferences {
+            preferences = updated
+        }
     }
 
     func selectedDisplayKeyOrCreate(_ fallback: String) -> String {
         if let key = preferences.selectedDisplayKey {
             return key
         }
-        preferences.selectedDisplayKey = fallback
+        var updated = preferences
+        updated.selectedDisplayKey = fallback
+        updated.selectedDisplayFingerprint = nil
+        updated.selectedDisplayIdentity = nil
+        preferences = updated
         return fallback
     }
 
     func setSelectedDisplayKey(_ key: String) {
         var updated = preferences
         updated.selectedDisplayKey = key
+        // A raw runtime key carries no proof that it belongs to the previous
+        // physical display. Clear the durable alias until discovery supplies
+        // a verified ExternalDisplayInfo again.
+        updated.selectedDisplayFingerprint = nil
+        updated.selectedDisplayIdentity = nil
         preferences = updated
     }
 
     func setLastBrightness(_ value: Int?, for displayKey: String) {
-        var settings = ensureSettings(for: displayKey)
-        settings.lastBrightness = value
-        var updated = preferences
-        updated.displaySettingsByKey[displayKey] = settings
-        preferences = updated
+        let resolvedKey = resolvedSettingsKey(for: displayKey)
+        updateSettings(forStorageKey: resolvedKey) { settings in
+            settings.lastBrightness = value
+        }
+    }
+
+    func setLastBrightness(_ value: Int?, for display: ExternalDisplayInfo) {
+        updateSettings(for: display) { settings in
+            settings.lastBrightness = value
+        }
     }
 
     func lastBrightness(for displayKey: String) -> Int? {
         settings(for: displayKey).lastBrightness
     }
 
+    func lastBrightness(for display: ExternalDisplayInfo) -> Int? {
+        settings(for: display).lastBrightness
+    }
+
     func setSelectedProfileID(_ id: String, for displayKey: String) {
-        var settings = ensureSettings(for: displayKey)
-        settings.selectedProfileID = id
-        var updated = preferences
-        updated.displaySettingsByKey[displayKey] = settings
-        preferences = updated
+        let resolvedKey = resolvedSettingsKey(for: displayKey)
+        updateSettings(forStorageKey: resolvedKey) { settings in
+            settings.selectedProfileID = id
+        }
+    }
+
+    func setSelectedProfileID(_ id: String, for display: ExternalDisplayInfo) {
+        updateSettings(for: display) { settings in
+            settings.selectedProfileID = id
+        }
     }
 
     func setCalibration(_ calibration: DisplayCalibration, for displayKey: String) {
-        var settings = ensureSettings(for: displayKey)
-        settings.calibration = calibration
-        var updated = preferences
-        updated.displaySettingsByKey[displayKey] = settings
-        preferences = updated
+        let resolvedKey = resolvedSettingsKey(for: displayKey)
+        updateSettings(forStorageKey: resolvedKey) { settings in
+            settings.calibration = calibration
+        }
+    }
+
+    func setCalibration(_ calibration: DisplayCalibration, for display: ExternalDisplayInfo) {
+        updateSettings(for: display) { settings in
+            settings.calibration = calibration
+        }
     }
 
     func updateProfile(_ profile: AmbientSyncProfile) {
@@ -344,6 +482,119 @@ final class AmbientSyncStore: ObservableObject {
 
     func selectedProfileID(for displayKey: String) -> String {
         settings(for: displayKey).selectedProfileID
+    }
+
+    func selectedProfileID(for display: ExternalDisplayInfo) -> String {
+        settings(for: display).selectedProfileID
+    }
+
+    private static func defaultDisplaySettings() -> DisplaySettings {
+        DisplaySettings(
+            selectedProfileID: AmbientSyncProfile.defaultProfiles[0].id,
+            calibration: .default,
+            lastBrightness: nil
+        )
+    }
+
+    private static func physicalSettingsKey(for fingerprint: String) -> String {
+        "\(physicalSettingsKeyPrefix)\(fingerprint)"
+    }
+
+    private func resolvedSettingsKey(for displayKey: String) -> String {
+        // A selected runtime key may have already been migrated to its
+        // canonical physical key. Resolve that alias without allowing an
+        // unrelated runtime key to inherit another panel's settings.
+        if preferences.selectedDisplayKey == displayKey,
+           let fingerprint = preferences.selectedDisplayFingerprint {
+            let canonicalKey = Self.physicalSettingsKey(for: fingerprint)
+            if preferences.displaySettingsByKey[canonicalKey] != nil {
+                return canonicalKey
+            }
+        }
+        return displayKey
+    }
+
+    private func canonicalizeSettings(for display: ExternalDisplayInfo) -> String {
+        var updated = preferences
+        let key = prepareSettings(for: display, in: &updated)
+        if updated != preferences {
+            preferences = updated
+        }
+        return key
+    }
+
+    /// Prepares the settings key and migrates legacy values into it. The
+    /// selected-display fallback is accepted only when the persisted
+    /// fingerprint or legacy stable identity matches the newly discovered
+    /// physical identity.
+    @discardableResult
+    private func prepareSettings(
+        for display: ExternalDisplayInfo,
+        in updated: inout AppPreferences
+    ) -> String {
+        let canonicalKey = storageKey(for: display)
+        guard canonicalKey != display.displayKey else {
+            return canonicalKey
+        }
+
+        if updated.displaySettingsByKey[canonicalKey] == nil {
+            // A raw key containing the display's serial/UUID is safe to
+            // migrate directly. An index-only key is intentionally not: a
+            // different panel can be assigned the same index later.
+            if display.hasStableDisplayKeyIdentity,
+               let legacySettings = updated.displaySettingsByKey[display.displayKey] {
+                updated.displaySettingsByKey[canonicalKey] = legacySettings
+            } else if let selectedKey = updated.selectedDisplayKey,
+                      selectedKey != display.displayKey,
+                      ((display.durablePhysicalDisplayFingerprint != nil &&
+                        updated.selectedDisplayFingerprint == display.durablePhysicalDisplayFingerprint) ||
+                       display.legacyDisplayKeyMatchesStableIdentity(selectedKey)),
+                      let legacySettings = updated.displaySettingsByKey[selectedKey] {
+                // This is the safe restart bridge for a legacy A -> B key
+                // change: the old selected key and the new display both carry
+                // the same persisted physical fingerprint.
+                updated.displaySettingsByKey[canonicalKey] = legacySettings
+            }
+        }
+
+        guard updated.displaySettingsByKey[canonicalKey] != nil else {
+            return canonicalKey
+        }
+
+        if display.hasStableDisplayKeyIdentity {
+            updated.displaySettingsByKey.removeValue(forKey: display.displayKey)
+        }
+        if let selectedKey = updated.selectedDisplayKey,
+           selectedKey != canonicalKey,
+           ((display.durablePhysicalDisplayFingerprint != nil &&
+             updated.selectedDisplayFingerprint == display.durablePhysicalDisplayFingerprint) ||
+            display.legacyDisplayKeyMatchesStableIdentity(selectedKey)) {
+            updated.displaySettingsByKey.removeValue(forKey: selectedKey)
+        }
+        return canonicalKey
+    }
+
+    private func updateSettings(
+        forStorageKey storageKey: String,
+        _ mutate: (inout DisplaySettings) -> Void
+    ) {
+        var updated = preferences
+        var settings = updated.displaySettingsByKey[storageKey] ?? Self.defaultDisplaySettings()
+        mutate(&settings)
+        updated.displaySettingsByKey[storageKey] = settings
+        preferences = updated
+    }
+
+    private func updateSettings(
+        for display: ExternalDisplayInfo,
+        _ mutate: (inout DisplaySettings) -> Void
+    ) {
+        var updated = preferences
+        let storageKey = prepareSettings(for: display, in: &updated)
+        var settings = updated.displaySettingsByKey[storageKey] ?? Self.defaultDisplaySettings()
+        mutate(&settings)
+        updated.displaySettingsByKey[storageKey] = settings
+        preferences = updated
     }
 
     private func save() {

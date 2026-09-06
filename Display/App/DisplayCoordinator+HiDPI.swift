@@ -318,10 +318,11 @@ extension DisplayCoordinator {
     }
 
     func startCalibration() {
-        let key = activeDisplayKey
-        let settings = store.ensureSettings(for: key)
+        guard let display = currentDisplayInfo else { return }
+        let settings = store.ensureSettings(for: display)
         calibrationSession = CalibrationSession(
-            displayKey: key,
+            displayKey: display.displayKey,
+            displayIdentity: display,
             profileID: settings.selectedProfileID,
             step: .low,
             lowLux: nil,
@@ -367,8 +368,14 @@ extension DisplayCoordinator {
             return
         }
 
+        guard let display = currentDisplayInfo,
+              session.displayIdentity?.isSamePhysicalDisplay(as: display) == true else {
+            cancelCalibration()
+            return
+        }
+
         let calibration = DisplayCalibration(lowLux: lowLux, midLux: midLux, highLux: highLux)
-        store.setCalibration(calibration, for: session.displayKey)
+        store.setCalibration(calibration, for: display)
         calibrationSession = nil
         updateAutoBrightnessTitle()
         updateStatus("Calibration saved")

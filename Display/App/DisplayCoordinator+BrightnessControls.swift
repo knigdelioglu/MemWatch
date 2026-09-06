@@ -288,6 +288,7 @@ extension DisplayCoordinator {
               ),
               acceptsManualBrightnessWrite(generation) else { return }
         brightnessState.pendingManualBrightnessPercent = nil
+        let display = currentDisplayInfo
         let displayKey = activeDisplayKey
         let evidence = brightnessAutoWriteOutcomePlanner.observeManualLimiterEvidence(
             result: result,
@@ -309,7 +310,13 @@ extension DisplayCoordinator {
             let persistedBrightness = result.matchedTarget == true
                 ? (result.actualUIPercentAfter ?? result.readbackBrightnessPercent ?? clamped)
                 : clamped
-            store.setLastBrightness(persistedBrightness, for: displayKey)
+            if let display {
+                store.setLastBrightness(persistedBrightness, for: display)
+            } else {
+                // Keep the legacy runtime-key fallback only when discovery
+                // no longer has a physical identity to persist against.
+                store.setLastBrightness(persistedBrightness, for: displayKey)
+            }
             applyBrightnessWriteResult(requested: clamped, source: .quickPanelSlider, result: result)
             if evidence.limiterDetected {
                 brightnessLimiterCooldownDisplayKey = displayKey

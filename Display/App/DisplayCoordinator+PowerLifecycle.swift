@@ -101,7 +101,10 @@ extension DisplayCoordinator {
     func beginAmbientLightSensorRecovery(reason: String) {
         guard isRunning,
               displayPowerState == .active,
-              externalDisplayReadOperationsAllowed else { return }
+              externalDisplayReadOperationsAllowed,
+              !manualBrightnessInteractionActive,
+              brightnessState.pendingManualBrightnessPercent == nil,
+              !brightnessState.isManualOverrideActive else { return }
 
         guard brightnessCoordinator.reader != nil else {
             updateBrightnessState { state in
@@ -113,6 +116,7 @@ extension DisplayCoordinator {
 
         let powerGeneration = displayPowerGeneration
         let brightnessEpoch = brightnessControlEpoch
+        let manualBrightnessWriteGeneration = currentManualBrightnessWriteGeneration
         guard ambientLightSensorRecoveryEpoch != brightnessEpoch else { return }
 
         ambientLightSensorRecoveryTask?.cancel()
@@ -130,6 +134,19 @@ extension DisplayCoordinator {
 
         let delays = AmbientLightSensorRecoveryPolicy.retryDelaysNanoseconds
         ambientLightSensorRecoveryTask = Task { @MainActor [weak self] in
+            defer {
+                guard let self,
+                      self.ambientLightSensorRecoveryToken == token,
+                      self.ambientLightSensorRecoveryEpoch == brightnessEpoch else {
+                    return
+                }
+                // Manual interaction, a newer slider intent, or a lifecycle
+                // boundary can make this chain stale. Always release the
+                // epoch marker so a later normal tick may start a fresh,
+                // bounded recovery if the sensor is still unavailable.
+                self.ambientLightSensorRecoveryTask = nil
+                self.ambientLightSensorRecoveryEpoch = nil
+            }
             for (attempt, delay) in delays.enumerated() {
                 do {
                     if delay > 0 {
@@ -144,6 +161,7 @@ extension DisplayCoordinator {
                       self.acceptsAmbientLightSensorRecovery(
                           powerGeneration: powerGeneration,
                           brightnessEpoch: brightnessEpoch,
+                          manualBrightnessWriteGeneration: manualBrightnessWriteGeneration,
                           token: token
                       ) else {
                     return
@@ -154,6 +172,7 @@ extension DisplayCoordinator {
                 guard self.acceptsAmbientLightSensorRecovery(
                     powerGeneration: powerGeneration,
                     brightnessEpoch: brightnessEpoch,
+                    manualBrightnessWriteGeneration: manualBrightnessWriteGeneration,
                     token: token
                 ) else {
                     return
@@ -176,6 +195,7 @@ extension DisplayCoordinator {
                         lux: lux,
                         powerGeneration: powerGeneration,
                         brightnessEpoch: brightnessEpoch,
+                        manualBrightnessWriteGeneration: manualBrightnessWriteGeneration,
                         token: token
                     )
                 }
@@ -189,6 +209,7 @@ extension DisplayCoordinator {
                   self.acceptsAmbientLightSensorRecovery(
                       powerGeneration: powerGeneration,
                       brightnessEpoch: brightnessEpoch,
+                      manualBrightnessWriteGeneration: manualBrightnessWriteGeneration,
                       token: token
                   ) else {
                 return
@@ -216,6 +237,7 @@ extension DisplayCoordinator {
     private func acceptsAmbientLightSensorRecovery(
         powerGeneration: UInt64,
         brightnessEpoch: UInt64,
+        manualBrightnessWriteGeneration: UInt64,
         token: UInt64
     ) -> Bool {
         !Task.isCancelled &&
@@ -223,6 +245,10 @@ extension DisplayCoordinator {
             displayPowerState == .active &&
             displayPowerGeneration == powerGeneration &&
             brightnessControlEpoch == brightnessEpoch &&
+            acceptsManualBrightnessWrite(manualBrightnessWriteGeneration) &&
+            !manualBrightnessInteractionActive &&
+            brightnessState.pendingManualBrightnessPercent == nil &&
+            !brightnessState.isManualOverrideActive &&
             ambientLightSensorRecoveryToken == token &&
             externalDisplayReadOperationsAllowed
     }
@@ -234,15 +260,19 @@ extension DisplayCoordinator {
         lux: Double,
         powerGeneration: UInt64,
         brightnessEpoch: UInt64,
+        manualBrightnessWriteGeneration: UInt64,
         token: UInt64
     ) async {
         for _ in 0..<5 {
             guard acceptsAmbientLightSensorRecovery(
-                      powerGeneration: powerGeneration,
-                      brightnessEpoch: brightnessEpoch,
-                      token: token
-                  ),
-                  externalDisplayInteractiveOperationsAllowed else {
+                powerGeneration: powerGeneration,
+                brightnessEpoch: brightnessEpoch,
+                manualBrightnessWriteGeneration: manualBrightnessWriteGeneration,
+                token: token
+            ),
+                  externalDisplayInteractiveOperationsAllowed,
+                  !manualBrightnessInteractionActive,
+                  brightnessState.pendingManualBrightnessPercent == nil else {
                 return
             }
             guard !isTickRunning else {

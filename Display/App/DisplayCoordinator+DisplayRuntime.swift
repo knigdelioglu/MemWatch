@@ -79,8 +79,8 @@ extension DisplayCoordinator {
         )
         if let display = discoveredDisplay {
             publishCurrentDisplayInfo(display, reason: "writer.refreshDisplay non-nil")
-            store.setSelectedDisplayKey(display.displayKey)
             let samePhysicalDisplay = previousDisplayInfo?.isSamePhysicalDisplay(as: display) ?? false
+            store.setSelectedDisplay(display, previousDisplay: previousDisplayInfo)
             let physicalIdentityChanged = previousDisplayInfo.map {
                 $0.hasStablePhysicalIdentity &&
                     display.hasStablePhysicalIdentity &&
@@ -126,7 +126,7 @@ extension DisplayCoordinator {
                         // display-mode transitions keep the command captured
                         // by beginBrightnessControlEpoch().
                         state.commandedBrightnessPercent = nil
-                        state.persistedBrightnessPercent = store.lastBrightness(for: display.displayKey)
+                        state.persistedBrightnessPercent = store.lastBrightness(for: display)
                     }
                     if previousDisplayInfo != nil {
                         state.transitionPreviousReadbackPercent = nil
@@ -145,7 +145,7 @@ extension DisplayCoordinator {
                 // The persisted value is the only safe presentation fallback.
                 // A fresh-looking but unverified transition sample must not
                 // become the fallback merely because it was returned by DDC.
-                let fallback = store.lastBrightness(for: display.displayKey)
+                let fallback = store.lastBrightness(for: display)
                 applyBrightnessReadback(readback, requestedFallback: fallback)
                 lastBrightnessReadDate = Date()
             }
@@ -419,7 +419,7 @@ extension DisplayCoordinator {
                         }
                     }
                 }
-                applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display.displayKey))
+                applyBrightnessReadback(readback, requestedFallback: store.lastBrightness(for: display))
             }
 
             guard acceptsDisplayPowerGeneration(powerGeneration),

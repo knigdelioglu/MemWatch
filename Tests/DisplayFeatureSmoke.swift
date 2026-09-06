@@ -20,6 +20,7 @@ struct DisplayFeatureSmoke {
         testTargetDisplayReadinessFailClosed()
         testDisplayOperationGates()
         testKeepAwakeStatePersistence()
+        testPhysicalDisplaySettingsContinuity()
         testPollingSchedulerOwnership()
         testPreferencesMigration()
         testDisplayConnectionIntentMigration()
@@ -938,8 +939,139 @@ struct DisplayFeatureSmoke {
         )
         precondition(!oldPanelOnSamePort.isSamePhysicalDisplay(as: differentPanelOnSamePort))
         precondition(fallbackIdentity.physicalDisplayFingerprint == "uuid:uuid-43")
+        let unverifiedPanelA = ExternalDisplayInfo(
+            displayIndex: "12",
+            displayID: 12,
+            productName: "Samsung S60UD",
+            serial: nil,
+            systemUUID: nil,
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        let unverifiedPanelB = ExternalDisplayInfo(
+            displayIndex: "13",
+            displayID: 13,
+            productName: "Samsung S60UD",
+            serial: nil,
+            systemUUID: nil,
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        precondition(unverifiedPanelA.physicalDisplayFingerprint == nil)
+        precondition(!unverifiedPanelA.isSamePhysicalDisplay(as: unverifiedPanelB))
         precondition(DisplayConnectionIdentity.samsungS60UD.vendorID == 0x4C2D)
         precondition(DisplayConnectionIdentity.samsungS60UD.productID == 0x76AB)
+    }
+
+    @MainActor
+    private static func testPhysicalDisplaySettingsContinuity() {
+        let defaults = UserDefaults.standard
+        let previousPreferencesData = defaults.data(forKey: AppPreferences.storageKey)
+        let previousPreferencesMigrationVersion = defaults.object(forKey: DisplayPreferencesMigration.versionKey)
+        defer {
+            if let previousPreferencesData {
+                defaults.set(previousPreferencesData, forKey: AppPreferences.storageKey)
+            } else {
+                defaults.removeObject(forKey: AppPreferences.storageKey)
+            }
+            if let previousPreferencesMigrationVersion {
+                defaults.set(previousPreferencesMigrationVersion, forKey: DisplayPreferencesMigration.versionKey)
+            } else {
+                defaults.removeObject(forKey: DisplayPreferencesMigration.versionKey)
+            }
+        }
+        defaults.removeObject(forKey: AppPreferences.storageKey)
+        // Prevent the process-wide legacy-suite migration from repopulating
+        // the real app's preferences while this isolated persistence test
+        // exercises the supplied in-memory seed.
+        defaults.set(DisplayPreferencesMigration.currentVersion, forKey: DisplayPreferencesMigration.versionKey)
+
+        let sdrDisplay = ExternalDisplayInfo(
+            displayIndex: "1",
+            displayID: 1,
+            productName: "Samsung S60UD",
+            serial: "SN-42",
+            systemUUID: "uuid-42",
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        let hdrDisplay = ExternalDisplayInfo(
+            displayIndex: "9",
+            displayID: 9,
+            productName: "LS32D60xU",
+            // Simulate the mode-transition representation changing from a
+            // serial-backed key to a display-UUID-backed key.
+            serial: nil,
+            systemUUID: "uuid-42",
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        let differentDisplay = ExternalDisplayInfo(
+            displayIndex: "1",
+            displayID: 1,
+            productName: "Samsung S60UD",
+            serial: "SN-99",
+            systemUUID: "uuid-99",
+            ioLocation: "IOService:/DisplayPort-1"
+        )
+        let calibration = DisplayCalibration(lowLux: 8, midLux: 240, highLux: 880)
+        let selectedProfileID = AmbientSyncProfile.defaultProfiles[4].id
+
+        // Start with the legacy A-key shape to prove that the first discovery
+        // migrates it before the runtime key can change to B.
+        var legacyPreferences = AppPreferences.default()
+        legacyPreferences.selectedDisplayKey = sdrDisplay.displayKey
+        legacyPreferences.displaySettingsByKey[sdrDisplay.displayKey] = DisplaySettings(
+            selectedProfileID: selectedProfileID,
+            calibration: calibration,
+            lastBrightness: 66
+        )
+        // Simulate a duplicate runtime-B entry left by a mode transition
+        // before the stable physical storage key is known. Its 66% value is
+        // stale once A accepts the user's later 90% command.
+        legacyPreferences.displaySettingsByKey[hdrDisplay.displayKey] = DisplaySettings(
+            selectedProfileID: AmbientSyncProfile.defaultProfiles[0].id,
+            calibration: .default,
+            lastBrightness: 66
+        )
+        let store = AmbientSyncStore(preferences: legacyPreferences)
+        store.setSelectedDisplay(sdrDisplay)
+        let canonicalKey = store.storageKey(for: sdrDisplay)
+        precondition(canonicalKey.hasPrefix("physical:"))
+        precondition(store.preferences.displaySettingsByKey[sdrDisplay.displayKey] == nil)
+        let migratedSettings = store.settings(for: sdrDisplay)
+        precondition(migratedSettings.lastBrightness == 66)
+
+        store.setSelectedProfileID(selectedProfileID, for: sdrDisplay)
+        store.setCalibration(calibration, for: sdrDisplay)
+        store.setLastBrightness(90, for: sdrDisplay)
+        let persistedSDRPreferences = store.preferences
+        store.setSelectedDisplay(hdrDisplay, previousDisplay: sdrDisplay)
+        precondition(store.lastBrightness(for: hdrDisplay) == 90)
+        precondition(store.settings(for: hdrDisplay).calibration == calibration)
+        precondition(store.selectedProfileID(for: hdrDisplay) == selectedProfileID)
+        store.setLastBrightness(90, for: hdrDisplay)
+
+        precondition(store.lastBrightness(for: hdrDisplay) == 90)
+        precondition(store.settings(for: hdrDisplay).calibration == calibration)
+        precondition(store.selectedProfileID(for: hdrDisplay) == selectedProfileID)
+
+        // Recreate the store from UserDefaults: B must resolve the same
+        // physical record, while a different panel with the same model and
+        // port must receive isolated defaults.
+        let restartedStore = AmbientSyncStore(preferences: .default())
+        precondition(restartedStore.preferences.selectedDisplayKey == hdrDisplay.displayKey)
+        precondition(restartedStore.lastBrightness(for: hdrDisplay) == 90)
+        precondition(restartedStore.settings(for: hdrDisplay).calibration == calibration)
+        precondition(restartedStore.selectedProfileID(for: hdrDisplay) == selectedProfileID)
+        precondition(restartedStore.settings(for: differentDisplay).lastBrightness == nil)
+        precondition(restartedStore.settings(for: differentDisplay).calibration == .default)
+
+        // Cold-start the same panel in the alternate representation. The
+        // persisted complete identity must bridge serial-backed A to
+        // UUID-backed B even when there is no in-memory previous display.
+        defaults.set(try! JSONEncoder().encode(persistedSDRPreferences), forKey: AppPreferences.storageKey)
+        let coldStartStore = AmbientSyncStore(preferences: .default())
+        coldStartStore.setSelectedDisplay(hdrDisplay)
+        precondition(coldStartStore.lastBrightness(for: hdrDisplay) == 90)
+        precondition(coldStartStore.settings(for: hdrDisplay).calibration == calibration)
+        precondition(coldStartStore.selectedProfileID(for: hdrDisplay) == selectedProfileID)
     }
 
     private static func testKeepAwakeStatePersistence() {

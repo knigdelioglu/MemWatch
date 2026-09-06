@@ -565,6 +565,22 @@ actor M1DDCWriter {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func validatedDisplayIdentity(_ display: ExternalDisplayInfo) -> ExternalDisplayInfo {
+        guard let systemUUID = display.systemUUID,
+              !systemUUID.isEmpty else {
+            return display
+        }
+
+        guard let displayID = display.displayID,
+              let coreGraphicsUUID = coreGraphicsDisplayUUID(for: displayID),
+              systemUUID.caseInsensitiveCompare(coreGraphicsUUID) == .orderedSame else {
+            var sanitized = display
+            sanitized.systemUUID = nil
+            return sanitized
+        }
+        return display
+    }
+
     private static func selectDisplay(
         _ displays: [ExternalDisplayInfo],
         preferredKey: String?
@@ -579,8 +595,8 @@ actor M1DDCWriter {
         if !display.displayIndex.isEmpty, !display.displayIndex.hasPrefix("id:") {
             // This is the selector used by the original AmbientSync
             // implementation and is the index emitted by `display list
-            // detailed`. Keep the operational selector separate from the
-            // stable display identity stored in displayKey.
+            // detailed`. Keep this operational selector separate from the
+            // stable identity used by AmbientSyncStore's settings key.
             return display.displayIndex
         }
 
@@ -635,7 +651,13 @@ actor M1DDCWriter {
         guard acceptsOperation(expectedGeneration, targetContext: targetContext) else { return [] }
         lastDiscoveryDate = now
         guard result.success else { return cachedDisplays }
-        let parsed = Self.parseDisplays(result.output)
+        // m1ddc labels this field "System UUID". Treat it as a physical
+        // display identity only when it is exactly the UUID CoreGraphics
+        // assigns to that display ID. A host/Mac UUID must never become a
+        // shared settings or continuity key for multiple panels.
+        let parsed = Self.parseDisplays(result.output).map {
+            Self.validatedDisplayIdentity($0)
+        }
         if !parsed.isEmpty {
             cachedDisplays = parsed
         } else {
