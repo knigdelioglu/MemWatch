@@ -87,13 +87,21 @@ extension DisplayCoordinator {
     /// target transition. Values from the previous mode can remain only as a
     /// presentation fallback. An accepted command may remain as logical user
     /// intent, but its readback confidence and hardware truth are reset.
-    func beginBrightnessControlEpoch(reason: String) {
+    func beginBrightnessControlEpoch(
+        reason: String,
+        requiresAutomaticReapply: Bool = false,
+        preserveManualOverride: Bool = false
+    ) {
         cancelAmbientLightSensorRecovery()
         brightnessControlEpoch &+= 1
         brightnessAutoWriteOutcomePlanner.resetLimiterEvidence()
         manualBrightnessWriteTask?.cancel()
         manualBrightnessWriteTask = nil
         invalidateManualBrightnessWrites()
+        Task { await brightnessCoordinator.writer.cancelInFlightOperations() }
+        let hadManualOverride = brightnessState.isManualOverrideActive
+            || manualBrightnessOverrideStartLux != nil
+            || manualBrightnessOverrideUntil > Date()
         let previousCommandedBrightness = brightnessState.commandedBrightnessPercent
         let presentationFallback = previousCommandedBrightness
             ?? brightnessState.persistedBrightnessPercent
@@ -101,7 +109,6 @@ extension DisplayCoordinator {
         let previousEpochReadback = brightnessState.lastDDCReadbackPercent
             ?? brightnessState.lastConfirmedBrightnessPercent
             ?? brightnessState.actualDDCBrightnessPercent
-            ?? brightnessState.persistedBrightnessPercent
         let displayKey = currentDisplayInfo?.displayKey
         luxFilter.reset()
         lastSmoothedLux = nil
@@ -157,12 +164,20 @@ extension DisplayCoordinator {
             state.mismatchStreak = 0
             state.limiterDetected = false
             state.isDDCReadbackAvailable = false
-            state.isManualOverrideActive = false
-            state.isAutoBrightnessEnabled = autoBrightnessEnabled && calibrationSession == nil
+            state.isManualOverrideActive = preserveManualOverride && hadManualOverride
+            state.isAutoBrightnessEnabled = autoBrightnessEnabled
+                && calibrationSession == nil
+                && !(preserveManualOverride && hadManualOverride)
             state.lastBrightnessSource = .transition
             state.isBrightnessWriteSuppressed = false
             state.lastSuppressionReason = nil
             state.suppressionReason = nil
+            state.transitionReapplyEpoch = requiresAutomaticReapply ? brightnessControlEpoch : nil
+            state.needsAutoBrightnessReapplyAfterTransition = requiresAutomaticReapply
+            state.transitionReapplyStatus = requiresAutomaticReapply ? .pending : .notNeeded
+            state.transitionReapplyAttemptCount = 0
+            state.transitionReapplyTargetPercent = nil
+            state.transitionReapplyFailureMessage = nil
         }
 
         manualBrightnessInteractionActive = false
@@ -170,8 +185,10 @@ extension DisplayCoordinator {
         brightnessLimiterCooldownUntil = .distantPast
         mismatchIntervalsCount = 0
         pendingTargetCandidate = nil
-        manualBrightnessOverrideStartLux = nil
-        manualBrightnessOverrideUntil = .distantPast
+        if !preserveManualOverride || !hadManualOverride {
+            manualBrightnessOverrideStartLux = nil
+            manualBrightnessOverrideUntil = .distantPast
+        }
         lastBrightnessReadDate = .distantPast
         lastSentBrightness = nil
         currentBrightness = nil
@@ -179,7 +196,8 @@ extension DisplayCoordinator {
             "brightness epoch reset reason=\(reason) displayKey=\(displayKey ?? "nil") " +
                 "presentationFallback=\(presentationFallback.map(String.init) ?? "nil") " +
                 "ddcCacheReset=true " +
-                "readbackReliability=\(BrightnessReadbackReliability.transitionUnverified.rawValue)"
+                "readbackReliability=\(BrightnessReadbackReliability.transitionUnverified.rawValue) " +
+                "autoReapply=\(requiresAutomaticReapply)"
         )
     }
 
@@ -239,8 +257,7 @@ extension DisplayCoordinator {
         guard brightnessState.pendingManualBrightnessPercent == nil else { return }
         expireOptimisticBrightnessIfNeeded()
         let now = Date()
-        let readbackTolerance = 3
-        let requiredTransitionSamples = 2
+        let readbackTolerance = BrightnessReadbackConfirmationPolicy.tolerance
         let limiterCooldownIsActive = brightnessLimiterCooldownDisplayKey != nil
             && now < brightnessLimiterCooldownUntil
         var didConfirmReadback = false
@@ -325,20 +342,7 @@ extension DisplayCoordinator {
                     // simply repeats the value from before HDR/SDR.
                     state.optimisticReadbackAttempts += 1
                     state.readbackReliability = .uncertainAfterWrite
-                    state.transitionReadbackSampleCount += 1
-                    if let candidate = state.transitionReadbackCandidatePercent,
-                       abs(readback - candidate) <= readbackTolerance {
-                        state.transitionReadbackStableCount += 1
-                    } else {
-                        state.transitionReadbackCandidatePercent = readback
-                        state.transitionReadbackStableCount = 1
-                    }
-
-                    let differsFromPreviousState = state.transitionPreviousReadbackPercent.map {
-                        abs(readback - $0) > readbackTolerance
-                    } ?? true
-                    if state.transitionReadbackStableCount >= requiredTransitionSamples,
-                       differsFromPreviousState {
+                    if state.recordTransitionReadbackConfirmation(readback) {
                         state.actualDDCBrightnessPercent = readback
                         state.lastConfirmedBrightnessPercent = readback
                         state.persistedBrightnessPercent = readback
@@ -356,20 +360,7 @@ extension DisplayCoordinator {
                     }
                 }
             } else if state.readbackReliability == .transitionUnverified {
-                state.transitionReadbackSampleCount += 1
-                if let candidate = state.transitionReadbackCandidatePercent,
-                   abs(readback - candidate) <= readbackTolerance {
-                    state.transitionReadbackStableCount += 1
-                } else {
-                    state.transitionReadbackCandidatePercent = readback
-                    state.transitionReadbackStableCount = 1
-                }
-
-                let differsFromPreviousEpoch = state.transitionPreviousReadbackPercent.map {
-                    abs(readback - $0) > readbackTolerance
-                } ?? true
-                if state.transitionReadbackStableCount >= requiredTransitionSamples,
-                   differsFromPreviousEpoch {
+                if state.recordTransitionReadbackConfirmation(readback) {
                     state.actualDDCBrightnessPercent = readback
                     state.lastConfirmedBrightnessPercent = readback
                     state.persistedBrightnessPercent = readback
@@ -404,6 +395,32 @@ extension DisplayCoordinator {
             if !limiterCooldownIsActive {
                 brightnessLimiterCooldownDisplayKey = nil
                 brightnessLimiterCooldownUntil = .distantPast
+            }
+
+            let confirmedBrightness = brightnessState.authoritativeDDCBrightnessPercent
+            let expectedTransitionBrightness = brightnessState.transitionReapplyTargetPercent
+                ?? brightnessState.autoTargetBrightnessPercent
+            if brightnessState.transitionReapplyEpoch == brightnessControlEpoch,
+               let confirmedBrightness,
+               let expectedTransitionBrightness,
+               BrightnessReadbackConfirmationPolicy.isWithinTolerance(
+                   confirmedBrightness,
+                   expectedTransitionBrightness
+               ) {
+                updateBrightnessState { state in
+                    state.needsAutoBrightnessReapplyAfterTransition = false
+                    state.transitionReapplyStatus = .complete
+                    state.transitionReapplyFailureMessage = nil
+                }
+            } else if brightnessState.transitionReapplyEpoch == brightnessControlEpoch,
+                      brightnessState.transitionReapplyStatus == .awaitingConfirmation,
+                      let confirmedBrightness,
+                      let expectedTransitionBrightness {
+                updateBrightnessState { state in
+                    state.transitionReapplyStatus = .failed
+                    state.transitionReapplyFailureMessage =
+                        "Reliable DDC readback is \(confirmedBrightness)%; expected \(expectedTransitionBrightness)%"
+                }
             }
         }
         currentBrightness = brightnessState.uiSliderBrightnessPercent
@@ -645,6 +662,10 @@ extension DisplayCoordinator {
         fields.append("DDC actual: \(brightnessActualText)")
         fields.append("Last source: \(brightnessLastSourceText)")
         fields.append("Readback: \(brightnessReadbackText)")
+        fields.append("Reapply: \(brightnessState.transitionReapplyStatus.rawValue)")
+        if let failure = brightnessState.transitionReapplyFailureMessage {
+            fields.append("Reapply error: \(failure)")
+        }
         return fields.joined(separator: " · ")
     }
 

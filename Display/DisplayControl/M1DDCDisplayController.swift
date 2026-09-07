@@ -122,6 +122,20 @@ private struct M1DDCTargetOperationContext: Sendable {
     let displayID: CGDirectDisplayID
 }
 
+enum M1DDCBrightnessRawMaxRecoveryPolicy {
+    /// The first entry is the immediate read already attempted by
+    /// `setBrightness`. Later entries are the only bounded retries. Keeping
+    /// this policy data-only makes the retry contract testable without a
+    /// physical monitor.
+    static let attemptDelaysNanoseconds: [UInt64] = [
+        0,
+        250_000_000,
+        500_000_000,
+        1_000_000_000,
+        2_000_000_000
+    ]
+}
+
 actor M1DDCWriter {
     private static let targetMonitorNames = ["S60UD", "LS32D60", "LS32D60xU"]
     private static let fallbackMonitorName = "Samsung"
@@ -132,6 +146,7 @@ actor M1DDCWriter {
     private let operationGate: DisplayPowerOperationGate
     private let targetOperationGate: TargetDisplayOperationGate
     private var inFlightProcessHandles: [ObjectIdentifier: M1DDCProcessHandle] = [:]
+    private var brightnessWriteCancellationGeneration: UInt64 = 0
 
     private let executableLocator: M1DDCExecutableLocator
     private var executableURL: URL?
@@ -167,8 +182,11 @@ actor M1DDCWriter {
     /// boundary. This complements cancellation of coordinator-owned tasks and
     /// prevents a diagnostic or refresh task from leaving m1ddc running into
     /// sleep.
-    func cancelInFlightOperations() {
+    @discardableResult
+    func cancelInFlightOperations() -> UInt64 {
+        brightnessWriteCancellationGeneration &+= 1
         inFlightProcessHandles.values.forEach { $0.cancel() }
+        return brightnessWriteCancellationGeneration
     }
 
     func refreshDisplay(preferredKey: String?) async -> ExternalDisplayInfo? {
@@ -297,13 +315,18 @@ actor M1DDCWriter {
         return lastKnownVolumeByDisplay[display.displayKey]
     }
 
-    func setBrightness(_ percent: Int, preferredKey: String? = nil) async -> M1DDCBrightnessWriteResult {
+    func setBrightness(
+        _ percent: Int,
+        preferredKey: String? = nil,
+        expectedCancellationGeneration: UInt64? = nil
+    ) async -> M1DDCBrightnessWriteResult {
         let clamped = min(100, max(0, percent))
         let operationGeneration = operationGate.currentGeneration()
         guard operationGate.accepts(operationGeneration),
               let targetContext = currentTargetOperationContext() else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
+        let cancellationGeneration = expectedCancellationGeneration ?? brightnessWriteCancellationGeneration
         let display = await selectDisplay(
             preferredKey: preferredKey,
             expectedGeneration: operationGeneration,
@@ -332,7 +355,8 @@ actor M1DDCWriter {
             clamped,
             for: display,
             expectedGeneration: operationGeneration,
-            targetContext: targetContext
+            targetContext: targetContext,
+            cancellationGeneration: cancellationGeneration
         )
         if firstResult.writeAccepted {
             return firstResult
@@ -352,7 +376,8 @@ actor M1DDCWriter {
             clamped,
             for: refreshed,
             expectedGeneration: operationGeneration,
-            targetContext: targetContext
+            targetContext: targetContext,
+            cancellationGeneration: cancellationGeneration
         )
     }
 
@@ -803,20 +828,40 @@ actor M1DDCWriter {
         _ clamped: Int,
         for display: ExternalDisplayInfo,
         expectedGeneration: UInt64,
-        targetContext: M1DDCTargetOperationContext
+        targetContext: M1DDCTargetOperationContext,
+        cancellationGeneration: UInt64
     ) async -> M1DDCBrightnessWriteResult {
         let selector = Self.ddcSelector(for: display)
         guard acceptsOperation(expectedGeneration, targetContext: targetContext),
               !selector.isEmpty else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
-        let beforeSample = await readBrightnessSample(
-            displayIndex: selector,
-            expectedGeneration: expectedGeneration,
-            targetContext: targetContext
-        )
-        guard acceptsOperation(expectedGeneration, targetContext: targetContext) else {
-            return Self.suspendedBrightnessWriteResult(for: clamped)
+        var beforeSample: DDCBrightnessRawSample?
+        for (attempt, delay) in M1DDCBrightnessRawMaxRecoveryPolicy.attemptDelaysNanoseconds.enumerated() {
+            if attempt > 0 {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return Self.suspendedBrightnessWriteResult(for: clamped)
+                }
+            }
+            guard !Task.isCancelled,
+                  acceptsOperation(expectedGeneration, targetContext: targetContext),
+                  brightnessWriteCancellationGeneration == cancellationGeneration else {
+                return Self.suspendedBrightnessWriteResult(for: clamped)
+            }
+            beforeSample = await readBrightnessSample(
+                displayIndex: selector,
+                expectedGeneration: expectedGeneration,
+                targetContext: targetContext
+            )
+            guard acceptsOperation(expectedGeneration, targetContext: targetContext),
+                  brightnessWriteCancellationGeneration == cancellationGeneration else {
+                return Self.suspendedBrightnessWriteResult(for: clamped)
+            }
+            if beforeSample?.rawMax != nil {
+                break
+            }
         }
         guard let rawMax = beforeSample?.rawMax else {
             return M1DDCBrightnessWriteResult(
@@ -842,7 +887,8 @@ actor M1DDCWriter {
             expectedGeneration: expectedGeneration,
             targetContext: targetContext
         )
-        guard acceptsOperation(expectedGeneration, targetContext: targetContext) else {
+        guard acceptsOperation(expectedGeneration, targetContext: targetContext),
+              brightnessWriteCancellationGeneration == cancellationGeneration else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
         guard result.success else {
@@ -866,7 +912,9 @@ actor M1DDCWriter {
         } catch {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
-        guard !Task.isCancelled, acceptsOperation(expectedGeneration, targetContext: targetContext) else {
+        guard !Task.isCancelled,
+              acceptsOperation(expectedGeneration, targetContext: targetContext),
+              brightnessWriteCancellationGeneration == cancellationGeneration else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
         let afterSample = await readBrightnessSample(
@@ -874,7 +922,8 @@ actor M1DDCWriter {
             expectedGeneration: expectedGeneration,
             targetContext: targetContext
         )
-        guard acceptsOperation(expectedGeneration, targetContext: targetContext) else {
+        guard acceptsOperation(expectedGeneration, targetContext: targetContext),
+              brightnessWriteCancellationGeneration == cancellationGeneration else {
             return Self.suspendedBrightnessWriteResult(for: clamped)
         }
         guard let rawAfter = afterSample?.rawCurrent else {

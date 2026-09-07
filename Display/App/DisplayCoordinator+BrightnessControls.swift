@@ -280,7 +280,12 @@ extension DisplayCoordinator {
         let powerGeneration = displayPowerGeneration
         let targetSnapshot = targetDisplayOperationGate.snapshot()
         guard let targetDisplayID = targetSnapshot.displayID else { return }
-        let result = await brightnessCoordinator.writer.setBrightness(clamped, preferredKey: activeDisplayKey)
+        let cancellationGeneration = await brightnessCoordinator.writer.cancelInFlightOperations()
+        let result = await brightnessCoordinator.writer.setBrightness(
+            clamped,
+            preferredKey: activeDisplayKey,
+            expectedCancellationGeneration: cancellationGeneration
+        )
         guard acceptsDisplayPowerGeneration(powerGeneration),
               targetDisplayOperationGate.accepts(
                   targetSnapshot.generation,
@@ -391,6 +396,7 @@ extension DisplayCoordinator {
         manualBrightnessWriteTask?.cancel()
         manualBrightnessWriteTask = nil
         invalidateManualBrightnessWrites()
+        Task { await brightnessCoordinator.writer.cancelInFlightOperations() }
         brightnessState.pendingManualBrightnessPercent = nil
         manualBrightnessInteractionActive = false
         guard autoBrightnessEnabled != enabled else { return }

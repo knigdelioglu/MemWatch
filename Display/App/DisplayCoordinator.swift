@@ -260,6 +260,17 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
             }
         }
         observerTokens.append((NotificationCenter.default, screenChangeToken))
+
+        let colorSpaceChangeToken = NotificationCenter.default.addObserver(
+            forName: NSScreen.colorSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleDisplayChangeEvent()
+            }
+        }
+        observerTokens.append((NotificationCenter.default, colorSpaceChangeToken))
     }
 
 

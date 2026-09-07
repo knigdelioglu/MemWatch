@@ -88,7 +88,11 @@ extension DisplayCoordinator {
             } ?? false
             let displayIdentityChanged = display.displayKey != previousDisplayKey || physicalIdentityChanged
             if displayIdentityChanged {
-                beginBrightnessControlEpoch(reason: "display identity changed")
+                beginBrightnessControlEpoch(
+                    reason: "display identity changed",
+                    requiresAutomaticReapply: previousDisplayInfo != nil,
+                    preserveManualOverride: true
+                )
                 brightnessEpoch = brightnessControlEpoch
                 let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
                 traceRuntime(
@@ -108,7 +112,9 @@ extension DisplayCoordinator {
                 lastWriteDate = .distantPast
                 lastBrightnessReadDate = .distantPast
                 lastDisplaySearchDate = Date()
-                clearManualBrightnessOverride()
+                if !samePhysicalDisplay {
+                    clearManualBrightnessOverride()
+                }
                 brightnessLimiterCooldownDisplayKey = nil
                 brightnessLimiterCooldownUntil = .distantPast
                 currentVolume = nil

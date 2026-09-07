@@ -17,6 +17,7 @@ struct MergeArchitectureContractTests {
         let displayComposition = try read("Display/App/DisplayFeatureComposition.swift", root: root)
         let displayFeatures = try read("Display/App/DisplayCoordinator+Features.swift", root: root)
         let displayBrightnessRuntime = try read("Display/App/DisplayCoordinator+BrightnessRuntime.swift", root: root)
+        let brightnessState = try read("Display/DisplayControl/Brightness/BrightnessState.swift", root: root)
         let privateBackend = try read("Display/DisplayControl/PrivateDisplayConnectionBackend.swift", root: root)
         let migrationRuntime = try read("Display/App/LegacyAmbientSyncMigration.swift", root: root)
         let hiDPIReapply = try read("Display/DisplayControl/HiDPIReapplyService.swift", root: root)
@@ -237,8 +238,25 @@ struct MergeArchitectureContractTests {
             && displayCoordinator.contains("didWakeNotification")
             && displayCoordinator.contains("screensDidWakeNotification")
             && displayCoordinator.contains("didChangeScreenParametersNotification")
+            && displayCoordinator.contains("NSScreen.colorSpaceDidChangeNotification")
+            && displayCoordinator.contains("observerTokens.append")
             && displayCoordinator.contains("acceptsDisplayPowerGeneration"),
-               "DisplayCoordinator must observe every power boundary and reject stale async completions")
+               "DisplayCoordinator must observe every power/color-space boundary and reject stale async completions")
+        expect(brightnessState.contains("authoritativeBrightnessForAutomaticControl")
+            && brightnessState.contains("recordTransitionReadbackConfirmation")
+            && brightnessState.contains("transitionReapplyEpoch")
+            && brightnessState.contains("needsAutoBrightnessReapplyAfterTransition"),
+               "Brightness state must separate logical intent, authoritative hardware truth, and transition reapply state")
+        expect(displayBrightnessRuntime.contains("BrightnessTransitionReapplyPolicy.isEligible")
+            && displayBrightnessRuntime.contains("forceTransitionReapply")
+            && displayBrightnessRuntime.contains("authoritativeBrightnessForAutomaticControl")
+            && displayBrightnessRuntime.contains("isTransitionReapply"),
+               "Automatic brightness must use only reliable hardware reference and a guarded one-shot transition reapply")
+        expect(displayComposition.contains("private(set) var reader")
+            && displayComposition.contains("ensureAmbientLightSensor")
+            && displayComposition.contains("recreateAmbientLightSensor")
+            && displayComposition.contains("recoverAmbientLightSensor"),
+               "ALS recovery must be able to recreate an initially unavailable reader")
         expect(displayPowerLifecycle.contains("suspendDisplayRuntimeWork()")
             && displayPowerLifecycle.contains("Task.sleep")
             && displayPowerLifecycle.contains("displayStackIsOnlineAndActive")
@@ -247,6 +265,13 @@ struct MergeArchitectureContractTests {
             && displayPowerLifecycle.contains("retryDelay(")
             && displayPowerLifecycle.contains("afterRetryCount:"),
                "Wake must use an asynchronous stabilization phase before display operations resume")
+        expect(displayPowerLifecycle.contains("targetRecoveryToken &+= 1")
+            && displayPowerLifecycle.contains("forceRestart: true")
+            && displayPowerLifecycle.contains("targetReadinessTask?.cancel()"),
+               "Screen-parameter and color-space notifications must share one cancellable target recovery chain")
+        expect(displayBrightnessControls.contains("cancelInFlightOperations")
+            && displayBrightnessControls.contains("invalidateManualBrightnessWrites"),
+               "A new manual slider intent must invalidate and cancel stale automatic DDC work")
         expect(displayBrightnessRuntime.contains("guard displayReadOperationsAllowed")
             && displayBrightnessRuntime.contains("externalDisplayReadOperationsAllowed")
             && displayBrightnessRuntime.contains("acceptsDisplayPowerGeneration(tickPowerGeneration)"),
@@ -278,6 +303,10 @@ struct MergeArchitectureContractTests {
             && m1DDC.contains("targetContext")
             && m1DDC.contains("CGDisplayIsActive(targetDisplayID)"),
                "DDC subprocesses must retain timeout/cancellation safety and reject empty selectors")
+        expect(m1DDC.contains("M1DDCBrightnessRawMaxRecoveryPolicy")
+            && m1DDC.contains("attemptDelaysNanoseconds")
+            && m1DDC.contains("try await Task.sleep(nanoseconds: delay)"),
+               "Brightness writes must use a bounded, cancellable raw-max recovery sequence")
         expect(displayConnection.contains("DisplayPowerOperationGate")
             && displayConnection.contains("operationGate.accepts(expectedGeneration)")
             && displayConnection.contains("guard !Task.isCancelled"),

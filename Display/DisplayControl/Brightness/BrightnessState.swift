@@ -45,6 +45,38 @@ enum BrightnessReadbackSource: String, Codable, Sendable, Equatable {
     case cacheFallback
 }
 
+enum BrightnessTransitionReapplyStatus: String, Codable, Sendable, Equatable {
+    case notNeeded = "not needed"
+    case pending
+    case awaitingConfirmation = "awaiting confirmation"
+    case complete
+    case failed
+}
+
+enum BrightnessReadbackConfirmationPolicy {
+    static let tolerance = 3
+    static let normalStableSampleCount = 2
+    static let previousEpochStableSampleCount = 4
+
+    static func isWithinTolerance(_ lhs: Int, _ rhs: Int) -> Bool {
+        abs(lhs - rhs) <= tolerance
+    }
+
+    /// A value equal to the previous epoch's readback needs stronger evidence,
+    /// but it must still be able to become authoritative after a bounded
+    /// number of fresh hardware samples.
+    static func requiredStableSampleCount(
+        current: Int,
+        previousEpochReadback: Int?
+    ) -> Int {
+        guard let previousEpochReadback,
+              isWithinTolerance(current, previousEpochReadback) else {
+            return normalStableSampleCount
+        }
+        return previousEpochStableSampleCount
+    }
+}
+
 struct BrightnessReadSample: Sendable {
     let percent: Int
     let source: BrightnessReadbackSource
@@ -123,6 +155,15 @@ struct BrightnessState: Sendable {
     /// Non-authoritative diagnostic marker from the preceding display epoch;
     /// used to avoid promoting the same stale value after a transition.
     var transitionPreviousReadbackPercent: Int?
+    /// An accepted command remains visible to the UI, but these fields track a
+    /// separate, epoch-scoped automatic reapply request. They never promote a
+    /// command to hardware truth.
+    var transitionReapplyEpoch: UInt64?
+    var needsAutoBrightnessReapplyAfterTransition = false
+    var transitionReapplyStatus: BrightnessTransitionReapplyStatus = .notNeeded
+    var transitionReapplyAttemptCount = 0
+    var transitionReapplyTargetPercent: Int?
+    var transitionReapplyFailureMessage: String?
     var mismatchStreak: Int = 0
     var limiterDetected: Bool = false
 
@@ -136,9 +177,10 @@ struct BrightnessState: Sendable {
     }
 
     func referenceBrightness(now: Date = Date()) -> Int? {
-        // Accepted commands are intentionally not time-limited. `now` stays
-        // in the API for callers that already provide it and for future
-        // confidence policy, while command authority is lifecycle-based.
+        // This is the logical/UI reference. Accepted commands are intentionally
+        // not time-limited so slider continuity survives a display transition.
+        // Automatic policy must use authoritativeBrightnessForAutomaticControl
+        // instead; a command is not a hardware observation.
         _ = now
         return pendingManualBrightnessPercent
             ?? commandedBrightnessPercent
@@ -152,6 +194,34 @@ struct BrightnessState: Sendable {
         return actualDDCBrightnessPercent
             ?? lastConfirmedBrightnessPercent
             ?? lastDDCReadbackPercent
+    }
+
+    /// The only brightness value the automatic controller may treat as the
+    /// current hardware state. Presentation fallbacks, accepted commands,
+    /// transition markers and uncertain write results are deliberately absent.
+    var authoritativeBrightnessForAutomaticControl: Int? {
+        authoritativeDDCBrightnessPercent
+    }
+
+    /// Records one fresh hardware sample during a transition and returns
+    /// whether the bounded confirmation policy has enough stable evidence to
+    /// promote it. Cache samples must never call this method.
+    @discardableResult
+    mutating func recordTransitionReadbackConfirmation(_ readback: Int) -> Bool {
+        transitionReadbackSampleCount += 1
+        if let candidate = transitionReadbackCandidatePercent,
+           BrightnessReadbackConfirmationPolicy.isWithinTolerance(readback, candidate) {
+            transitionReadbackStableCount += 1
+        } else {
+            transitionReadbackCandidatePercent = readback
+            transitionReadbackStableCount = 1
+        }
+
+        let requiredSampleCount = BrightnessReadbackConfirmationPolicy.requiredStableSampleCount(
+            current: readback,
+            previousEpochReadback: transitionPreviousReadbackPercent
+        )
+        return transitionReadbackStableCount >= requiredSampleCount
     }
 
     /// UI precedence is intentionally broader than hardware/reference

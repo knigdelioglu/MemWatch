@@ -6,6 +6,7 @@ struct DisplayFeatureSmoke {
     static func main() async {
         testBrightnessCurve()
         testBrightnessStateAuthority()
+        testTransitionBrightnessRecoveryPolicies()
         testDDCBrightnessParsing()
         testDDCBrightnessScale()
         testLuxFilter()
@@ -65,6 +66,7 @@ struct DisplayFeatureSmoke {
         precondition(state.referenceBrightness() == 90)
         precondition(state.uiSliderBrightnessPercent == 90)
         precondition(state.authoritativeDDCBrightnessPercent == nil)
+        precondition(state.authoritativeBrightnessForAutomaticControl == nil)
 
         state.pendingManualBrightnessPercent = 95
         precondition(state.uiSliderBrightnessPercent == 95)
@@ -76,6 +78,133 @@ struct DisplayFeatureSmoke {
         precondition(state.referenceBrightness() == 74)
         precondition(state.uiSliderBrightnessPercent == 74)
         precondition(state.authoritativeDDCBrightnessPercent == 74)
+        precondition(state.authoritativeBrightnessForAutomaticControl == 74)
+    }
+
+    private static func testTransitionBrightnessRecoveryPolicies() {
+        // A retained accepted command remains a UI intent, never an automatic
+        // hardware reference after a transition.
+        var state = BrightnessState()
+        state.commandedBrightnessPercent = 90
+        state.actualDDCBrightnessPercent = 66
+        state.lastDDCReadbackPercent = 66
+        state.transitionPreviousReadbackPercent = 66
+        state.readbackReliability = .transitionUnverified
+        precondition(state.referenceBrightness() == 90)
+        precondition(state.authoritativeBrightnessForAutomaticControl == nil)
+
+        // The previous-epoch value needs stronger evidence, but the policy is
+        // bounded: four fresh stable samples promote 66 instead of vetoing it
+        // forever. A different fresh value needs only the normal two samples.
+        precondition(BrightnessReadbackConfirmationPolicy.requiredStableSampleCount(
+            current: 66,
+            previousEpochReadback: 66
+        ) == 4)
+        precondition(BrightnessReadbackConfirmationPolicy.requiredStableSampleCount(
+            current: 75,
+            previousEpochReadback: 66
+        ) == 2)
+        for sampleIndex in 0..<4 {
+            let confirmed = state.recordTransitionReadbackConfirmation(66)
+            if sampleIndex < 3 {
+                precondition(!confirmed)
+            } else {
+                precondition(confirmed)
+                state.actualDDCBrightnessPercent = 66
+                state.lastConfirmedBrightnessPercent = 66
+                state.lastDDCReadbackPercent = 66
+                state.commandedBrightnessPercent = nil
+                state.readbackReliability = .reliable
+            }
+        }
+        precondition(state.authoritativeBrightnessForAutomaticControl == 66)
+        precondition(state.commandedBrightnessPercent == nil)
+
+        // A transition reapply must write even when the retained command and
+        // planner baseline happen to equal the target, and it must not bypass
+        // the lifecycle/manual safety gates.
+        let now = Date()
+        let planner = BrightnessAutoLoopPlanner()
+        let forcedContext = BrightnessAutoLoopPreflightContext(
+            ambientLux: 400,
+            target: 75,
+            smoothedRequested: 75,
+            currentActual: 75,
+            hasAuthoritativeActual: false,
+            now: now,
+            lastWriteDate: now,
+            minInterval: 30,
+            updateThreshold: 2,
+            currentDisplayKey: "display-1",
+            calibrationActive: false,
+            appBrightnessSuppressedUntil: now.addingTimeInterval(-1),
+            ddcAvailable: true,
+            brightnessLimiterCooldownDisplayKey: "display-1",
+            brightnessLimiterCooldownUntil: now.addingTimeInterval(-1),
+            forceTransitionReapply: true
+        )
+        guard case let .proceed(candidate, _) = planner.preflight(context: forcedContext) else {
+            preconditionFailure("Transition reapply must bypass target/min-interval suppression")
+        }
+        precondition(candidate == 75)
+
+        let unknownActualContext = BrightnessAutoLoopPreflightContext(
+            ambientLux: 400,
+            target: 50,
+            smoothedRequested: 50,
+            currentActual: 50,
+            hasAuthoritativeActual: false,
+            now: now,
+            lastWriteDate: now.addingTimeInterval(-60),
+            minInterval: 30,
+            updateThreshold: 2,
+            currentDisplayKey: "display-1",
+            calibrationActive: false,
+            appBrightnessSuppressedUntil: now.addingTimeInterval(-1),
+            ddcAvailable: true,
+            brightnessLimiterCooldownDisplayKey: nil,
+            brightnessLimiterCooldownUntil: now.addingTimeInterval(-1),
+            forceTransitionReapply: false
+        )
+        guard case .proceed = planner.preflight(context: unknownActualContext) else {
+            preconditionFailure("Synthetic planner baseline must not count as authoritative actual")
+        }
+
+        let safetyArguments = [
+            (false, true, false, false, false, false), // auto disabled
+            (true, true, true, false, false, false),  // calibration
+            (true, true, false, true, false, false),  // manual interaction
+            (true, true, false, false, true, false),  // pending slider intent
+            (true, true, false, false, false, true)   // manual override
+        ]
+        for (pending, enabled, calibration, interaction, pendingManual, override) in safetyArguments {
+            precondition(!BrightnessTransitionReapplyPolicy.isEligible(
+                pending: pending,
+                autoBrightnessEnabled: enabled,
+                calibrationActive: calibration,
+                manualInteractionActive: interaction,
+                pendingManualIntent: pendingManual,
+                manualOverrideActive: override
+            ))
+        }
+        precondition(BrightnessTransitionReapplyPolicy.isEligible(
+            pending: true,
+            autoBrightnessEnabled: true,
+            calibrationActive: false,
+            manualInteractionActive: false,
+            pendingManualIntent: false,
+            manualOverrideActive: false
+        ))
+
+        // The raw-max path has one immediate attempt and four bounded retries;
+        // there is no unbounded retry contract to hang the runtime.
+        precondition(M1DDCBrightnessRawMaxRecoveryPolicy.attemptDelaysNanoseconds == [
+            0,
+            250_000_000,
+            500_000_000,
+            1_000_000_000,
+            2_000_000_000
+        ])
     }
 
     private static func testDDCBrightnessScale() {
@@ -801,6 +930,7 @@ struct DisplayFeatureSmoke {
             target: 80,
             smoothedRequested: 70,
             currentActual: 40,
+            hasAuthoritativeActual: true,
             now: now,
             lastWriteDate: now.addingTimeInterval(-5),
             minInterval: 1,
@@ -810,7 +940,8 @@ struct DisplayFeatureSmoke {
             appBrightnessSuppressedUntil: now.addingTimeInterval(-1),
             ddcAvailable: true,
             brightnessLimiterCooldownDisplayKey: nil,
-            brightnessLimiterCooldownUntil: now.addingTimeInterval(-1)
+            brightnessLimiterCooldownUntil: now.addingTimeInterval(-1),
+            forceTransitionReapply: false
         )
 
         guard case let .proceed(candidate, _) = planner.preflight(context: context) else {
@@ -823,6 +954,7 @@ struct DisplayFeatureSmoke {
             target: context.target,
             smoothedRequested: context.smoothedRequested,
             currentActual: context.currentActual,
+            hasAuthoritativeActual: context.hasAuthoritativeActual,
             now: context.now,
             lastWriteDate: context.lastWriteDate,
             minInterval: context.minInterval,
@@ -832,7 +964,8 @@ struct DisplayFeatureSmoke {
             appBrightnessSuppressedUntil: context.appBrightnessSuppressedUntil,
             ddcAvailable: false,
             brightnessLimiterCooldownDisplayKey: context.brightnessLimiterCooldownDisplayKey,
-            brightnessLimiterCooldownUntil: context.brightnessLimiterCooldownUntil
+            brightnessLimiterCooldownUntil: context.brightnessLimiterCooldownUntil,
+            forceTransitionReapply: false
         )
         guard case let .suppressed(reason, _, _, _, _) = planner.preflight(context: unavailableContext) else {
             preconditionFailure("Expected DDC-unavailable suppression")

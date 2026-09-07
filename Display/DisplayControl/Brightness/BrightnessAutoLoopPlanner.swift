@@ -5,6 +5,7 @@ struct BrightnessAutoLoopPreflightContext {
     let target: Int
     let smoothedRequested: Int
     let currentActual: Int
+    let hasAuthoritativeActual: Bool
     let now: Date
     let lastWriteDate: Date
     let minInterval: TimeInterval
@@ -15,6 +16,7 @@ struct BrightnessAutoLoopPreflightContext {
     let ddcAvailable: Bool
     let brightnessLimiterCooldownDisplayKey: String?
     let brightnessLimiterCooldownUntil: Date
+    let forceTransitionReapply: Bool
 }
 
 enum BrightnessAutoLoopPreflightDecision {
@@ -26,6 +28,24 @@ enum BrightnessAutoLoopPreflightDecision {
         diagnosis: String,
         reportSuppressionReason: String
     )
+}
+
+enum BrightnessTransitionReapplyPolicy {
+    static func isEligible(
+        pending: Bool,
+        autoBrightnessEnabled: Bool,
+        calibrationActive: Bool,
+        manualInteractionActive: Bool,
+        pendingManualIntent: Bool,
+        manualOverrideActive: Bool
+    ) -> Bool {
+        pending
+            && autoBrightnessEnabled
+            && !calibrationActive
+            && !manualInteractionActive
+            && !pendingManualIntent
+            && !manualOverrideActive
+    }
 }
 
 final class BrightnessAutoLoopPlanner {
@@ -52,7 +72,9 @@ final class BrightnessAutoLoopPlanner {
 
         let threshold = max(1, context.updateThreshold)
         let targetDelta = abs(context.target - context.currentActual)
-        if targetDelta < threshold {
+        if !context.forceTransitionReapply,
+           context.hasAuthoritativeActual,
+           targetDelta < threshold {
             return .suppressed(
                 reason: .targetEqualsActual,
                 source: .ambientComputed,
@@ -72,7 +94,8 @@ final class BrightnessAutoLoopPlanner {
             )
         }
 
-        guard context.now.timeIntervalSince(context.lastWriteDate) >= context.minInterval else {
+        guard context.forceTransitionReapply
+            || context.now.timeIntervalSince(context.lastWriteDate) >= context.minInterval else {
             let remaining = Int(round(context.minInterval - context.now.timeIntervalSince(context.lastWriteDate)))
             return .suppressed(
                 reason: .debounceWaiting,
@@ -83,8 +106,7 @@ final class BrightnessAutoLoopPlanner {
             )
         }
 
-        if
-            context.brightnessLimiterCooldownDisplayKey == context.currentDisplayKey,
+        if context.brightnessLimiterCooldownDisplayKey == context.currentDisplayKey,
             context.now < context.brightnessLimiterCooldownUntil
         {
             let remaining = Int(ceil(context.brightnessLimiterCooldownUntil.timeIntervalSince(context.now)))
@@ -98,10 +120,14 @@ final class BrightnessAutoLoopPlanner {
         }
 
         let smoothedDelta = abs(context.smoothedRequested - context.currentActual)
-        let candidate = smoothedDelta < threshold ? context.target : context.smoothedRequested
+        let candidate = context.forceTransitionReapply
+            ? context.target
+            : (smoothedDelta < threshold ? context.target : context.smoothedRequested)
         return .proceed(
             candidate: candidate,
-            statusText: String(format: "%.0f lux -> %%%d (Yazılıyor...)", context.ambientLux, candidate)
+            statusText: context.forceTransitionReapply
+                ? String(format: "%.0f lux -> %%%d (transition reapply)", context.ambientLux, candidate)
+                : String(format: "%.0f lux -> %%%d (Yazılıyor...)", context.ambientLux, candidate)
         )
     }
 }

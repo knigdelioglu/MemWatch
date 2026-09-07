@@ -5,7 +5,7 @@ import Foundation
 /// is the single owner of the sensor/DDC/internal-display controller instances.
 @MainActor
 final class DisplayBrightnessCoordinator {
-    let reader: AmbientLightReader?
+    private(set) var reader: AmbientLightReader?
     let writer: M1DDCWriter
     let operationGate: DisplayPowerOperationGate
     let internalDisplayController: InternalDisplayBrightnessController?
@@ -32,7 +32,46 @@ final class DisplayBrightnessCoordinator {
 
     @discardableResult
     func rebindAmbientLightSensor() -> Bool {
-        reader?.rebind() ?? false
+        guard ensureAmbientLightSensor() else { return false }
+        return reader?.rebind() ?? false
+    }
+
+    /// Recreate the reader only from a bounded recovery path. Normal polling
+    /// keeps the existing reader and its rebind behavior; this avoids resolving
+    /// private ALS symbols on every tick while still recovering an initial nil
+    /// reader or a reader whose client has stopped producing samples.
+    @discardableResult
+    func ensureAmbientLightSensor() -> Bool {
+        guard reader == nil else { return true }
+        reader = AmbientLightReader()
+        return reader != nil
+    }
+
+    @discardableResult
+    func recreateAmbientLightSensor() -> Bool {
+        reader = AmbientLightReader()
+        return reader != nil
+    }
+
+    /// Performs one controlled recovery probe. An existing reader is rebound
+    /// first; it is recreated at most once for this probe if it still cannot
+    /// produce lux. The caller owns any outer bounded retry schedule.
+    func recoverAmbientLightSensor() -> (didRecreate: Bool, didRebind: Bool, lux: Double?) {
+        var didRecreate = false
+        if reader == nil {
+            didRecreate = recreateAmbientLightSensor()
+        }
+
+        var didRebind = rebindAmbientLightSensor()
+        var lux = reader?.readLux()
+        if lux == nil && !didRecreate {
+            didRecreate = recreateAmbientLightSensor()
+            if didRecreate {
+                didRebind = rebindAmbientLightSensor()
+                lux = reader?.readLux()
+            }
+        }
+        return (didRecreate, didRebind, lux)
     }
 
     var ambientLightSensorClientGeneration: UInt64 {

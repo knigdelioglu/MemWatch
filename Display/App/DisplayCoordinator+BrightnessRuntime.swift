@@ -144,23 +144,52 @@ extension DisplayCoordinator {
             calibration: settings.calibration,
             profile: profile
         )
-        // Automatic policy must never use presentation fallbacks or an
-        // unverified transition/readback value as its hardware reference.
-        let actualBefore = brightnessState.referenceBrightness(now: now) ?? 50
-        let requestReferenceBrightness = actualBefore
+        // Automatic policy must never use presentation fallbacks, an accepted
+        // command, or an unverified transition/readback value as its hardware
+        // reference. `50` is only a neutral planner baseline when no
+        // authoritative sample exists; it is never published as DDC actual.
+        let authoritativeActual = brightnessState.authoritativeBrightnessForAutomaticControl
+        let actualBefore = authoritativeActual ?? 50
         let isManualOverrideActive = shouldHoldManualBrightnessOverride(currentLux: smoothedLux, now: now)
-
-        let smoothedRequestedPercent = brightnessAutoController.smoothedRequestedPercent(
-            target: autoTargetBrightnessPercent,
-            reference: requestReferenceBrightness,
-            smoothing: profile.smoothing
+        if brightnessState.transitionReapplyEpoch == brightnessControlEpoch,
+           brightnessState.needsAutoBrightnessReapplyAfterTransition,
+           let authoritativeActual,
+           BrightnessReadbackConfirmationPolicy.isWithinTolerance(
+               authoritativeActual,
+               autoTargetBrightnessPercent
+           ) {
+            updateBrightnessState { state in
+                state.needsAutoBrightnessReapplyAfterTransition = false
+                state.transitionReapplyStatus = .complete
+                state.transitionReapplyTargetPercent = autoTargetBrightnessPercent
+                state.transitionReapplyFailureMessage = nil
+            }
+        }
+        let shouldForceTransitionReapply = BrightnessTransitionReapplyPolicy.isEligible(
+            pending: brightnessState.transitionReapplyEpoch == brightnessControlEpoch
+                && brightnessState.needsAutoBrightnessReapplyAfterTransition,
+            autoBrightnessEnabled: autoBrightnessEnabled,
+            calibrationActive: calibrationSession != nil,
+            manualInteractionActive: manualBrightnessInteractionActive,
+            pendingManualIntent: brightnessState.pendingManualBrightnessPercent != nil,
+            manualOverrideActive: isManualOverrideActive
         )
+
+        let smoothedRequestedPercent = authoritativeActual.map {
+            brightnessAutoController.smoothedRequestedPercent(
+                target: autoTargetBrightnessPercent,
+                reference: $0,
+                smoothing: profile.smoothing
+            )
+        } ?? autoTargetBrightnessPercent
 
         updateBrightnessState { state in
             state.ambientSensorRawValue = lux
             state.ambientNormalizedValue = ambientNormalizedValue
             state.autoTargetBrightnessPercent = autoTargetBrightnessPercent
-            state.smoothedRequestedBrightnessPercent = smoothedRequestedPercent
+            state.smoothedRequestedBrightnessPercent = shouldForceTransitionReapply
+                ? autoTargetBrightnessPercent
+                : smoothedRequestedPercent
             state.lastBrightnessSource = .ambientComputed
             state.isManualOverrideActive = isManualOverrideActive
             state.isAutoBrightnessEnabled = autoBrightnessEnabled && !isManualOverrideActive && calibrationSession == nil
@@ -208,10 +237,11 @@ extension DisplayCoordinator {
         let target = autoTargetBrightnessPercent
         updateStatus(String(format: "%.0f lux -> %%%d", smoothedLux, target))
 
-        let currentActual = brightnessState.referenceBrightness(now: now) ?? actualBefore
+        let currentActual = brightnessState.authoritativeBrightnessForAutomaticControl ?? actualBefore
         let minInterval: TimeInterval = profile.minInterval
 
-        if abs(target - currentActual) > 10 {
+        if let authoritativeActual,
+           abs(target - authoritativeActual) > 10 {
             mismatchIntervalsCount += 1
         } else {
             mismatchIntervalsCount = 0
@@ -236,6 +266,7 @@ extension DisplayCoordinator {
                 target: target,
                 smoothedRequested: smoothedCandidate,
                 currentActual: currentActual,
+                hasAuthoritativeActual: authoritativeActual != nil,
                 now: now,
                 lastWriteDate: lastWriteDate,
                 minInterval: minInterval,
@@ -245,7 +276,8 @@ extension DisplayCoordinator {
                 appBrightnessSuppressedUntil: autoBrightnessSuppressedUntil,
                 ddcAvailable: preflightDDCAvailable,
                 brightnessLimiterCooldownDisplayKey: brightnessLimiterCooldownDisplayKey,
-                brightnessLimiterCooldownUntil: brightnessLimiterCooldownUntil
+                brightnessLimiterCooldownUntil: brightnessLimiterCooldownUntil,
+                forceTransitionReapply: shouldForceTransitionReapply
             )
         )
 
@@ -281,6 +313,11 @@ extension DisplayCoordinator {
             writeCandidate = candidate
             updateStatus(statusText)
             updateBrightnessState { state in
+                if shouldForceTransitionReapply {
+                    state.transitionReapplyAttemptCount += 1
+                    state.transitionReapplyTargetPercent = target
+                    state.transitionReapplyFailureMessage = nil
+                }
                 state.lastAutoWriteAttempted = true
                 state.lastWriteAttemptPercent = candidate
                 state.lastAutoWriteValue = candidate
@@ -292,7 +329,7 @@ extension DisplayCoordinator {
             }
         }
 
-        if writeCandidate > requestReferenceBrightness && manualBrightnessOverrideUntil > now && manualBrightnessOverrideStartLux == nil {
+        if writeCandidate > actualBefore && manualBrightnessOverrideUntil > now && manualBrightnessOverrideStartLux == nil {
             manualBrightnessOverrideUntil = .distantPast
         }
 
@@ -319,13 +356,15 @@ extension DisplayCoordinator {
                 result: result,
                 candidate: writeCandidate,
                 currentActual: currentActual,
-                display: display
+                display: display,
+                isTransitionReapply: shouldForceTransitionReapply
             )
         } else {
             handleAutoBrightnessWriteFailure(
                 result: result,
                 candidate: writeCandidate,
-                currentActual: currentActual
+                currentActual: currentActual,
+                isTransitionReapply: shouldForceTransitionReapply
             )
         }
     }
@@ -334,7 +373,8 @@ extension DisplayCoordinator {
         result: M1DDCBrightnessWriteResult,
         candidate: Int,
         currentActual: Int,
-        display: ExternalDisplayInfo
+        display: ExternalDisplayInfo,
+        isTransitionReapply: Bool = false
     ) {
         let displayKey = display.displayKey
         let outcome = brightnessAutoWriteOutcomePlanner.plan(
@@ -360,6 +400,18 @@ extension DisplayCoordinator {
             state.suppressionReason = nil
         }
 
+        if isTransitionReapply,
+           stateBelongsToCurrentBrightnessEpochForReapply {
+            updateBrightnessState { state in
+                state.needsAutoBrightnessReapplyAfterTransition = false
+                state.transitionReapplyStatus = result.readbackReliability == .reliable
+                    ? .complete
+                    : .awaitingConfirmation
+                state.transitionReapplyTargetPercent = candidate
+                state.transitionReapplyFailureMessage = nil
+            }
+        }
+
         pendingTargetCandidate = nil
         currentBrightness = brightnessState.referenceBrightness() ?? outcome.referenceAfter
         lastSentBrightness = candidate
@@ -377,7 +429,8 @@ extension DisplayCoordinator {
     func handleAutoBrightnessWriteFailure(
         result: M1DDCBrightnessWriteResult,
         candidate: Int,
-        currentActual: Int
+        currentActual: Int,
+        isTransitionReapply: Bool = false
     ) {
         let outcome = brightnessAutoWriteOutcomePlanner.planFailure(
             result: result,
@@ -396,10 +449,26 @@ extension DisplayCoordinator {
             state.lastAutoWriteActualAfter = outcome.actualAfter
             state.suppressionReason = "Write error: \(result.message)"
         }
+        if isTransitionReapply,
+           stateBelongsToCurrentBrightnessEpochForReapply {
+            // The bounded raw-max recovery has been exhausted. Release the
+            // one-shot flag and throttle any later normal polling attempt by
+            // the existing planner interval; never spin a second retry chain.
+            lastWriteDate = Date()
+            updateBrightnessState { state in
+                state.needsAutoBrightnessReapplyAfterTransition = false
+                state.transitionReapplyStatus = .failed
+                state.transitionReapplyFailureMessage = result.message
+            }
+        }
         currentBrightness = brightnessState.referenceBrightness() ?? outcome.referenceAfter
         lastSentBrightness = currentBrightness
 
         logBrightnessWrite(requested: candidate, source: .autoDDCWrite, result: result)
         updateStatus(outcome.statusText)
+    }
+
+    private var stateBelongsToCurrentBrightnessEpochForReapply: Bool {
+        brightnessState.transitionReapplyEpoch == brightnessControlEpoch
     }
 }

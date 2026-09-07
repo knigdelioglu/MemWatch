@@ -73,7 +73,11 @@ extension DisplayCoordinator {
         // explicitly here so that a self-generated display-parameter change
         // cannot bypass the transition reset.
         let powerGeneration = displayPowerGeneration
-        beginBrightnessControlEpoch(reason: "display parameter transition")
+        beginBrightnessControlEpoch(
+            reason: "display parameter transition",
+            requiresAutomaticReapply: true,
+            preserveManualOverride: true
+        )
         let brightnessEpoch = brightnessControlEpoch
         let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
         traceRuntime(
@@ -105,14 +109,6 @@ extension DisplayCoordinator {
               !manualBrightnessInteractionActive,
               brightnessState.pendingManualBrightnessPercent == nil,
               !brightnessState.isManualOverrideActive else { return }
-
-        guard brightnessCoordinator.reader != nil else {
-            updateBrightnessState { state in
-                state.lastBrightnessSource = .unavailable
-                state.suppressionReason = "Ambient light sensor unavailable"
-            }
-            return
-        }
 
         let powerGeneration = displayPowerGeneration
         let brightnessEpoch = brightnessControlEpoch
@@ -166,8 +162,10 @@ extension DisplayCoordinator {
                     return
                 }
 
-                let didRebind = self.brightnessCoordinator.rebindAmbientLightSensor()
-                let lux = self.brightnessCoordinator.reader?.readLux()
+                let sensorRecovery = self.brightnessCoordinator.recoverAmbientLightSensor()
+                let didRecreate = sensorRecovery.didRecreate
+                let didRebind = sensorRecovery.didRebind
+                let lux = sensorRecovery.lux
                 guard self.acceptsAmbientLightSensorRecovery(
                     powerGeneration: powerGeneration,
                     brightnessEpoch: brightnessEpoch,
@@ -179,6 +177,7 @@ extension DisplayCoordinator {
 
                 self.traceRuntime(
                     "ALS recovery attempt=\(attempt + 1)/\(delays.count) rebind=\(didRebind) " +
+                        "recreate=\(didRecreate) " +
                         "lux=\(lux.map { String(format: "%.1f", $0) } ?? "nil")"
                 )
                 guard let lux else { continue }
@@ -308,7 +307,11 @@ extension DisplayCoordinator {
         manualBrightnessWriteTask = nil
         invalidateManualBrightnessWrites()
         brightnessState.pendingManualBrightnessPercent = nil
-        beginBrightnessControlEpoch(reason: "power transition")
+        beginBrightnessControlEpoch(
+            reason: "power transition",
+            requiresAutomaticReapply: true,
+            preserveManualOverride: true
+        )
 
         manualVolumeWriteTask?.cancel()
         manualVolumeWriteTask = nil
@@ -464,7 +467,11 @@ extension DisplayCoordinator {
 
     func restartTargetDisplayReadinessRecovery(for powerGeneration: UInt64) {
         guard isRunning else { return }
-        beginBrightnessControlEpoch(reason: "display parameter transition")
+        beginBrightnessControlEpoch(
+            reason: "display parameter transition",
+            requiresAutomaticReapply: true,
+            preserveManualOverride: true
+        )
         let didRebindALS = brightnessCoordinator.rebindAmbientLightSensor()
         traceRuntime(
             "ALS rebind reason=display parameter transition success=\(didRebindALS) " +
