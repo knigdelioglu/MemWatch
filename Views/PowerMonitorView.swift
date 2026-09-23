@@ -401,15 +401,8 @@ private struct PowerMetricTile: View {
 private struct PowerFlowCard: View {
     let snapshot: PowerSnapshot
 
-    @State private var liveSnapshot = PowerSnapshot.empty
-    private let collector = PowerCollector()
-
-    private var displayedSnapshot: PowerSnapshot {
-        liveSnapshot.timestamp == .distantPast ? snapshot : liveSnapshot
-    }
-
     var body: some View {
-        let current = displayedSnapshot
+        let current = snapshot
 
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
@@ -427,14 +420,6 @@ private struct PowerFlowCard: View {
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .task {
-            liveSnapshot = collector.collect()
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled else { break }
-                liveSnapshot = collector.collect()
-            }
-        }
     }
 
     private func flowSummary(for snapshot: PowerSnapshot) -> String {

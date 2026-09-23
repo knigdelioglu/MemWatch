@@ -301,11 +301,16 @@ struct LaunchItemScanner: CleanupScanner {
 
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let userLibrary = context.homeDirectory.appendingPathComponent("Library", isDirectory: true)
-        let roots: [(URL, CleanupRuleID, CleanupDeletionMode, CleanupRequirements)] = [
-            (userLibrary.appendingPathComponent("LaunchAgents", isDirectory: true), "launchitem.orphan.user", .trash, [.explicitConfirmation]),
-            (URL(fileURLWithPath: "/Library/LaunchAgents", isDirectory: true), "launchitem.orphan.system", .privileged, [.privilegedHelper, .explicitConfirmation]),
-            (URL(fileURLWithPath: "/Library/LaunchDaemons", isDirectory: true), "launchitem.orphan.system", .privileged, [.privilegedHelper, .explicitConfirmation])
+        var roots: [(URL, CleanupRuleID, CleanupDeletionMode, CleanupRequirements)] = [
+            (userLibrary.appendingPathComponent("LaunchAgents", isDirectory: true), "launchitem.orphan.user", .trash, [.explicitConfirmation])
         ]
+        if !context.privilegedHelperAvailable {
+            let systemRequirements: CleanupRequirements = [.privilegedHelper, .explicitConfirmation]
+            roots.append(contentsOf: [
+                (URL(fileURLWithPath: "/Library/LaunchAgents", isDirectory: true), "launchitem.orphan.system", .privileged, systemRequirements),
+                (URL(fileURLWithPath: "/Library/LaunchDaemons", isDirectory: true), "launchitem.orphan.system", .privileged, systemRequirements)
+            ])
+        }
         var results: [CleanupCandidate] = []
         for (root, ruleID, mode, requirements) in roots {
             try Task.checkCancellation()
@@ -335,15 +340,17 @@ struct DiagnosticReportScanner: CleanupScanner {
 
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let userRoot = context.homeDirectory.appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
-        let systemRoot = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports", isDirectory: true)
         var results: [CleanupCandidate] = []
         for url in try support.immediateChildren(of: userRoot) {
             try Task.checkCancellation()
             if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.user.old", category: category, safety: .safe, deletionMode: .permanent, reason: "Crash/hang diagnostic report") { results.append(item) }
         }
-        for url in try support.immediateChildren(of: systemRoot) {
-            try Task.checkCancellation()
-            if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.system.old", category: category, safety: .review, deletionMode: .privileged, requirements: [.privilegedHelper], reason: "System crash/hang diagnostic report") { results.append(item) }
+        if !context.privilegedHelperAvailable {
+            let systemRoot = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports", isDirectory: true)
+            for url in try support.immediateChildren(of: systemRoot) {
+                try Task.checkCancellation()
+                if let item = support.candidate(url: url, scannerID: id, ruleID: "diagnostic.system.old", category: category, safety: .review, deletionMode: .privileged, requirements: [.privilegedHelper], reason: "System crash/hang diagnostic report") { results.append(item) }
+            }
         }
         return results
     }

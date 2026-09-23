@@ -180,7 +180,11 @@ struct UserCacheScanner: CleanupScanner {
         var results: [CleanupCandidate] = []
         let library = context.homeDirectory.appendingPathComponent("Library", isDirectory: true)
         let primaryCache = library.appendingPathComponent("Caches", isDirectory: true)
-        for url in try support.immediateChildren(of: primaryCache) where !context.isIgnored(url) {
+        let developerOwnedCachePaths = DeveloperCacheScanner.primaryLibraryCacheTargetPaths(
+            homeDirectory: context.homeDirectory
+        )
+        for url in try support.immediateChildren(of: primaryCache)
+        where !developerOwnedCachePaths.contains(url.standardizedFileURL.path) && !context.isIgnored(url) {
             try Task.checkCancellation()
             if let item = support.candidate(url: url, scannerID: id, ruleID: "user.cache", category: category, safety: .safe, deletionMode: .permanent, requirements: [.applicationInactive], reason: "Application cache under ~/Library/Caches", regenerationHint: "The owning application can recreate this cache.") {
                 results.append(item)
@@ -283,40 +287,47 @@ struct DeveloperCacheScanner: CleanupScanner {
     let category: CleanupCategory = .developer
     private let support = CleanupScannerSupport()
 
+    private typealias CacheTarget = (
+        name: String,
+        url: URL,
+        safety: CleanupSafetyLevel,
+        requirements: CleanupRequirements
+    )
+
+    static func primaryLibraryCacheTargetPaths(homeDirectory: URL) -> Set<String> {
+        let primaryCachePath = homeDirectory
+            .appendingPathComponent("Library/Caches", isDirectory: true)
+            .standardizedFileURL.path
+        return Set(cacheTargets(home: homeDirectory).compactMap { target in
+            guard target.url.deletingLastPathComponent().standardizedFileURL.path == primaryCachePath else {
+                return nil
+            }
+            return target.url.standardizedFileURL.path
+        })
+    }
+
     func scan(context: CleanupScanContext) async throws -> [CleanupCandidate] {
         let home = context.homeDirectory
         var results: [CleanupCandidate] = []
-        let cacheTargets: [(String, URL, CleanupSafetyLevel, CleanupRequirements)] = [
-            ("Homebrew cache", home.appendingPathComponent("Library/Caches/Homebrew", isDirectory: true), .safe, []),
-            ("npm cache", home.appendingPathComponent(".npm/_cacache", isDirectory: true), .safe, []),
-            ("npm logs", home.appendingPathComponent(".npm/_logs", isDirectory: true), .safe, []),
-            ("Yarn cache", home.appendingPathComponent("Library/Caches/Yarn", isDirectory: true), .safe, []),
-            ("Yarn cache", home.appendingPathComponent(".cache/yarn", isDirectory: true), .safe, []),
-            ("pnpm cache", home.appendingPathComponent("Library/Caches/pnpm", isDirectory: true), .safe, []),
-            ("pip cache", home.appendingPathComponent("Library/Caches/pip", isDirectory: true), .safe, []),
-            ("pip cache", home.appendingPathComponent(".cache/pip", isDirectory: true), .safe, []),
-            ("Poetry cache", home.appendingPathComponent("Library/Caches/pypoetry", isDirectory: true), .safe, []),
-            ("Poetry cache", home.appendingPathComponent(".cache/pypoetry", isDirectory: true), .safe, []),
-            ("uv cache", home.appendingPathComponent(".cache/uv", isDirectory: true), .safe, []),
-            ("Cargo registry cache", home.appendingPathComponent(".cargo/registry/cache", isDirectory: true), .safe, []),
-            ("Go build cache", home.appendingPathComponent("Library/Caches/go-build", isDirectory: true), .safe, []),
-            ("Go build cache", home.appendingPathComponent(".cache/go-build", isDirectory: true), .safe, []),
-            ("Go module download cache", home.appendingPathComponent("go/pkg/mod/cache", isDirectory: true), .safe, []),
-            ("CocoaPods cache", home.appendingPathComponent("Library/Caches/CocoaPods", isDirectory: true), .safe, []),
-            ("Bun install cache", home.appendingPathComponent(".bun/install/cache", isDirectory: true), .safe, []),
-            ("Deno cache", home.appendingPathComponent("Library/Caches/deno", isDirectory: true), .safe, []),
-            ("Deno cache", home.appendingPathComponent(".cache/deno", isDirectory: true), .safe, []),
-            ("mise cache", home.appendingPathComponent(".cache/mise", isDirectory: true), .safe, []),
-            ("JetBrains cache", home.appendingPathComponent("Library/Caches/JetBrains", isDirectory: true), .safe, [.applicationInactive]),
-            ("Docker Desktop cache", home.appendingPathComponent("Library/Caches/com.docker.docker", isDirectory: true), .safe, [.applicationInactive])
-        ]
-        for (name, url, safety, requirements) in cacheTargets {
+        for target in Self.cacheTargets(home: home) {
             try Task.checkCancellation()
-            guard !context.isIgnored(url) else { continue }
-            if let item = support.candidate(url: url, scannerID: id, ruleID: "developer.cache", category: category, displayName: name, safety: safety, deletionMode: .permanent, requirements: requirements, reason: "Regenerable developer-tool cache", regenerationHint: "The developer tool can rebuild or redownload this cache."), item.allocatedBytes > 0 {
+            guard !context.isIgnored(target.url) else { continue }
+            if let item = support.candidate(
+                url: target.url,
+                scannerID: id,
+                ruleID: "developer.cache",
+                category: category,
+                displayName: target.name,
+                safety: target.safety,
+                deletionMode: .permanent,
+                requirements: target.requirements,
+                reason: "Regenerable developer-tool cache",
+                regenerationHint: "The developer tool can rebuild or redownload this cache."
+            ), item.allocatedBytes > 0 {
                 results.append(item)
             }
         }
+
         let vscodeRoot = home.appendingPathComponent("Library/Application Support/Code", isDirectory: true)
         for component in ["Cache", "CachedData", "CachedExtensionVSIXs", "GPUCache", "Service Worker/CacheStorage"] {
             try Task.checkCancellation()
@@ -341,6 +352,34 @@ struct DeveloperCacheScanner: CleanupScanner {
             }
         }
         return results
+    }
+
+    private static func cacheTargets(home: URL) -> [CacheTarget] {
+        let inactiveApplicationCache: CleanupRequirements = [.applicationInactive]
+        return [
+            ("Homebrew cache", home.appendingPathComponent("Library/Caches/Homebrew", isDirectory: true), .safe, inactiveApplicationCache),
+            ("npm cache", home.appendingPathComponent(".npm/_cacache", isDirectory: true), .safe, []),
+            ("npm logs", home.appendingPathComponent(".npm/_logs", isDirectory: true), .safe, []),
+            ("Yarn cache", home.appendingPathComponent("Library/Caches/Yarn", isDirectory: true), .safe, inactiveApplicationCache),
+            ("Yarn cache", home.appendingPathComponent(".cache/yarn", isDirectory: true), .safe, []),
+            ("pnpm cache", home.appendingPathComponent("Library/Caches/pnpm", isDirectory: true), .safe, inactiveApplicationCache),
+            ("pip cache", home.appendingPathComponent("Library/Caches/pip", isDirectory: true), .safe, inactiveApplicationCache),
+            ("pip cache", home.appendingPathComponent(".cache/pip", isDirectory: true), .safe, []),
+            ("Poetry cache", home.appendingPathComponent("Library/Caches/pypoetry", isDirectory: true), .safe, inactiveApplicationCache),
+            ("Poetry cache", home.appendingPathComponent(".cache/pypoetry", isDirectory: true), .safe, []),
+            ("uv cache", home.appendingPathComponent(".cache/uv", isDirectory: true), .safe, []),
+            ("Cargo registry cache", home.appendingPathComponent(".cargo/registry/cache", isDirectory: true), .safe, []),
+            ("Go build cache", home.appendingPathComponent("Library/Caches/go-build", isDirectory: true), .safe, inactiveApplicationCache),
+            ("Go build cache", home.appendingPathComponent(".cache/go-build", isDirectory: true), .safe, []),
+            ("Go module download cache", home.appendingPathComponent("go/pkg/mod/cache", isDirectory: true), .safe, []),
+            ("CocoaPods cache", home.appendingPathComponent("Library/Caches/CocoaPods", isDirectory: true), .safe, inactiveApplicationCache),
+            ("Bun install cache", home.appendingPathComponent(".bun/install/cache", isDirectory: true), .safe, []),
+            ("Deno cache", home.appendingPathComponent("Library/Caches/deno", isDirectory: true), .safe, inactiveApplicationCache),
+            ("Deno cache", home.appendingPathComponent(".cache/deno", isDirectory: true), .safe, []),
+            ("mise cache", home.appendingPathComponent(".cache/mise", isDirectory: true), .safe, []),
+            ("JetBrains cache", home.appendingPathComponent("Library/Caches/JetBrains", isDirectory: true), .safe, [.applicationInactive]),
+            ("Docker Desktop cache", home.appendingPathComponent("Library/Caches/com.docker.docker", isDirectory: true), .safe, [.applicationInactive])
+        ]
     }
 }
 
