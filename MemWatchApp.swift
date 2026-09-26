@@ -263,8 +263,9 @@ private struct TrayPresentation: Equatable {
 
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
-    private static let panelSize = NSSize(width: 430, height: 640)
-    private static let cleanupWindowSize = NSSize(width: 680, height: 780)
+    private static let panelSize = NSSize(width: 390, height: 860)
+    private static let cleanupWindowSize = NSSize(width: 680, height: 690)
+    private static let displayWindowSize = NSSize(width: 520, height: 720)
 
     private let monitor: MonitoringService
     private let cleanup: CleanupCoordinator
@@ -272,6 +273,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cleanupWindowController: NSWindowController?
+    private var displayWindowController: NSWindowController?
     private var settingsWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
     private var previousTrayPresentation: TrayPresentation?
@@ -312,7 +314,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(
             rootView: SmartMenuBarRootView(
                 monitor: monitor,
-                display: display,
+                openDisplays: { [weak self] in
+                    self?.openDisplayWindow()
+                },
                 openCleanup: { [weak self] in
                     self?.openCleanupWindow()
                 },
@@ -450,6 +454,18 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         cleanupItem.target = self
         menu.addItem(cleanupItem)
 
+        let displayItem = NSMenuItem(
+            title: "Displays & Awake…",
+            action: #selector(openDisplayWindow),
+            keyEquivalent: ""
+        )
+        displayItem.image = NSImage(
+            systemSymbolName: "display",
+            accessibilityDescription: "Displays & Awake"
+        )
+        displayItem.target = self
+        menu.addItem(displayItem)
+
         let settingsItem = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -519,17 +535,22 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         let hostingController = NSHostingController(
-            rootView: CleanupView(coordinator: cleanup)
+            rootView: CleanupView(
+                coordinator: cleanup,
+                onOpenOverview: { [weak self] in self?.showPopover() },
+                onOpenDisplays: { [weak self] in self?.openDisplayWindow() },
+                onOpenSettings: { [weak self] in self?.openSettings() }
+            )
                 .frame(
                     minWidth: Self.cleanupWindowSize.width,
                     minHeight: Self.cleanupWindowSize.height
                 )
         )
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "MemWatch Derin Temizleme"
+        window.title = "MemWatch Cleanup"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(Self.cleanupWindowSize)
-        window.minSize = NSSize(width: 560, height: 620)
+        window.minSize = Self.cleanupWindowSize
         window.isReleasedWhenClosed = false
         window.center()
 
@@ -541,6 +562,49 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         if cleanup.scanResult == nil, !cleanup.isBusy {
             cleanup.startScan()
         }
+    }
+
+    @objc
+    private func openDisplayWindow() {
+        closePopover()
+
+        if let window = displayWindowController?.window {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hostingController = NSHostingController(
+            rootView: DisplayFeatureView(
+                display: display,
+                showsNavigation: true,
+                onOpenOverview: { [weak self] in self?.showPopover() },
+                onOpenCleanup: { [weak self] in self?.openCleanupWindow() },
+                onOpenSettings: { [weak self] in self?.openSettings() }
+            )
+            .frame(minWidth: Self.displayWindowSize.width, minHeight: Self.displayWindowSize.height)
+        )
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "MemWatch Displays & Awake"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(Self.displayWindowSize)
+        window.minSize = Self.displayWindowSize
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        displayWindowController = controller
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+    }
+
+    private func showPopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown { return }
+        monitor.refresh(forceStorage: true, forceDiagnostics: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     @objc
@@ -655,24 +719,17 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 private struct SmartMenuBarRootView: View {
     @ObservedObject var monitor: MonitoringService
-    @ObservedObject var display: DisplayCoordinator
+    let openDisplays: () -> Void
     let openCleanup: () -> Void
     let openSettings: () -> Void
     @State private var showingTechnicalDetails = false
-    @State private var showingDisplayDetails = false
 
     private var snapshot: MemorySnapshot { monitor.snapshot }
     private var intelligence: SwapIntelligenceResult { monitor.intelligence }
-    private var pressureEstimate: MemoryPressureEstimate { monitor.memoryPressureEstimate }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if showingDisplayDetails {
-                DisplayFeatureView(display: display) {
-                    showingDisplayDetails = false
-                }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if showingTechnicalDetails {
+            if showingTechnicalDetails {
                 MenuBarView(monitor: monitor)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
 
@@ -695,296 +752,347 @@ private struct SmartMenuBarRootView: View {
                     .transition(.opacity)
             }
         }
-        .frame(width: 430, height: 640)
+        .frame(width: 390, height: 860)
         .animation(.easeInOut(duration: 0.16), value: showingTechnicalDetails)
     }
 
     private var overview: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                keepAwakeCard
+            VStack(alignment: .leading, spacing: 9) {
+                dashboardHeader
                 memoryFocusCard
-                displayCard
-                quickFactsCard
-                cleanupCard
-                topConsumersCard
+                systemDashboardCard
+                storageDashboardCard
+                powerDashboardCard
+                smartAlertsCard
                 controlsRow
             }
-            .padding(16)
+            .padding(12)
+        }
+    }
+
+    private var dashboardHeader: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "waveform.path.ecg.rectangle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 31, height: 31)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("MemWatch").font(.headline)
+                Text("A cleaner, healthier Mac").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Label(healthName == "Good" ? "All Systems Good" : healthName, systemImage: healthSymbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(healthColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(healthColor.opacity(0.1), in: Capsule())
+            Button(action: openSettings) {
+                Image(systemName: "gearshape")
+                    .frame(width: 27, height: 27)
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+            .accessibilityLabel("Settings")
         }
     }
 
     private var memoryFocusCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
                 Label("Memory", systemImage: "memorychip")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text(memoryStateLabel)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(memoryStateColor)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(memoryStateColor.opacity(0.10), in: Capsule())
-            }
-
-            Text(memoryInterpretation)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Memory Used")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text("\(memoryBytes(snapshot.usedBytes)) / \(memoryBytes(snapshot.totalBytes))")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                }
-                Text("\(snapshot.usagePercent)% · Available headroom \(memoryBytes(snapshot.availableBytes))")
-                    .font(.caption)
+                Text("\(memoryBytes(snapshot.usedBytes)) of \(memoryBytes(snapshot.totalBytes))")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                Text("\(snapshot.usagePercent)%")
+                    .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-
-            Divider()
-
-            HStack(spacing: 0) {
-                smartMetric(title: "Available", value: memoryBytes(snapshot.availableBytes))
-                smartMetric(title: "Pressure estimate", value: "\(pressureEstimate.percent)%")
-                smartMetric(title: "Swap", value: swapMetricValue)
-            }
-        }
-        .padding(15)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    private func smartMetric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.body.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var quickFactsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("At a glance")
-                .font(.headline)
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
-                spacing: 10
-            ) {
-                quickFactCell(
-                    symbol: "internaldrive",
-                    title: "Storage",
-                    value: storageFact,
-                    color: storageColor
-                )
-                quickFactCell(
-                    symbol: powerSymbol,
-                    title: "Power",
-                    value: powerFact,
-                    color: powerColor
-                )
-                quickFactCell(
-                    symbol: "cpu",
-                    title: "System",
-                    value: systemFact,
-                    color: thermalColor
-                )
-            }
-        }
-        .padding(15)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    private var keepAwakeCard: some View {
-        KeepAwakeControlsView(display: display, compact: true)
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
-            }
-    }
-
-    private var displayCard: some View {
-        Button {
-            showingDisplayDetails = true
-        } label: {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: displaySymbol)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(displayColor)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Display")
-                            .font(.headline)
-                        Spacer()
-                        Text(displayStateLabel)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(displayColor)
-                    }
-
-                    Text(displayHeadline)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-
-                    Text(displayDetail)
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 2)
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(displayColor.opacity(0.24), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Display settings")
-        .accessibilityValue(displayHeadline)
-    }
-
-    private func quickFactCell(symbol: String, title: String, value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 7) {
-                Image(systemName: symbol)
-                    .foregroundStyle(color)
-                    .frame(width: 18)
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-            }
-            Text(value)
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var cleanupCard: some View {
-        Button(action: openCleanup) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.12))
-                        .frame(width: 38, height: 38)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Cleanup & Storage")
-                        .font(.headline)
-                    Text("Scan caches, developer files, duplicates, large items and system cleanup")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(15)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            Color.accentColor.opacity(0.07),
-            in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
-        }
-        .help("Open Cleanup & Storage")
-    }
-
-    private var topConsumersCard: some View {
-        VStack(alignment: .leading, spacing: 9) {
+            ProgressView(value: Double(snapshot.usagePercent) / 100)
+                .tint(memoryStateColor)
+                .controlSize(.small)
             HStack {
-                Text("Top memory users")
-                    .font(.headline)
+                Text("Memory Pressure · \(monitor.pressure.displayName)")
                 Spacer()
-                if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
-                    Text("Check first")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(memoryStateColor)
+                Text("Swap Used · \(memoryBytes(snapshot.swapUsedBytes))")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            if monitor.systemHistory.count > 1 {
+                DashboardSparkline(
+                    values: monitor.systemHistory.map(\.memoryUsagePercent),
+                    tint: memoryStateColor
+                )
+                .accessibilityLabel("Recent memory usage trend")
+            }
+        }
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var systemDashboardCard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("CPU & System", systemImage: "cpu")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(monitor.diagnostics.cpuUsagePercent.map { "\(Int($0.rounded()))%" } ?? "—")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+            }
+            HStack(spacing: 9) {
+                Text("Load")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let cpu = monitor.diagnostics.cpuUsagePercent {
+                    ProgressView(value: min(max(cpu / 100, 0), 1))
+                        .tint(.blue)
+                        .controlSize(.small)
+                } else {
+                    Text("Unavailable")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(cpuTemperatureText)
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                    Text(monitor.diagnostics.thermalState.displayName)
+                        .font(.system(size: 9))
+                        .foregroundStyle(thermalColor)
                 }
             }
-
+            if monitor.systemHistory.count > 1 {
+                DashboardSparkline(
+                    values: monitor.systemHistory.map(\.cpuUsagePercent),
+                    tint: .blue
+                )
+                .accessibilityLabel("Recent CPU load trend")
+            }
+            HStack {
+                Text("Low Power Mode")
+                Spacer()
+                Text(monitor.diagnostics.lowPowerModeEnabled ? "On" : "Off")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption2)
+            Text("Top Memory Usage")
+                .font(.caption.weight(.semibold))
             if monitor.diagnostics.topProcesses.isEmpty {
-                Text("No application snapshot yet")
+                Text("No process snapshot available yet")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(monitor.diagnostics.topProcesses.prefix(5)) { process in
+                    HStack(spacing: 7) {
+                        Image(systemName: process.groupKind.symbolName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 13)
+                        Text(process.name)
+                            .font(.caption2)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(memoryBytes(process.memoryBytes))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var storageDashboardCard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label("Storage", systemImage: "internaldrive")
+                .font(.subheadline.weight(.semibold))
+            if monitor.storageVolumes.isEmpty {
+                Text("Storage information unavailable")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(monitor.diagnostics.topProcesses.prefix(3)) { process in
-                    HStack(spacing: 8) {
-                        Image(systemName: process.groupKind.symbolName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(process.name)
-                                .font(.body)
-                                .lineLimit(1)
-                            Text(process.memoryMetric.displayName)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
+                ForEach(dashboardStorageVolumes) { volume in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(volume.name).font(.caption)
+                                Text("\(fileBytes(volume.usedBytes)) used of \(fileBytes(volume.totalBytes))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(volume.usagePercent)%")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(storageHealthColor(volume.health))
                         }
-                        Spacer()
-                        Text(memoryBytes(process.memoryBytes))
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                        ProgressView(value: min(max(Double(volume.usagePercent) / 100, 0), 1))
+                            .tint(storageHealthColor(volume.health))
+                            .controlSize(.small)
                     }
                 }
             }
         }
-        .padding(15)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var powerDashboardCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 9) {
+                Image(systemName: powerSymbol)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(powerColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Power").font(.subheadline.weight(.semibold))
+                    Text(powerSummary).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let watts = monitor.powerSnapshot.systemLoadWatts {
+                    Text(String(format: "%.1f W", watts))
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+            }
+            if monitor.powerHistory.compactMap(\.systemLoadWatts).count > 1 {
+                DashboardSparkline(
+                    values: monitor.powerHistory.compactMap(\.systemLoadWatts),
+                    tint: .green
+                )
+                .frame(height: 24)
+                .accessibilityLabel("Recent power usage trend")
+            }
+        }
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var smartAlertsCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Smart Alerts", systemImage: "bell.badge")
+                    .font(.subheadline.weight(.semibold))
+                if !activeSystemAlerts.isEmpty {
+                    Text("\(activeSystemAlerts.count)")
+                        .font(.caption2.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 17, minHeight: 17)
+                        .background(Color.red, in: Circle())
+                        .accessibilityLabel("\(activeSystemAlerts.count) active alerts")
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { monitor.notificationsEnabled },
+                    set: { monitor.setNotificationsEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            if activeSystemAlerts.isEmpty {
+                Label("No current system alerts", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(activeSystemAlerts, id: \.self) { alert in
+                    Label(alert, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                }
+            }
+            HStack {
+                Text("Notification permission")
+                Spacer()
+                Text(monitor.notificationAuthorization.displayName)
+                    .foregroundStyle(notificationAuthorizationColor)
+            }
+            .font(.caption2)
+            if monitor.notificationAuthorization == .denied {
+                Button("Open Notification Settings") { monitor.openNotificationSettings() }
+                    .buttonStyle(.link)
+                    .font(.caption2)
+            }
+        }
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var activeSystemAlerts: [String] {
+        var alerts: [String] = []
+        if monitor.pressure != .normal { alerts.append("Memory pressure is \(monitor.pressure.displayName.lowercased())") }
+        if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
+            alerts.append("Active swap usage (\(memoryBytes(snapshot.swapUsedBytes)))")
+        }
+        if let volume = monitor.storageVolumes.first(where: { $0.health == .warning || $0.health == .critical }) {
+            alerts.append("\(volume.name) storage is almost full")
+        }
+        if monitor.diagnostics.thermalState == .serious || monitor.diagnostics.thermalState == .critical {
+            alerts.append("System is running hot")
+        }
+        return alerts
+    }
+
+    private var healthName: String {
+        if monitor.diagnostics.thermalState == .critical || intelligence.state == .critical ||
+            monitor.pressure == .critical ||
+            monitor.storageVolumes.contains(where: { $0.health == .critical }) { return "Critical" }
+        if monitor.diagnostics.thermalState == .serious || intelligence.state == .pressure ||
+            intelligence.state == .activeSwap || monitor.pressure == .warning ||
+            monitor.storageVolumes.contains(where: { $0.health == .warning }) {
+            return "Attention"
+        }
+        return "Good"
+    }
+
+    private var healthColor: Color {
+        switch healthName {
+        case "Critical": return .red
+        case "Attention": return .orange
+        default: return .green
+        }
+    }
+
+    private var healthSymbol: String {
+        switch healthName {
+        case "Critical": return "exclamationmark.octagon.fill"
+        case "Attention": return "exclamationmark.triangle.fill"
+        default: return "checkmark.circle.fill"
+        }
+    }
+
+    private var notificationAuthorizationColor: Color {
+        monitor.notificationAuthorization.canDeliver ? .green : .secondary
+    }
+
+    private func storageHealthColor(_ health: StorageHealthState) -> Color {
+        switch health {
+        case .normal: return .green
+        case .warning: return .orange
+        case .critical: return .red
+        }
     }
 
     private var controlsRow: some View {
         HStack(spacing: 10) {
-            Button {
-                showingTechnicalDetails = true
-            } label: {
-                Label("All details", systemImage: "slider.horizontal.3")
+            Button(action: openDisplays) {
+                Label("Displays", systemImage: "display")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
 
-            Button(action: openSettings) {
-                Label("Settings", systemImage: "gearshape")
+            Button(action: openCleanup) {
+                Label("Cleanup", systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button {
+                showingTechnicalDetails = true
+            } label: {
+                Label("All details", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -1044,29 +1152,41 @@ private struct SmartMenuBarRootView: View {
         }
     }
 
-    private var internalVolume: StorageVolumeSnapshot? {
-        monitor.storageVolumes.first(where: { $0.isInternal })
+    private var dashboardStorageVolumes: [StorageVolumeSnapshot] {
+        let internalVolume = monitor.storageVolumes.first(where: \.isInternal)
+        let externalVolume = monitor.storageVolumes.first(where: { !$0.isInternal })
+        return [internalVolume, externalVolume].compactMap { $0 }
     }
 
-    private var storageFact: String {
-        guard let internalVolume else { return "Unavailable" }
-        return "\(fileBytes(internalVolume.availableBytes)) free"
-    }
-
-    private var storageColor: Color {
-        guard let internalVolume else { return .secondary }
-        switch internalVolume.health {
-        case .normal: return .green
-        case .warning: return .orange
-        case .critical: return .red
+    private var powerSummary: String {
+        let power = monitor.powerSnapshot
+        var parts: [String] = []
+        if let percent = power.batteryPercentClamped {
+            parts.append("Battery \(percent)%")
+        } else {
+            parts.append(power.source.displayName)
         }
+        parts.append(power.flow.displayName)
+
+        let remainingMinutes: Int?
+        switch power.flow {
+        case .discharging: remainingMinutes = power.timeToEmptyMinutes
+        case .charging: remainingMinutes = power.timeToFullMinutes
+        case .idle, .unavailable: remainingMinutes = nil
+        }
+        if let remainingMinutes {
+            let hours = remainingMinutes / 60
+            let minutes = remainingMinutes % 60
+            parts.append(hours > 0 ? "\(hours)h \(minutes)m remaining" : "\(minutes)m remaining")
+        }
+        return parts.joined(separator: " · ")
     }
 
-    private var powerFact: String {
-        if let percent = monitor.powerSnapshot.batteryPercentClamped {
-            return "\(percent)% · \(monitor.powerSnapshot.flow.displayName)"
+    private var cpuTemperatureText: String {
+        guard let temperature = monitor.thermalSnapshot.aggregates[.cpu]?.currentCelsius else {
+            return "Temperature unavailable"
         }
-        return monitor.powerSnapshot.source.displayName
+        return String(format: "%.0f°C", temperature)
     }
 
     private var powerSymbol: String {
@@ -1087,58 +1207,6 @@ private struct SmartMenuBarRootView: View {
         }
     }
 
-    private var systemFact: String {
-        let thermal = monitor.diagnostics.thermalState.displayName
-        if let cpu = monitor.diagnostics.cpuUsagePercent {
-            return "CPU \(Int(cpu.rounded()))% · \(thermal)"
-        }
-        return thermal
-    }
-
-    private var displayStateLabel: String {
-        if display.currentDisplayInfo != nil { return "Connected" }
-        switch display.capabilities.externalDisplay.status {
-        case .available: return "Ready"
-        case .degraded: return "Limited"
-        case .unavailable: return "Unavailable"
-        }
-    }
-
-    private var displayHeadline: String {
-        guard let info = display.currentDisplayInfo else {
-            return display.capabilities.externalDisplay.reason ?? "No supported external display detected"
-        }
-        return info.displayLabel
-    }
-
-    private var displayDetail: String {
-        var details: [String] = []
-        if let lux = display.currentLux {
-            details.append("Ambient \(Int(lux.rounded())) lux")
-        }
-        details.append(display.autoBrightnessEnabled ? "Automatic brightness on" : "Manual brightness")
-        if display.keepAwakeState.featureEnabled {
-            details.append("Keep Awake enabled")
-        }
-        return details.joined(separator: " · ")
-    }
-
-    private var displaySymbol: String {
-        if display.keepAwakeState.featureEnabled && display.isAwakeAssertionActive {
-            return "moon.zzz.fill"
-        }
-        return display.currentDisplayInfo == nil ? "display.trianglebadge.exclamationmark" : "sun.max.fill"
-    }
-
-    private var displayColor: Color {
-        if display.currentDisplayInfo != nil { return .green }
-        switch display.capabilities.externalDisplay.status {
-        case .available: return .blue
-        case .degraded: return .orange
-        case .unavailable: return .secondary
-        }
-    }
-
     private var thermalColor: Color {
         switch monitor.diagnostics.thermalState {
         case .nominal: return .green
@@ -1154,5 +1222,45 @@ private struct SmartMenuBarRootView: View {
 
     private func fileBytes(_ value: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
+    }
+}
+
+private struct DashboardSparkline: View {
+    let values: [Double]
+    let tint: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let samples = values.filter(\.isFinite)
+            guard samples.count > 1, size.width > 1, size.height > 1,
+                  let minimum = samples.min(), let maximum = samples.max() else { return }
+
+            let range = maximum - minimum
+            let step = size.width / CGFloat(samples.count - 1)
+            var line = Path()
+            for (index, value) in samples.enumerated() {
+                let x = CGFloat(index) * step
+                let normalized = range < 0.001 ? 0.5 : CGFloat((value - minimum) / range)
+                let y = size.height - normalized * (size.height - 2) - 1
+                let point = CGPoint(x: x, y: y)
+                if index == 0 {
+                    line.move(to: point)
+                } else {
+                    line.addLine(to: point)
+                }
+            }
+
+            var area = line
+            area.addLine(to: CGPoint(x: size.width, y: size.height))
+            area.addLine(to: CGPoint(x: 0, y: size.height))
+            area.closeSubpath()
+            context.fill(area, with: .color(tint.opacity(0.1)))
+            context.stroke(
+                line,
+                with: .color(tint),
+                style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+            )
+        }
+        .frame(height: 26)
     }
 }

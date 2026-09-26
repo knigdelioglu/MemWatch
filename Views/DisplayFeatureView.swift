@@ -5,37 +5,53 @@ struct DisplayFeatureView: View {
     @ObservedObject private var connectionController: DisplayConnectionController
 
     let onBack: () -> Void
+    var showsNavigation = false
+    var onOpenOverview: () -> Void = {}
+    var onOpenCleanup: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
     @State private var showingDiagnostics = false
+    @State private var showingMoreDetails = false
     @State private var brightnessDraft: Double = 0
     @State private var isAdjustingBrightness = false
     @State private var volumeDraft: Double = 0
     @State private var isAdjustingVolume = false
 
-    init(display: DisplayCoordinator, onBack: @escaping () -> Void = {}) {
+    init(
+        display: DisplayCoordinator,
+        onBack: @escaping () -> Void = {},
+        showsNavigation: Bool = false,
+        onOpenOverview: @escaping () -> Void = {},
+        onOpenCleanup: @escaping () -> Void = {},
+        onOpenSettings: @escaping () -> Void = {}
+    ) {
         self.display = display
         self.onBack = onBack
+        self.showsNavigation = showsNavigation
+        self.onOpenOverview = onOpenOverview
+        self.onOpenCleanup = onOpenCleanup
+        self.onOpenSettings = onOpenSettings
         _connectionController = ObservedObject(wrappedValue: display.displayConnectionController)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    displayStatusCard
-                    brightnessCard
-                    volumeCard
-                    keepAwakeCard
-                    hiDPICard
-                    connectionCard
-                    diagnosticsCard
+        Group {
+            if showsNavigation {
+                HStack(spacing: 0) {
+                    WindowSidebar(
+                        selection: .displays,
+                        onOpenOverview: onOpenOverview,
+                        onOpenCleanup: onOpenCleanup,
+                        onOpenDisplays: {},
+                        onOpenSettings: onOpenSettings
+                    )
+                    controlPanel
                 }
-                .padding(16)
+            } else {
+                controlPanel
             }
         }
-        .frame(width: 430, height: 640)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: showsNavigation ? 520 : 390, minHeight: showsNavigation ? 720 : 860)
         .onAppear {
             brightnessDraft = Double(display.monitorBrightnessControlValue)
             volumeDraft = Double(display.monitorVolumeControlValue)
@@ -59,19 +75,69 @@ struct DisplayFeatureView: View {
         }
     }
 
+    private var controlPanel: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                Group {
+                    if showsNavigation {
+                        windowControlCards
+                    } else {
+                        popoverControlCards
+                    }
+                }
+                .padding(showsNavigation ? 12 : 16)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var windowControlCards: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            externalDisplayWindowCard
+            builtInDisplayWindowCard
+            keepAwakeCard
+
+            DisclosureGroup("Connection & diagnostics", isExpanded: $showingMoreDetails) {
+                VStack(alignment: .leading, spacing: 10) {
+                    connectionCard
+                    diagnosticsCard
+                }
+                .padding(.top, 8)
+            }
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private var popoverControlCards: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            displayStatusCard
+            brightnessCard
+            volumeCard
+            keepAwakeCard
+            hiDPICard
+            connectionCard
+            diagnosticsCard
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onBack) {
-                Label("Back", systemImage: "chevron.left")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .frame(minHeight: 34)
+            if !showsNavigation {
+                Button(action: onBack) {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 34)
+                }
+                .buttonStyle(.plain)
+                .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHint("Returns to the MemWatch overview")
             }
-            .buttonStyle(.plain)
-            .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .accessibilityHint("Returns to the MemWatch overview")
 
-            Label("Display", systemImage: "sun.max.fill")
+            Label(showsNavigation ? "Displays & Awake" : "Display", systemImage: "sun.max.fill")
                 .font(.headline)
 
             Spacer()
@@ -100,8 +166,11 @@ struct DisplayFeatureView: View {
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("External Display")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
                     Text(display.currentDisplayLabel)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
 
                     Text(displayStatusHeadline)
                         .font(.subheadline)
@@ -120,6 +189,38 @@ struct DisplayFeatureView: View {
 
             Divider()
 
+            HStack(spacing: 9) {
+                Image(systemName: "laptopcomputer")
+                    .foregroundStyle(display.capabilities.internalBrightness.isAvailable ? .blue : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Built-in Display")
+                        .font(.caption.weight(.semibold))
+                    if display.capabilities.internalBrightness.isAvailable {
+                        if let brightness = display.currentInternalBrightness {
+                            Text("Brightness \(brightness)%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Brightness unavailable")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(display.capabilities.internalBrightness.reason ?? "Not available on this Mac")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if display.capabilities.internalBrightness.isAvailable {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .accessibilityLabel("Built-in display available")
+                }
+            }
+
+            Divider()
+
             HStack(spacing: 12) {
                 statusMetric(title: "Ambient", value: luxText)
                 statusMetric(title: "Brightness", value: display.brightnessControlText)
@@ -128,90 +229,142 @@ struct DisplayFeatureView: View {
         }
     }
 
-    private var brightnessCard: some View {
+    private var externalDisplayWindowCard: some View {
         FeatureCard {
-            featureHeader(title: "Brightness", symbol: "sun.max.fill")
-
-            if display.capabilities.internalBrightness.isAvailable, display.currentInternalBrightness != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Mac display")
-                        Spacer()
-                        Text("\(display.currentInternalBrightness ?? 0)%")
-                            .font(.caption.monospacedDigit().weight(.semibold))
-                    }
-                    .font(.caption)
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(display.currentInternalBrightness ?? 0) },
-                            set: { _ = display.setInternalBrightness(Int($0.rounded())) }
-                        ),
-                        in: 0...100,
-                        step: 1
-                    )
-                    .accessibilityLabel("Mac display brightness")
+            HStack(spacing: 10) {
+                Image(systemName: display.currentDisplayInfo == nil ? "display.trianglebadge.exclamationmark" : "display")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(display.currentDisplayInfo == nil ? .orange : .blue)
+                    .frame(width: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(display.currentDisplayLabel)
+                        .font(.subheadline.weight(.semibold))
+                    Text(displayStatusHeadline)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            } else {
-                capabilityMessage(display.capabilities.internalBrightness)
+                Spacer(minLength: 4)
+                Label(
+                    display.currentDisplayInfo == nil ? "Unavailable" : "Connected",
+                    systemImage: display.currentDisplayInfo == nil ? "minus.circle" : "checkmark.circle.fill"
+                )
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(display.currentDisplayInfo == nil ? .secondary : .green)
             }
 
             Divider()
 
-            if display.capabilities.ddc.isAvailable, display.currentDisplayInfo != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("External display")
-                        Spacer()
-                        Text(externalBrightnessText)
-                            .font(.caption.monospacedDigit().weight(.semibold))
-                    }
-                    .font(.caption)
+            featureHeader(title: "Brightness", symbol: "sun.max.fill")
+            externalBrightnessControl
+            automaticBrightnessControl
 
-                    Slider(
-                        value: Binding(
-                            get: { brightnessDraft },
-                            set: { newValue in scheduleBrightnessWrite(newValue) }
-                        ),
-                        in: 0...100,
-                        step: 1,
-                        onEditingChanged: handleBrightnessEditingChanged
-                    )
-                    .accessibilityLabel("External display brightness")
+            Divider()
 
-                    Text(display.brightnessDiagnosticInlineText)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+            volumeControl
+
+            Divider()
+
+            retinaModeControl
+        }
+    }
+
+    private var builtInDisplayWindowCard: some View {
+        FeatureCard {
+            featureHeader(title: "Built-in Display", symbol: "laptopcomputer")
+            internalBrightnessControl
+        }
+    }
+
+    @ViewBuilder
+    private var internalBrightnessControl: some View {
+        if display.capabilities.internalBrightness.isAvailable,
+           let brightness = display.currentInternalBrightness {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("Brightness")
+                    Spacer()
+                    Text("\(brightness)%")
+                        .font(.caption.monospacedDigit().weight(.semibold))
                 }
-            } else {
-                capabilityMessage(display.capabilities.ddc)
-            }
+                .font(.caption)
 
+                Slider(
+                    value: Binding(
+                        get: { Double(display.currentInternalBrightness ?? brightness) },
+                        set: { _ = display.setInternalBrightness(Int($0.rounded())) }
+                    ),
+                    in: 0...100,
+                    step: 1
+                )
+                .accessibilityLabel("Built-in display brightness")
+            }
+        } else {
+            capabilityMessage(display.capabilities.internalBrightness)
+        }
+    }
+
+    @ViewBuilder
+    private var externalBrightnessControl: some View {
+        if display.capabilities.ddc.isAvailable, display.currentDisplayInfo != nil {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("External display")
+                    Spacer()
+                    Text(externalBrightnessText)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+                .font(.caption)
+
+                Slider(
+                    value: Binding(
+                        get: { brightnessDraft },
+                        set: { newValue in scheduleBrightnessWrite(newValue) }
+                    ),
+                    in: 0...100,
+                    step: 1,
+                    onEditingChanged: handleBrightnessEditingChanged
+                )
+                .accessibilityLabel("External display brightness")
+
+                Text(display.brightnessDiagnosticInlineText)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+            .disabled(display.currentDisplayInfo == nil)
+        } else {
+            capabilityMessage(display.capabilities.ddc)
+        }
+    }
+
+    private var automaticBrightnessControl: some View {
+        VStack(alignment: .leading, spacing: 3) {
             Toggle(
-                "Automatic external brightness",
+                "Auto-brightness (ambient light)",
                 isOn: Binding(
                     get: { display.autoBrightnessEnabled },
                     set: { display.setAutoBrightnessEnabled($0) }
                 )
             )
             .toggleStyle(.switch)
+            .controlSize(.small)
             .disabled(!canUseAutomaticBrightness)
 
             if !canUseAutomaticBrightness {
                 Text(automaticBrightnessReason)
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private var volumeCard: some View {
-        FeatureCard {
-            featureHeader(title: "Monitor volume", symbol: "speaker.wave.2.fill")
+    private var volumeControl: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            featureHeader(title: "Volume", symbol: "speaker.wave.2.fill")
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: display.monitorVolumeControlValue == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .foregroundStyle(.secondary)
 
@@ -222,15 +375,13 @@ struct DisplayFeatureView: View {
                     ),
                     in: 0...100,
                     step: 1,
-                    onEditingChanged: { isEditing in
-                        isAdjustingVolume = isEditing
-                    }
+                    onEditingChanged: { isAdjustingVolume = $0 }
                 )
                 .accessibilityLabel("External display volume")
 
                 Text(volumeText)
                     .font(.caption.monospacedDigit().weight(.semibold))
-                    .frame(width: 40, alignment: .trailing)
+                    .frame(width: 34, alignment: .trailing)
 
                 Button {
                     display.toggleMuteForSettingsSync()
@@ -239,6 +390,7 @@ struct DisplayFeatureView: View {
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help("Mute or unmute external display")
                 .accessibilityLabel(display.monitorVolumeControlValue == 0 ? "Unmute external display" : "Mute external display")
             }
@@ -247,6 +399,53 @@ struct DisplayFeatureView: View {
             if !display.capabilities.volume.isAvailable || display.currentDisplayInfo == nil {
                 capabilityMessage(display.capabilities.volume)
             }
+        }
+    }
+
+    private var retinaModeControl: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(
+                "HiDPI / Retina Mode",
+                isOn: Binding(
+                    get: { display.isHiDPIActive },
+                    set: { enabled in
+                        if enabled {
+                            display.applyRetinaMode()
+                        } else {
+                            display.disableRetinaMode()
+                        }
+                    }
+                )
+            )
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(!display.capabilities.hiDPI.isAvailable || display.currentDisplayInfo == nil)
+
+            Text(display.hiDPIStatusText)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !display.capabilities.hiDPI.isAvailable || display.currentDisplayInfo == nil {
+                capabilityMessage(display.capabilities.hiDPI)
+            }
+        }
+    }
+
+    private var brightnessCard: some View {
+        FeatureCard {
+            featureHeader(title: "Brightness", symbol: "sun.max.fill")
+            internalBrightnessControl
+
+            Divider()
+            externalBrightnessControl
+            automaticBrightnessControl
+        }
+    }
+
+    private var volumeCard: some View {
+        FeatureCard {
+            volumeControl
         }
     }
 
@@ -501,31 +700,32 @@ struct DisplayFeatureView: View {
 struct KeepAwakeControlsView: View {
     @ObservedObject var display: DisplayCoordinator
     var compact = false
+    @State private var selectedDuration = "never"
+    @State private var selectedKeepsDisplayAwake = true
+
+    init(display: DisplayCoordinator, compact: Bool = false) {
+        self.display = display
+        self.compact = compact
+        _selectedKeepsDisplayAwake = State(initialValue: display.keepAwakeState.keepDisplayAwake)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
             Label("Keep Awake", systemImage: "moon.zzz.fill")
                 .font(compact ? .headline : .subheadline.weight(.semibold))
 
-            Toggle(
-                "Keep system awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.featureEnabled },
-                    set: { display.setKeepAwakeFeatureEnabled($0) }
+            HStack(spacing: 7) {
+                awakeModeButton(
+                    title: "System & Displays",
+                    symbol: "laptopcomputer.and.iphone",
+                    keepsDisplayAwake: true
                 )
-            )
-            .toggleStyle(.switch)
-            .font(compact ? .body : .subheadline)
-
-            Toggle(
-                "Keep display awake",
-                isOn: Binding(
-                    get: { display.keepAwakeState.keepDisplayAwake },
-                    set: { display.setKeepAwakeDisplayAwake($0) }
+                awakeModeButton(
+                    title: "System Only",
+                    symbol: "laptopcomputer",
+                    keepsDisplayAwake: false
                 )
-            )
-            .disabled(!display.keepAwakeState.featureEnabled)
-            .font(compact ? .body : .subheadline)
+            }
 
             Toggle(
                 "Only while connected to power",
@@ -549,24 +749,65 @@ struct KeepAwakeControlsView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                sessionButton(title: "15 min", mode: "15")
-                sessionButton(title: "30 min", mode: "30")
-                sessionButton(title: "1 hour", mode: "60")
-                sessionButton(title: "Until off", mode: "never")
+            HStack(spacing: 6) {
+                durationButton(title: "5 minutes", mode: "5")
+                durationButton(title: "15 minutes", mode: "15")
+                durationButton(title: "1 hour", mode: "60")
+                durationButton(title: "Indefinitely", mode: "never")
+            }
+
+            Button {
+                display.setKeepAwakeFeatureEnabled(true)
+                display.setKeepAwakeDisplayAwake(selectedKeepsDisplayAwake)
+                if selectedDuration == "5" {
+                    display.startSessionWithCustomMinutes(5)
+                } else {
+                    display.startSessionWithDurationMode(selectedDuration)
+                }
+            } label: {
+                Label("Start Keeping Awake", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            if display.keepAwakeState.featureEnabled {
+                Button("Stop Keeping Awake") {
+                    display.setKeepAwakeFeatureEnabled(false)
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }
 
-    private func sessionButton(title: String, mode: String) -> some View {
-        Button(title) {
-            display.startSessionWithDurationMode(mode)
+    private func awakeModeButton(title: String, symbol: String, keepsDisplayAwake: Bool) -> some View {
+        let selected = selectedKeepsDisplayAwake == keepsDisplayAwake
+        return Button {
+            selectedKeepsDisplayAwake = keepsDisplayAwake
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.system(size: compact ? 9 : 10, weight: .medium))
+                .frame(maxWidth: .infinity, minHeight: compact ? 34 : 38)
+                .multilineTextAlignment(.center)
         }
         .buttonStyle(.bordered)
-        .font(compact ? .callout : .caption)
-        .frame(maxWidth: .infinity)
-        .controlSize(compact ? .small : .regular)
-        .disabled(!display.keepAwakeState.featureEnabled)
+        .tint(selected ? .accentColor : .secondary)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func durationButton(title: String, mode: String) -> some View {
+        Button {
+            selectedDuration = mode
+        } label: {
+            Text(title)
+                .font(.system(size: compact ? 8 : 9, weight: .medium))
+                .frame(maxWidth: .infinity, minHeight: 28)
+                .multilineTextAlignment(.center)
+        }
+        .buttonStyle(.bordered)
+        .tint(selectedDuration == mode ? .accentColor : .secondary)
+        .accessibilityAddTraits(selectedDuration == mode ? .isSelected : [])
     }
 }
 

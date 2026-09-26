@@ -44,7 +44,7 @@ struct MenuBarView: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: 430, height: 640)
+        .frame(width: 390, height: 860)
         .animation(.easeInOut(duration: 0.16), value: route)
         .onAppear {
             route = .dashboard
@@ -53,49 +53,47 @@ struct MenuBarView: View {
 
     private var dashboardView: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 9) {
                 dashboardHeader
 
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                    spacing: 12
-                ) {
-                    moduleCard(
-                        route: .memory,
-                        title: "Memory",
-                        symbol: "memorychip",
-                        value: "Pressure estimate \(pressureEstimate.percent)%",
-                        detail: "RAM \(snapshot.usagePercent)% · Swap \(shortBytes(snapshot.swapUsedBytes))",
-                        accent: pressureColor
-                    )
+                moduleCard(
+                    route: .memory,
+                    title: "Memory",
+                    symbol: "memorychip",
+                    value: "\(shortBytes(snapshot.usedBytes)) of \(shortBytes(snapshot.totalBytes))",
+                    detail: "\(snapshot.usagePercent)% used · \(monitor.pressure.displayName) pressure · Swap \(shortBytes(snapshot.swapUsedBytes))",
+                    accent: pressureColor,
+                    progress: Double(snapshot.usagePercent) / 100
+                )
 
-                    moduleCard(
-                        route: .storage,
-                        title: "Storage",
-                        symbol: "internaldrive",
-                        value: storageHeadline,
-                        detail: storageDetail,
-                        accent: storageDashboardColor
-                    )
+                moduleCard(
+                    route: .system,
+                    title: "CPU & System",
+                    symbol: "cpu",
+                    value: systemHeadline,
+                    detail: "Thermal state · \(monitor.diagnostics.thermalState.displayName)",
+                    accent: thermalColor,
+                    progress: monitor.diagnostics.cpuUsagePercent.map { $0 / 100 }
+                )
 
-                    moduleCard(
-                        route: .energy,
-                        title: "Energy",
-                        symbol: powerSymbol,
-                        value: energyHeadline,
-                        detail: monitor.powerSnapshot.flow.displayName,
-                        accent: energyColor
-                    )
+                moduleCard(
+                    route: .storage,
+                    title: "Storage",
+                    symbol: "internaldrive",
+                    value: storageHeadline,
+                    detail: storageDetail,
+                    accent: storageDashboardColor,
+                    progress: internalVolume.map { Double($0.usagePercent) / 100 }
+                )
 
-                    moduleCard(
-                        route: .system,
-                        title: "System",
-                        symbol: "cpu",
-                        value: systemHeadline,
-                        detail: monitor.diagnostics.thermalState.displayName,
-                        accent: thermalColor
-                    )
-                }
+                moduleCard(
+                    route: .energy,
+                    title: "Power",
+                    symbol: powerSymbol,
+                    value: energyHeadline,
+                    detail: "\(monitor.powerSnapshot.flow.displayName) · \(monitor.powerSnapshot.systemLoadWatts.map { String(format: "%.1f W", $0) } ?? "Power telemetry unavailable")",
+                    accent: energyColor
+                )
 
                 notificationDashboardCard
 
@@ -115,27 +113,28 @@ struct MenuBarView: View {
                 }
                 .padding(.top, 2)
             }
-            .padding(16)
+            .padding(12)
         }
     }
 
     private var dashboardHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text("Mac Health:")
-                    .font(.title3.weight(.semibold))
-                Text(healthName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(healthColor)
-                Spacer()
-                Text("\(snapshot.usagePercent)% RAM used")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 9) {
+            Image(systemName: "waveform.path.ecg.rectangle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 31, height: 31)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("MemWatch").font(.headline)
+                Text("A cleaner, healthier Mac").font(.caption2).foregroundStyle(.secondary)
             }
-
-            Text("MemWatch")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Spacer()
+            Label(healthName == "Good" ? "All Systems Good" : healthName, systemImage: statusSymbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(healthColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(healthColor.opacity(0.1), in: Capsule())
         }
     }
 
@@ -145,46 +144,52 @@ struct MenuBarView: View {
         symbol: String,
         value: String,
         detail: String,
-        accent: Color
+        accent: Color,
+        progress: Double? = nil
     ) -> some View {
         Button {
             route = destination
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 HStack {
                     Image(systemName: symbol)
-                        .font(.title3)
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(accent)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .frame(width: 22)
                 }
-
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(value)
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(title).font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(value)
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    if let progress {
+                        ProgressView(value: min(max(progress, 0), 1))
+                            .tint(accent)
+                            .controlSize(.small)
+                    }
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 3)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(accent.opacity(0.32), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.primary.opacity(0.07), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -192,7 +197,7 @@ struct MenuBarView: View {
     private var notificationDashboardCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Smart alerts", systemImage: "bell.badge")
+                Label("Smart Alerts", systemImage: "bell.badge")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Toggle(
@@ -215,6 +220,18 @@ struct MenuBarView: View {
             }
             .font(.caption)
 
+            ForEach(activeAlertSummaries, id: \.self) { alert in
+                Label(alert, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
+            if activeAlertSummaries.isEmpty {
+                Label("No current system alerts", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             if monitor.notificationAuthorization == .denied {
                 Button("Open Notification Settings") {
                     monitor.openNotificationSettings()
@@ -223,8 +240,23 @@ struct MenuBarView: View {
                 .font(.caption2)
             }
         }
-        .padding(14)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var activeAlertSummaries: [String] {
+        var alerts: [String] = []
+        if monitor.pressure != .normal { alerts.append("Memory pressure is \(monitor.pressure.displayName.lowercased())") }
+        if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
+            alerts.append("Active swap usage (\(shortBytes(snapshot.swapUsedBytes)))")
+        }
+        if let volume = monitor.storageVolumes.first(where: { $0.health == .warning || $0.health == .critical }) {
+            alerts.append("\(volume.name) storage is almost full")
+        }
+        if monitor.diagnostics.thermalState == .serious || monitor.diagnostics.thermalState == .critical {
+            alerts.append("System is running hot")
+        }
+        return alerts
     }
 
     private func detailContainer<Content: View>(
@@ -573,6 +605,7 @@ struct MenuBarView: View {
     private var healthName: String {
         if monitor.diagnostics.thermalState == .critical
             || intelligence.state == .critical
+            || monitor.pressure == .critical
             || monitor.storageVolumes.contains(where: { $0.health == .critical }) {
             return "Critical"
         }
@@ -580,6 +613,7 @@ struct MenuBarView: View {
         if monitor.diagnostics.thermalState == .serious
             || intelligence.state == .pressure
             || intelligence.state == .activeSwap
+            || monitor.pressure == .warning
             || monitor.storageVolumes.contains(where: { $0.health == .warning }) {
             return "Attention"
         }

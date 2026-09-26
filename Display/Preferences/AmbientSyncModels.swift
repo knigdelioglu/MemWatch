@@ -582,6 +582,7 @@ final class AmbientSyncStore: ObservableObject {
         var settings = updated.displaySettingsByKey[storageKey] ?? Self.defaultDisplaySettings()
         mutate(&settings)
         updated.displaySettingsByKey[storageKey] = settings
+        guard updated != preferences else { return }
         preferences = updated
     }
 
@@ -594,6 +595,7 @@ final class AmbientSyncStore: ObservableObject {
         var settings = updated.displaySettingsByKey[storageKey] ?? Self.defaultDisplaySettings()
         mutate(&settings)
         updated.displaySettingsByKey[storageKey] = settings
+        guard updated != preferences else { return }
         preferences = updated
     }
 
