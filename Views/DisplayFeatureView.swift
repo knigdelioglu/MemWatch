@@ -6,6 +6,7 @@ struct DisplayFeatureView: View {
 
     let onBack: () -> Void
     var showsNavigation = false
+    var usesWindowLayout = false
     var onOpenOverview: () -> Void = {}
     var onOpenCleanup: () -> Void = {}
     var onOpenSettings: () -> Void = {}
@@ -20,6 +21,7 @@ struct DisplayFeatureView: View {
         display: DisplayCoordinator,
         onBack: @escaping () -> Void = {},
         showsNavigation: Bool = false,
+        usesWindowLayout: Bool = false,
         onOpenOverview: @escaping () -> Void = {},
         onOpenCleanup: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {}
@@ -27,6 +29,7 @@ struct DisplayFeatureView: View {
         self.display = display
         self.onBack = onBack
         self.showsNavigation = showsNavigation
+        self.usesWindowLayout = usesWindowLayout
         self.onOpenOverview = onOpenOverview
         self.onOpenCleanup = onOpenCleanup
         self.onOpenSettings = onOpenSettings
@@ -51,7 +54,8 @@ struct DisplayFeatureView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .frame(minWidth: showsNavigation ? 520 : 390, minHeight: showsNavigation ? 720 : 860)
+        .frame(minWidth: usesWindowLayout || showsNavigation ? 520 : 390,
+               minHeight: usesWindowLayout || showsNavigation ? 720 : 860)
         .onAppear {
             brightnessDraft = Double(display.monitorBrightnessControlValue)
             volumeDraft = Double(display.monitorVolumeControlValue)
@@ -81,13 +85,13 @@ struct DisplayFeatureView: View {
             Divider()
             ScrollView {
                 Group {
-                    if showsNavigation {
+                    if usesWindowLayout || showsNavigation {
                         windowControlCards
                     } else {
                         popoverControlCards
                     }
                 }
-                .padding(showsNavigation ? 12 : 16)
+                .padding(usesWindowLayout || showsNavigation ? 12 : 16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -125,7 +129,7 @@ struct DisplayFeatureView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            if !showsNavigation {
+            if !usesWindowLayout && !showsNavigation {
                 Button(action: onBack) {
                     Label("Back", systemImage: "chevron.left")
                         .font(.subheadline.weight(.semibold))
@@ -137,7 +141,7 @@ struct DisplayFeatureView: View {
                 .accessibilityHint("Returns to the MemWatch overview")
             }
 
-            Label(showsNavigation ? "Displays & Awake" : "Display", systemImage: "sun.max.fill")
+            Label(usesWindowLayout || showsNavigation ? "Displays & Awake" : "Display", systemImage: "sun.max.fill")
                 .font(.headline)
 
             Spacer()
@@ -250,7 +254,7 @@ struct DisplayFeatureView: View {
                     systemImage: display.currentDisplayInfo == nil ? "minus.circle" : "checkmark.circle.fill"
                 )
                 .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(display.currentDisplayInfo == nil ? .secondary : .green)
+                .foregroundStyle(display.currentDisplayInfo == nil ? Color.secondary : Color.green)
             }
 
             Divider()

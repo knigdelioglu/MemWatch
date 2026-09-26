@@ -70,6 +70,8 @@ struct SystemDiagnosticsCollectorSmoke {
     }
 
     private static func groupingAssignsEachPIDOnce() {
+        let chromeStartTime = ProcessStartTime(seconds: 1_700_000_000, microseconds: 120)
+        let nodeStartTime = ProcessStartTime(seconds: 1_700_000_100, microseconds: 340)
         let chrome = ProcessApplicationMetadata(
             pid: 100,
             name: "Google Chrome",
@@ -89,7 +91,8 @@ struct SystemDiagnosticsCollectorSmoke {
                 memoryBytes: 100,
                 memoryMetric: .physicalFootprint,
                 physicalFootprintBytes: 100,
-                residentBytes: 50
+                residentBytes: 50,
+                processStartTime: chromeStartTime
             ),
             ProcessInventoryEntry(
                 pid: 101,
@@ -122,7 +125,8 @@ struct SystemDiagnosticsCollectorSmoke {
                 memoryBytes: 400,
                 memoryMetric: .physicalFootprint,
                 physicalFootprintBytes: 400,
-                residentBytes: 400
+                residentBytes: 400,
+                processStartTime: nodeStartTime
             )
         ]
 
@@ -140,12 +144,14 @@ struct SystemDiagnosticsCollectorSmoke {
         precondition(chromeSnapshot.memoryBytes == 600, "Chrome helpers must be grouped under the app")
         precondition(chromeSnapshot.processIDs == [100, 101, 102], "Chrome ownership must be deterministic")
         precondition(chromeSnapshot.groupKind == .application, "Chrome must be an application group")
+        precondition(chromeSnapshot.processStartTime == chromeStartTime, "Application rows must retain the root process identity")
         precondition(chromeSnapshot.residentBytes == 300, "Validation RSS must sum the same Chrome PIDs")
         precondition(chromeSnapshot.residentProcessCount == 3, "Validation RSS must be available for each Chrome PID")
         precondition(chromeSnapshot.physicalFootprintProcessCount == 3, "Chrome footprint PID count must be explicit")
         precondition(chromeSnapshot.residentFallbackProcessCount == 0, "Chrome should not use RSS fallback when footprint is available")
         precondition(nodeSnapshot.memoryBytes == 400, "Standalone node process must remain visible")
         precondition(nodeSnapshot.processIDs == [200], "Standalone process must own only itself")
+        precondition(nodeSnapshot.processStartTime == nodeStartTime, "Standalone rows must retain their process identity")
 
         let ownedPIDs = aggregation.snapshots.flatMap(\.processIDs)
         precondition(Set(ownedPIDs).count == ownedPIDs.count, "A PID must not appear in two rows")

@@ -264,17 +264,16 @@ private struct TrayPresentation: Equatable {
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
     private static let panelSize = NSSize(width: 390, height: 860)
-    private static let cleanupWindowSize = NSSize(width: 680, height: 690)
-    private static let displayWindowSize = NSSize(width: 520, height: 720)
+    private static let mainWindowSize = NSSize(width: 1120, height: 760)
+    private static let mainWindowMinimumSize = NSSize(width: 900, height: 680)
 
     private let monitor: MonitoringService
     private let cleanup: CleanupCoordinator
     private let display: DisplayCoordinator
+    private let mainWindowNavigation = MainWindowNavigation()
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
-    private var cleanupWindowController: NSWindowController?
-    private var displayWindowController: NSWindowController?
-    private var settingsWindowController: NSWindowController?
+    private var mainWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
     private var previousTrayPresentation: TrayPresentation?
 
@@ -496,69 +495,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     @objc
     private func openSettings() {
-        closePopover()
-
-        if let window = settingsWindowController?.window {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let hostingController = NSHostingController(
-            rootView: UnifiedSettingsView(monitor: monitor, display: display)
-        )
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "MemWatch Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 760, height: 620))
-        window.minSize = NSSize(width: 680, height: 520)
-        window.isReleasedWhenClosed = false
-        window.center()
-
-        let controller = NSWindowController(window: window)
-        settingsWindowController = controller
-        NSApp.activate(ignoringOtherApps: true)
-        controller.showWindow(nil)
+        showMainWindow(selection: .settings)
     }
 
     @objc
     private func openCleanupWindow() {
-        closePopover()
-
-        if let window = cleanupWindowController?.window {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            if cleanup.scanResult == nil, !cleanup.isBusy {
-                cleanup.startScan()
-            }
-            return
-        }
-
-        let hostingController = NSHostingController(
-            rootView: CleanupView(
-                coordinator: cleanup,
-                onOpenOverview: { [weak self] in self?.showPopover() },
-                onOpenDisplays: { [weak self] in self?.openDisplayWindow() },
-                onOpenSettings: { [weak self] in self?.openSettings() }
-            )
-                .frame(
-                    minWidth: Self.cleanupWindowSize.width,
-                    minHeight: Self.cleanupWindowSize.height
-                )
-        )
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "MemWatch Cleanup"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(Self.cleanupWindowSize)
-        window.minSize = Self.cleanupWindowSize
-        window.isReleasedWhenClosed = false
-        window.center()
-
-        let controller = NSWindowController(window: window)
-        cleanupWindowController = controller
-
-        NSApp.activate(ignoringOtherApps: true)
-        controller.showWindow(nil)
+        showMainWindow(selection: .cleanup)
         if cleanup.scanResult == nil, !cleanup.isBusy {
             cleanup.startScan()
         }
@@ -566,34 +508,35 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     @objc
     private func openDisplayWindow() {
-        closePopover()
+        showMainWindow(selection: .displays)
+    }
 
-        if let window = displayWindowController?.window {
+    private func showMainWindow(selection: WindowNavigationSelection) {
+        closePopover()
+        mainWindowNavigation.selection = selection
+
+        if let window = mainWindowController?.window {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
         }
 
-        let hostingController = NSHostingController(
-            rootView: DisplayFeatureView(
-                display: display,
-                showsNavigation: true,
-                onOpenOverview: { [weak self] in self?.showPopover() },
-                onOpenCleanup: { [weak self] in self?.openCleanupWindow() },
-                onOpenSettings: { [weak self] in self?.openSettings() }
-            )
-            .frame(minWidth: Self.displayWindowSize.width, minHeight: Self.displayWindowSize.height)
-        )
+        let hostingController = NSHostingController(rootView: MainWindowRootView(
+            monitor: monitor,
+            cleanup: cleanup,
+            display: display,
+            navigation: mainWindowNavigation
+        ))
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "MemWatch Displays & Awake"
+        window.title = "MemWatch"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(Self.displayWindowSize)
-        window.minSize = Self.displayWindowSize
+        window.setContentSize(Self.mainWindowSize)
+        window.minSize = Self.mainWindowMinimumSize
         window.isReleasedWhenClosed = false
         window.center()
 
         let controller = NSWindowController(window: window)
-        displayWindowController = controller
+        mainWindowController = controller
         NSApp.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
     }
@@ -717,11 +660,65 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 }
 
+@MainActor
+private final class MainWindowNavigation: ObservableObject {
+    @Published var selection: WindowNavigationSelection = .displays
+}
+
+@MainActor
+private struct MainWindowRootView: View {
+    @ObservedObject var monitor: MonitoringService
+    @ObservedObject var cleanup: CleanupCoordinator
+    @ObservedObject var display: DisplayCoordinator
+    @ObservedObject var navigation: MainWindowNavigation
+
+    var body: some View {
+        HStack(spacing: 0) {
+            WindowSidebar(
+                selection: navigation.selection,
+                onOpenOverview: { navigation.selection = .overview },
+                onOpenCleanup: { navigation.selection = .cleanup },
+                onOpenDisplays: { navigation.selection = .displays },
+                onOpenSettings: { navigation.selection = .settings }
+            )
+            content
+        }
+        .frame(minWidth: 900, minHeight: 680)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch navigation.selection {
+        case .overview:
+            SmartMenuBarRootView(
+                monitor: monitor,
+                openDisplays: { navigation.selection = .displays },
+                openCleanup: { navigation.selection = .cleanup },
+                openSettings: { navigation.selection = .settings },
+                windowLayout: true
+            )
+            .frame(maxWidth: 620, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .cleanup:
+            CleanupView(coordinator: cleanup, showsNavigation: false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .displays:
+            DisplayFeatureView(display: display, usesWindowLayout: true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .settings:
+            UnifiedSettingsView(monitor: monitor, display: display)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 private struct SmartMenuBarRootView: View {
     @ObservedObject var monitor: MonitoringService
     let openDisplays: () -> Void
     let openCleanup: () -> Void
     let openSettings: () -> Void
+    var windowLayout = false
     @State private var showingTechnicalDetails = false
 
     private var snapshot: MemorySnapshot { monitor.snapshot }
@@ -730,7 +727,7 @@ private struct SmartMenuBarRootView: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             if showingTechnicalDetails {
-                MenuBarView(monitor: monitor)
+                MenuBarView(monitor: monitor, windowLayout: windowLayout)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
 
                 Button {
@@ -752,7 +749,8 @@ private struct SmartMenuBarRootView: View {
                     .transition(.opacity)
             }
         }
-        .frame(width: 390, height: 860)
+        .frame(width: windowLayout ? nil : 390, height: windowLayout ? nil : 860)
+        .frame(maxWidth: windowLayout ? .infinity : nil, maxHeight: windowLayout ? .infinity : nil)
         .animation(.easeInOut(duration: 0.16), value: showingTechnicalDetails)
     }
 

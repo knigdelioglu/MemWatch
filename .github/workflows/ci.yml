@@ -146,6 +146,17 @@ jobs:
             -o /tmp/memwatch-system-diagnostics-smoke
           /tmp/memwatch-system-diagnostics-smoke
 
+      - name: Run process quit service integration test
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            Models/SystemDiagnosticsSnapshot.swift \
+            Services/ProcessQuitService.swift \
+            Tests/ProcessQuitServiceTests.swift \
+            -framework AppKit \
+            -o /tmp/memwatch-process-quit-tests
+          /tmp/memwatch-process-quit-tests
+
       - name: Verify settings integrations
         run: |
           grep -q 'SMAppService.mainApp' Services/LaunchAtLoginService.swift

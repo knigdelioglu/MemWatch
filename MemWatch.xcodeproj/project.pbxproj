@@ -26,6 +26,7 @@
 		A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SystemDiagnosticsCollector.swift */; };
 		A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* LaunchAtLoginService.swift */; };
 		A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* SystemDiagnosticsView.swift */; };
+		A10000000000000000000020 /* ProcessQuitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* ProcessQuitService.swift */; };
 		A10000000000000000000019 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* Assets.xcassets */; };
 		C10000000000000000000001 /* TemperatureSensor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* TemperatureSensor.swift */; };
 		C10000000000000000000002 /* ThermalSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* ThermalSnapshot.swift */; };
@@ -211,6 +212,7 @@
 		A20000000000000000000018 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* SystemDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemDiagnosticsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000021 /* ProcessQuitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessQuitService.swift; sourceTree = "<group>"; };
 		C20000000000000000000001 /* TemperatureSensor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureSensor.swift; sourceTree = "<group>"; };
 		C20000000000000000000002 /* ThermalSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalSnapshot.swift; sourceTree = "<group>"; };
 		C20000000000000000000003 /* SensorCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorCatalog.swift; sourceTree = "<group>"; };
@@ -419,6 +421,7 @@
 				A20000000000000000000009 /* NotificationService.swift */,
 				A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */,
 				A20000000000000000000018 /* LaunchAtLoginService.swift */,
+				A20000000000000000000021 /* ProcessQuitService.swift */,
 				D20000000000000000000003 /* PrivilegedHelperService.swift */,
 				D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */,
 				E20000000000000000000003 /* FullDiskAccessService.swift */,
@@ -824,6 +827,7 @@
 				A10000000000000000000016 /* SystemDiagnosticsCollector.swift in Sources */,
 				A10000000000000000000017 /* LaunchAtLoginService.swift in Sources */,
 				A10000000000000000000018 /* SystemDiagnosticsView.swift in Sources */,
+				A10000000000000000000020 /* ProcessQuitService.swift in Sources */,
 				C10000000000000000000001 /* TemperatureSensor.swift in Sources */,
 				C10000000000000000000002 /* ThermalSnapshot.swift in Sources */,
 				C10000000000000000000003 /* SensorCatalog.swift in Sources */,

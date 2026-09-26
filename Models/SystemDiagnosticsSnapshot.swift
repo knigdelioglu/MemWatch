@@ -79,6 +79,11 @@ enum ProcessMemoryGroupKind: String, Equatable, Sendable {
     }
 }
 
+struct ProcessStartTime: Equatable, Sendable {
+    let seconds: Int64
+    let microseconds: Int64
+}
+
 struct ProcessMemorySnapshot: Identifiable, Equatable, Sendable {
     /// For an application group this is the application's root PID. For a
     /// standalone process it is the process PID itself.
@@ -95,6 +100,7 @@ struct ProcessMemorySnapshot: Identifiable, Equatable, Sendable {
     let physicalFootprintProcessCount: Int
     let residentFallbackProcessCount: Int
     let processIDs: [Int32]
+    let processStartTime: ProcessStartTime?
     let groupKind: ProcessMemoryGroupKind
 
     var id: Int32 { pid }
@@ -116,6 +122,7 @@ struct ProcessInventoryEntry: Equatable, Sendable {
     /// the single production metric selected by the resolver.
     let physicalFootprintBytes: UInt64?
     let residentBytes: UInt64?
+    let processStartTime: ProcessStartTime?
 
     init(
         pid: Int32,
@@ -126,7 +133,8 @@ struct ProcessInventoryEntry: Equatable, Sendable {
         memoryBytes: UInt64,
         memoryMetric: ProcessMemoryMetric,
         physicalFootprintBytes: UInt64? = nil,
-        residentBytes: UInt64? = nil
+        residentBytes: UInt64? = nil,
+        processStartTime: ProcessStartTime? = nil
     ) {
         self.pid = pid
         self.parentPID = parentPID
@@ -137,6 +145,7 @@ struct ProcessInventoryEntry: Equatable, Sendable {
         self.memoryMetric = memoryMetric
         self.physicalFootprintBytes = physicalFootprintBytes
         self.residentBytes = residentBytes
+        self.processStartTime = processStartTime
     }
 }
 
@@ -353,6 +362,7 @@ enum ProcessMemoryAggregator {
                 }
             },
             processIDs: sortedEntries.map(\.pid),
+            processStartTime: sortedEntries.first(where: { $0.pid == rootPID })?.processStartTime,
             groupKind: .application
         )
     }
@@ -372,6 +382,7 @@ enum ProcessMemoryAggregator {
             physicalFootprintProcessCount: entry.memoryMetric == .physicalFootprint ? 1 : 0,
             residentFallbackProcessCount: entry.memoryMetric == .residentFallback ? 1 : 0,
             processIDs: [entry.pid],
+            processStartTime: entry.processStartTime,
             groupKind: .standalone
         )
     }

@@ -78,24 +78,11 @@ struct SystemDiagnosticsView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(diagnostics.topProcesses.prefix(6)) { process in
-                        HStack(spacing: 8) {
-                            Image(systemName: process.groupKind.symbolName)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(process.name)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Text("\(process.processCount) process\(process.processCount == 1 ? "" : "es") · \(process.memoryMetric.displayName)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            Text(memoryString(process.memoryBytes))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
+                        DiagnosticProcessRow(
+                            process: process,
+                            memoryText: memoryString(process.memoryBytes),
+                            onRefreshProcesses: onRefreshProcesses
+                        )
                     }
                 }
             }
@@ -200,6 +187,120 @@ struct SystemDiagnosticsView: View {
 
     private func memoryString(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .memory)
+    }
+}
+
+@MainActor
+private struct DiagnosticProcessRow: View {
+    let process: ProcessMemorySnapshot
+    let memoryText: String
+    let onRefreshProcesses: () -> Void
+
+    @State private var quitFeedback: QuitFeedback?
+
+    private enum QuitFeedback: Equatable {
+        case quitting
+        case failed(String)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Image(systemName: process.groupKind.symbolName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(process.name)
+                        .font(.caption)
+                        .lineLimit(1)
+                    Text("\(process.processCount) process\(process.processCount == 1 ? "" : "es") · \(process.memoryMetric.displayName)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 5)
+
+                Text(memoryText)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+
+                Button(action: requestQuit) {
+                    HStack(spacing: 4) {
+                        if isQuitting {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .scaleEffect(0.72)
+                                .frame(width: 10, height: 10)
+                        }
+                        Text(isQuitting ? "Quitting…" : "Quit")
+                    }
+                    .font(.caption2.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(isQuitting ? .secondary : .red)
+                .disabled(isQuitting || quitUnavailableMessage != nil)
+                .help(quitUnavailableMessage ?? "Ask \(process.name) to quit cleanly")
+                .accessibilityLabel("Quit \(process.name)")
+                .accessibilityHint(quitUnavailableMessage ?? "Sends a normal quit request and refreshes the process list.")
+            }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 22)
+            }
+        }
+    }
+
+    private var isQuitting: Bool {
+        quitFeedback == .quitting
+    }
+
+    private var errorMessage: String? {
+        guard case .failed(let message) = quitFeedback else { return nil }
+        return message
+    }
+
+    private var quitUnavailableMessage: String? {
+        ProcessQuitService.unavailabilityMessage(for: process)
+    }
+
+    private func requestQuit() {
+        guard !isQuitting else { return }
+        quitFeedback = .quitting
+
+        do {
+            try ProcessQuitService.requestQuit(for: process)
+        } catch {
+            quitFeedback = .failed(error.localizedDescription)
+            onRefreshProcesses()
+            return
+        }
+
+        onRefreshProcesses()
+        Task { @MainActor in
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+
+                if !ProcessQuitService.isSameProcessRunning(process) {
+                    quitFeedback = nil
+                    onRefreshProcesses()
+                    return
+                }
+            }
+
+            quitFeedback = .failed("Still running. Complete any open prompt, then try Quit again.")
+            onRefreshProcesses()
+        }
     }
 }
 

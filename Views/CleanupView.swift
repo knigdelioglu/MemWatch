@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CleanupView: View {
     @ObservedObject var coordinator: CleanupCoordinator
+    var showsNavigation = true
     var onOpenOverview: () -> Void = {}
     var onOpenDisplays: () -> Void = {}
     var onOpenSettings: () -> Void = {}
@@ -20,13 +21,15 @@ struct CleanupView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            WindowSidebar(
-                selection: .cleanup,
-                onOpenOverview: onOpenOverview,
-                onOpenCleanup: {},
-                onOpenDisplays: onOpenDisplays,
-                onOpenSettings: onOpenSettings
-            )
+            if showsNavigation {
+                WindowSidebar(
+                    selection: .cleanup,
+                    onOpenOverview: onOpenOverview,
+                    onOpenCleanup: {},
+                    onOpenDisplays: onOpenDisplays,
+                    onOpenSettings: onOpenSettings
+                )
+            }
 
             VStack(spacing: 0) {
                 ScrollView {
@@ -728,47 +731,49 @@ struct CleanupView: View {
         let categoryItems = items(in: category, result: result)
         let safety = categorySafetySummary(categoryItems)
 
-        return HStack(spacing: 8) {
-            categorySelectionControl(categoryItems, category: category)
-            DisclosureGroup {
-                VStack(spacing: 6) {
-                    ForEach(categoryItems) { item in
-                        itemRow(item)
-                    }
-                }
-                .padding(.top, 7)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: category.symbolName)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(safety.color)
-                        .frame(width: 21)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(category.displayName)
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-                        if let item = categoryItems.first {
-                            Text(localizedReason(for: item))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                categorySelectionControl(categoryItems, category: category)
+                DisclosureGroup {
+                    VStack(spacing: 6) {
+                        ForEach(categoryItems) { item in
+                            itemRow(item)
                         }
                     }
-                    Spacer(minLength: 4)
-                    Text(bytes(categoryBytes(category, result: result)))
-                        .font(.caption2.monospacedDigit().weight(.medium))
-                    Text(safety.label)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(safety.color)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(safety.color.opacity(0.1), in: Capsule())
+                    .padding(.top, 7)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: category.symbolName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(safety.color)
+                            .frame(width: 21)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(category.displayName)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                            if let item = categoryItems.first {
+                                Text(localizedReason(for: item))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 4)
+                        Text(bytes(categoryBytes(category, result: result)))
+                            .font(.caption2.monospacedDigit().weight(.medium))
+                        Text(safety.label)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(safety.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(safety.color.opacity(0.1), in: Capsule())
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
             }
+            .padding(.vertical, 5)
+            Divider()
         }
-        .padding(.vertical, 5)
-        Divider()
     }
 
     @ViewBuilder
@@ -1323,8 +1328,10 @@ struct CleanupView: View {
 }
 
 enum WindowNavigationSelection: Equatable {
+    case overview
     case cleanup
     case displays
+    case settings
 }
 
 struct WindowSidebar: View {
@@ -1349,10 +1356,10 @@ struct WindowSidebar: View {
             }
             .padding(.bottom, 20)
 
-            navigationButton("Overview", symbol: "waveform.path.ecg", active: false, action: onOpenOverview)
+            navigationButton("Overview", symbol: "waveform.path.ecg", active: selection == .overview, action: onOpenOverview)
             navigationButton("Cleanup", symbol: "sparkles", active: selection == .cleanup, action: onOpenCleanup)
             navigationButton("Displays & Awake", symbol: "display", active: selection == .displays, action: onOpenDisplays)
-            navigationButton("Settings", symbol: "gearshape", active: false, action: onOpenSettings)
+            navigationButton("Settings", symbol: "gearshape", active: selection == .settings, action: onOpenSettings)
 
             Spacer(minLength: 16)
 

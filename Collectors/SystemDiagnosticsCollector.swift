@@ -344,7 +344,11 @@ final class SystemDiagnosticsCollector {
                     memoryBytes: measurement.bytes,
                     memoryMetric: measurement.metric,
                     physicalFootprintBytes: physicalFootprint,
-                    residentBytes: residentBytes
+                    residentBytes: residentBytes,
+                    processStartTime: ProcessStartTime(
+                        seconds: Int64(info.pbsd.pbi_start_tvsec),
+                        microseconds: Int64(info.pbsd.pbi_start_tvusec)
+                    )
                 )
             )
         }
