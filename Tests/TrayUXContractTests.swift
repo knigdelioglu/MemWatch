@@ -19,6 +19,21 @@ struct TrayUXContractTests {
         expect(source.contains("tintRole: .orange"), "warning states must have an orange presentation")
         expect(source.contains("tintRole: .red"), "critical states must have a red presentation")
         expect(source.contains("SmartMenuBarRootView"), "smart overview must remain the popover root")
+        let willShowSection = sourceSection(
+            source,
+            from: "func popoverWillShow(",
+            to: "func popoverDidShow("
+        )
+        expect(!willShowSection.isEmpty, "popover will-show delegate must remain present")
+        expect(!willShowSection.contains("installDashboardRootView()"), "popover presentation must not replace its hosting controller during will-show")
+        let didCloseSection = sourceSection(
+            source,
+            from: "func popoverDidClose(",
+            to: "private func updatePopoverHeight("
+        )
+        expect(!didCloseSection.isEmpty, "popover did-close delegate must remain present")
+        expect(!didCloseSection.contains("installDashboardRootView()"), "popover close must not replace its hosting controller")
+        expect(source.contains("installDashboardRootView()\n            popover.show("), "dashboard hosting controller must be installed before presentation")
         expect(!source.contains("Mac is doing well"), "health warning card must not be present in the overview")
         expect(source.contains("let openCleanup: () -> Void"), "smart overview must receive a cleanup action")
         expect(source.contains("cleanupCard"), "cleanup must have a visible card in the normal left-click overview")
@@ -84,5 +99,15 @@ struct TrayUXContractTests {
             fputs("FAIL: \(message)\n", stderr)
             exit(1)
         }
+    }
+
+    private static func sourceSection(_ source: String, from startMarker: String, to endMarker: String) -> String {
+        guard
+            let start = source.range(of: startMarker),
+            let end = source.range(of: endMarker, range: start.upperBound..<source.endIndex)
+        else {
+            return ""
+        }
+        return String(source[start.lowerBound..<end.lowerBound])
     }
 }

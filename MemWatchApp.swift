@@ -358,7 +358,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     func popoverWillShow(_ notification: Notification) {
         cardExpansionState.collapseAll()
-        installDashboardRootView()
     }
 
     func popoverDidShow(_ notification: Notification) {
@@ -371,7 +370,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         cardExpansionState.collapseAll()
-        installDashboardRootView()
     }
 
     private func updatePopoverHeight(to contentHeight: CGFloat) {
