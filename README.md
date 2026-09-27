@@ -122,7 +122,7 @@ Bu yollar donanım ve WindowServer durumuna bağlıdır; başarıları fiziksel 
 
 ### Unified Architecture
 
-MemWatch artık tek `.app`, tek `NSStatusItem`, tek primary popover ve tek Launch at Login politikasına sahiptir. `AppServices` ortak `PollingScheduler`, system-health izleme, cleanup ve `DisplayCoordinator` bileşenlerini başlatır. Display private API'leri `Display/DisplayControl` altında izole edilir ve yetenek modeli üzerinden güvenli biçimde degrade olur. Eski AmbientSync `UserDefaults` değerleri sürüm numaralı, idempotent migration ile korunur.
+MemWatch tek `.app`, tek `NSStatusItem`, tek primary popover ve tek Launch at Login politikasını kullanır. `AppServices` ortak `PollingScheduler`, system-health izleme, Mole cleanup komut çalıştırıcısı ve `DisplayCoordinator` bileşenlerini başlatır. Cleanup ekranı, kullanıcı tarafından kurulan [Mole CLI](https://github.com/tw93/Mole) aracının `mo clean` komutunu arka planda çalıştırır ve komut çıktısını gösterir; Mole kurulu değilse Homebrew kurulum yönergesi sunar. Display private API'leri `Display/DisplayControl` altında izole edilir ve yetenek modeli üzerinden güvenli biçimde degrade olur. Eski AmbientSync `UserDefaults` değerleri sürüm numaralı, idempotent migration ile korunur.
 
 ## Release Quality
 

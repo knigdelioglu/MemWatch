@@ -301,7 +301,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private let monitor: MonitoringService
-    private let cleanup: CleanupCoordinator
+    private let cleanup: MoleCleanupService
     private let display: DisplayCoordinator
     private let cardExpansionState = PopoverCardExpansionState()
     private let mainWindowNavigation = MainWindowNavigation()
@@ -311,7 +311,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var previousTrayPresentation: TrayPresentation?
 
-    init(monitor: MonitoringService, cleanup: CleanupCoordinator, display: DisplayCoordinator) {
+    init(monitor: MonitoringService, cleanup: MoleCleanupService, display: DisplayCoordinator) {
         self.monitor = monitor
         self.cleanup = cleanup
         self.display = display
@@ -592,9 +592,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     @objc
     private func openCleanupWindow() {
         showMainWindow(selection: .cleanup)
-        if cleanup.scanResult == nil, !cleanup.isBusy {
-            cleanup.startScan()
-        }
     }
 
     @objc
@@ -763,7 +760,7 @@ private final class MainWindowNavigation: ObservableObject {
 @MainActor
 private struct MainWindowRootView: View {
     @ObservedObject var monitor: MonitoringService
-    @ObservedObject var cleanup: CleanupCoordinator
+    @ObservedObject var cleanup: MoleCleanupService
     @ObservedObject var display: DisplayCoordinator
     @ObservedObject var navigation: MainWindowNavigation
 
@@ -797,7 +794,7 @@ private struct MainWindowRootView: View {
             .frame(maxWidth: 620, maxHeight: .infinity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .cleanup:
-            CleanupView(coordinator: cleanup, showsNavigation: false)
+            CleanupView(service: cleanup)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .displays:
             DisplayFeatureView(display: display, usesWindowLayout: true)

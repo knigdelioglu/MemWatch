@@ -4,7 +4,7 @@ import Foundation
 final class AppServices {
     let pollingScheduler: PollingScheduler
     let monitoring: MonitoringService
-    let cleanup: CleanupCoordinator
+    let cleanup: MoleCleanupService
     let capabilities: CapabilityRegistry
     let display: DisplayCoordinator
 
@@ -15,7 +15,7 @@ final class AppServices {
         pollingScheduler = scheduler
         capabilities = capabilityRegistry
         monitoring = MonitoringService(scheduler: scheduler)
-        cleanup = CleanupCoordinator()
+        cleanup = MoleCleanupService()
         display = DisplayCoordinator(
             scheduler: scheduler,
             capabilityRegistry: capabilityRegistry

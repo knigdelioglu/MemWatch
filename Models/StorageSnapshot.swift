@@ -58,10 +58,10 @@ struct StorageVolumeSnapshot: Identifiable, Equatable, Sendable {
 
 /// APFS/macOS capacity signals for the startup volume.
 ///
-/// `purgeableEstimateBytes` is deliberately kept separate from cleanup scan
+/// `purgeableEstimateBytes` is deliberately kept separate from user-cleanup
 /// results. The same bytes may include snapshots, caches or other data that
-/// macOS can reclaim on demand, so adding this number to CleanupCandidate
-/// totals would double-count storage.
+/// macOS can reclaim on demand, so it should not be counted as user-selected
+/// cleanup space.
 struct StorageSpaceIntelligence: Equatable, Sendable {
     let immediateAvailableBytes: UInt64
     let importantUsageAvailableBytes: UInt64

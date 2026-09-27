@@ -59,7 +59,7 @@ struct UnifiedSettingsView: View {
             }
 
             Section("Cleanup") {
-                Text("Cleanup & Storage remains available from the main MemWatch popover and context menu. Its privileged helper boundary is unchanged.")
+                Text("MemWatch runs the Mole CLI installed on this Mac when you choose Run Mole cleanup. Install it with Homebrew using: brew install mole.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

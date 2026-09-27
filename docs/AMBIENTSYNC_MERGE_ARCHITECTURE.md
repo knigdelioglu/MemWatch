@@ -1,5 +1,10 @@
 # MemWatch + AmbientSync Merge Architecture
 
+> Current state (2026-09-27): the original in-app cleanup engine and its
+> privileged helper have been retired. The Cleanup screen now invokes the
+> locally installed Mole CLI (`mo clean`). The architecture details below
+> describe the earlier merge baseline.
+
 ## Scope
 
 MemWatch remains the product, bundle, Xcode project, menu-bar shell, cleanup

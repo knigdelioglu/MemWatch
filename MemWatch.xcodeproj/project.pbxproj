@@ -37,32 +37,6 @@
 		C10000000000000000000007 /* ThermalAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000007 /* ThermalAggregator.swift */; };
 		C10000000000000000000008 /* HIDTemperatureSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000008 /* HIDTemperatureSource.swift */; };
 		C10000000000000000000009 /* ThermalCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000009 /* ThermalCollector.swift */; };
-		B10000000000000000000001 /* CleanupModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* CleanupModels.swift */; };
-		B10000000000000000000002 /* CleanupScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* CleanupScanner.swift */; };
-		B10000000000000000000003 /* CleanupRuleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* CleanupRuleCatalog.swift */; };
-		B10000000000000000000004 /* CleanupPathValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* CleanupPathValidator.swift */; };
-		B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* CleanupSafetyEngine.swift */; };
-		B10000000000000000000006 /* CleanupScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* CleanupScanEngine.swift */; };
-		B10000000000000000000007 /* CleanupFileSizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* CleanupFileSizer.swift */; };
-		B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
-		B10000000000000000000009 /* DeveloperProjectDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* DeveloperProjectDiscovery.swift */; };
-		B10000000000000000000010 /* CargoMetadataResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* CargoMetadataResolver.swift */; };
-		B10000000000000000000011 /* DeveloperBuildActivityGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */; };
-		B10000000000000000000012 /* DeveloperBuildArtifactScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */; };
-		D10000000000000000000001 /* HelperProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
-		D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* PrivilegedHelperService.swift */; };
-		D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* PrivilegedSystemScanner.swift */; };
-		D10000000000000000000009 /* PrivilegedHelperInstallerScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */; };
-		D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* HelperProtocol.swift */; };
-		D10000000000000000000005 /* HelperMain.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* HelperMain.swift */; };
-		D10000000000000000000008 /* CleanupSecureRemoval.swift in Helper Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* CleanupSecureRemoval.swift */; };
-		D10000000000000000000006 /* MemWatchPrivilegedHelper in Copy Helper */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* MemWatchPrivilegedHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		D10000000000000000000007 /* Helper daemon plist in Copy LaunchDaemons */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */; };
-		E10000000000000000000001 /* CleanupDeletionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000001 /* CleanupDeletionEngine.swift */; };
-		E10000000000000000000002 /* CleanupStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002 /* CleanupStores.swift */; };
-		E10000000000000000000003 /* FullDiskAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000003 /* FullDiskAccessService.swift */; };
-		E10000000000000000000004 /* CleanupCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000004 /* CleanupCoordinator.swift */; };
-			E10000000000000000000005 /* CleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* CleanupView.swift */; };
 			F10000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift */; };
 			F10000000000000000000002 /* Display/App/DisplayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* Display/App/DisplayCoordinator.swift */; };
 			F10000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift */; };
@@ -153,41 +127,15 @@
 			F10000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift */; };
 			F10000000000000000000080 /* Core/Power/PowerSourceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000080 /* Core/Power/PowerSourceReader.swift */; };
 			F70000000000000000000001 /* Samsung HiDPI reference in Resources */ = {isa = PBXBuildFile; fileRef = F60000000000000000000001 /* Samsung_4C2D_76AB_reference.plist */; };
+		F10000000000000000000114 /* MoleCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000114 /* MoleCleanupService.swift */; };
+		F10000000000000000000115 /* CleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000115 /* CleanupView.swift */; };
+		F10000000000000000000116 /* WindowSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000116 /* WindowSidebar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		D80000000000000000000001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A80000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D50000000000000000000001;
-			remoteInfo = MemWatchPrivilegedHelper;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		D71000000000000000000001 /* Copy Privileged Helper */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "Contents/Library/HelperTools";
-			dstSubfolderSpec = 1;
-			files = (
-				D10000000000000000000006 /* MemWatchPrivilegedHelper in Copy Helper */,
-			);
-			name = "Copy Privileged Helper";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D71000000000000000000002 /* Copy LaunchDaemon Plist */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "Contents/Library/LaunchDaemons";
-			dstSubfolderSpec = 1;
-			files = (
-				D10000000000000000000007 /* Helper daemon plist in Copy LaunchDaemons */,
-			);
-			name = "Copy LaunchDaemon Plist";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -222,30 +170,6 @@
 		C20000000000000000000007 /* ThermalAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalAggregator.swift; sourceTree = "<group>"; };
 		C20000000000000000000008 /* HIDTemperatureSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HIDTemperatureSource.swift; sourceTree = "<group>"; };
 		C20000000000000000000009 /* ThermalCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalCollector.swift; sourceTree = "<group>"; };
-		B20000000000000000000001 /* CleanupModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupModels.swift; sourceTree = "<group>"; };
-		B20000000000000000000002 /* CleanupScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanner.swift; sourceTree = "<group>"; };
-		B20000000000000000000003 /* CleanupRuleCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupRuleCatalog.swift; sourceTree = "<group>"; };
-		B20000000000000000000004 /* CleanupPathValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupPathValidator.swift; sourceTree = "<group>"; };
-		B20000000000000000000005 /* CleanupSafetyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSafetyEngine.swift; sourceTree = "<group>"; };
-		B20000000000000000000006 /* CleanupScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupScanEngine.swift; sourceTree = "<group>"; };
-		B20000000000000000000007 /* CleanupFileSizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupFileSizer.swift; sourceTree = "<group>"; };
-		B20000000000000000000008 /* CleanupSecureRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupSecureRemoval.swift; sourceTree = "<group>"; };
-		B20000000000000000000009 /* DeveloperProjectDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperProjectDiscovery.swift; sourceTree = "<group>"; };
-		B20000000000000000000010 /* CargoMetadataResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CargoMetadataResolver.swift; sourceTree = "<group>"; };
-		B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperBuildActivityGuard.swift; sourceTree = "<group>"; };
-		B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperBuildArtifactScanner.swift; sourceTree = "<group>"; };
-		D20000000000000000000001 /* HelperProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperProtocol.swift; sourceTree = "<group>"; };
-		D20000000000000000000002 /* HelperMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMain.swift; sourceTree = "<group>"; };
-		D20000000000000000000003 /* PrivilegedHelperService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperService.swift; sourceTree = "<group>"; };
-		D20000000000000000000004 /* PrivilegedSystemScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedSystemScanner.swift; sourceTree = "<group>"; };
-		D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = com.knigdelioglu.MemWatch.PrivilegedHelper.plist; sourceTree = "<group>"; };
-		D20000000000000000000006 /* MemWatchPrivilegedHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MemWatchPrivilegedHelper; sourceTree = BUILT_PRODUCTS_DIR; };
-		D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedHelperInstallerScript.swift; sourceTree = "<group>"; };
-		E20000000000000000000001 /* CleanupDeletionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupDeletionEngine.swift; sourceTree = "<group>"; };
-		E20000000000000000000002 /* CleanupStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupStores.swift; sourceTree = "<group>"; };
-		E20000000000000000000003 /* FullDiskAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullDiskAccessService.swift; sourceTree = "<group>"; };
-		E20000000000000000000004 /* CleanupCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupCoordinator.swift; sourceTree = "<group>"; };
-			E20000000000000000000005 /* CleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupView.swift; sourceTree = "<group>"; };
 			F20000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DisplayCoordinator+Connection.swift"; sourceTree = "<group>"; };
 			F20000000000000000000002 /* Display/App/DisplayCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCoordinator.swift; sourceTree = "<group>"; };
 			F20000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayPreferencesMigration.swift; sourceTree = "<group>"; };
@@ -336,17 +260,13 @@
 			F20000000000000000000079 /* Display/DisplayControl/Brightness/M1DDCBrightnessWriteStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M1DDCBrightnessWriteStatus.swift; sourceTree = "<group>"; };
 			F20000000000000000000080 /* Core/Power/PowerSourceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceReader.swift; sourceTree = "<group>"; };
 			F60000000000000000000001 /* Samsung_4C2D_76AB_reference.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Samsung_4C2D_76AB_reference.plist; sourceTree = "<group>"; };
+		F20000000000000000000114 /* MoleCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoleCleanupService.swift; sourceTree = "<group>"; };
+		F20000000000000000000115 /* CleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanupView.swift; sourceTree = "<group>"; };
+		F20000000000000000000116 /* WindowSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSidebar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A30000000000000000000001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D30000000000000000000001 /* Helper Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -364,8 +284,6 @@
 				A40000000000000000000003 /* Models */,
 				A40000000000000000000004 /* Collectors */,
 				A40000000000000000000005 /* Services */,
-				B40000000000000000000001 /* Cleanup */,
-				D40000000000000000000001 /* PrivilegedHelper */,
 				A40000000000000000000006 /* Views */,
 				F40000000000000000000001 /* Display */,
 				F40000000000000000000002 /* App */,
@@ -379,7 +297,6 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000006 /* MemWatch.app */,
-				D20000000000000000000006 /* MemWatchPrivilegedHelper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -393,7 +310,6 @@
 				A20000000000000000000016 /* SystemDiagnosticsSnapshot.swift */,
 				C20000000000000000000001 /* TemperatureSensor.swift */,
 				C20000000000000000000002 /* ThermalSnapshot.swift */,
-				B20000000000000000000001 /* CleanupModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -414,6 +330,7 @@
 		A40000000000000000000005 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				F20000000000000000000114 /* MoleCleanupService.swift */,
 				A20000000000000000000004 /* MonitoringService.swift */,
 				A20000000000000000000120 /* MonitoringCollector.swift */,
 				A20000000000000000000007 /* SwapIntelligenceEngine.swift */,
@@ -422,10 +339,6 @@
 				A20000000000000000000012 /* StorageNotificationPolicyEngine.swift */,
 				A20000000000000000000018 /* LaunchAtLoginService.swift */,
 				A20000000000000000000021 /* ProcessQuitService.swift */,
-				D20000000000000000000003 /* PrivilegedHelperService.swift */,
-				D20000000000000000000007 /* PrivilegedHelperInstallerScript.swift */,
-				E20000000000000000000003 /* FullDiskAccessService.swift */,
-				E20000000000000000000004 /* CleanupCoordinator.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -433,61 +346,15 @@
 		A40000000000000000000006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				F20000000000000000000115 /* CleanupView.swift */,
+				F20000000000000000000116 /* WindowSidebar.swift */,
 				A20000000000000000000005 /* MenuBarView.swift */,
 				A20000000000000000000015 /* PowerMonitorView.swift */,
 					A20000000000000000000019 /* SystemDiagnosticsView.swift */,
-					E20000000000000000000005 /* CleanupView.swift */,
 					F20000000000000000000077 /* Views/DisplayFeatureView.swift */,
 					F20000000000000000000078 /* Views/UnifiedSettingsView.swift */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		B40000000000000000000001 /* Cleanup */ = {
-			isa = PBXGroup;
-			children = (
-				B40000000000000000000002 /* Core */,
-				E40000000000000000000001 /* Persistence */,
-			);
-			path = Cleanup;
-			sourceTree = "<group>";
-		};
-		B40000000000000000000002 /* Core */ = {
-			isa = PBXGroup;
-			children = (
-				B20000000000000000000002 /* CleanupScanner.swift */,
-				B20000000000000000000009 /* DeveloperProjectDiscovery.swift */,
-				B20000000000000000000010 /* CargoMetadataResolver.swift */,
-				B20000000000000000000011 /* DeveloperBuildActivityGuard.swift */,
-				B20000000000000000000012 /* DeveloperBuildArtifactScanner.swift */,
-				B20000000000000000000003 /* CleanupRuleCatalog.swift */,
-				B20000000000000000000004 /* CleanupPathValidator.swift */,
-				B20000000000000000000005 /* CleanupSafetyEngine.swift */,
-				B20000000000000000000006 /* CleanupScanEngine.swift */,
-				B20000000000000000000007 /* CleanupFileSizer.swift */,
-				B20000000000000000000008 /* CleanupSecureRemoval.swift */,
-				D20000000000000000000004 /* PrivilegedSystemScanner.swift */,
-				E20000000000000000000001 /* CleanupDeletionEngine.swift */,
-			);
-			path = Core;
-			sourceTree = "<group>";
-		};
-		E40000000000000000000001 /* Persistence */ = {
-			isa = PBXGroup;
-			children = (
-				E20000000000000000000002 /* CleanupStores.swift */,
-			);
-			path = Persistence;
-			sourceTree = "<group>";
-		};
-		D40000000000000000000001 /* PrivilegedHelper */ = {
-			isa = PBXGroup;
-			children = (
-				D20000000000000000000001 /* HelperProtocol.swift */,
-				D20000000000000000000002 /* HelperMain.swift */,
-				D20000000000000000000005 /* com.knigdelioglu.MemWatch.PrivilegedHelper.plist */,
-			);
-			path = PrivilegedHelper;
 			sourceTree = "<group>";
 		};
 		F40000000000000000000001 /* Display */ = {
@@ -725,34 +592,15 @@
 				A60000000000000000000001 /* Sources */,
 				A30000000000000000000001 /* Frameworks */,
 				A70000000000000000000001 /* Resources */,
-				D71000000000000000000001 /* Copy Privileged Helper */,
-				D71000000000000000000002 /* Copy LaunchDaemon Plist */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				D90000000000000000000001 /* PBXTargetDependency */,
 			);
 			name = MemWatch;
 			productName = MemWatch;
 			productReference = A20000000000000000000006 /* MemWatch.app */;
 			productType = "com.apple.product-type.application";
-		};
-		D50000000000000000000001 /* MemWatchPrivilegedHelper */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DB00000000000000000000001 /* Build configuration list for PBXNativeTarget "MemWatchPrivilegedHelper" */;
-			buildPhases = (
-				D60000000000000000000001 /* Helper Sources */,
-				D30000000000000000000001 /* Helper Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = MemWatchPrivilegedHelper;
-			productName = MemWatchPrivilegedHelper;
-			productReference = D20000000000000000000006 /* MemWatchPrivilegedHelper */;
-			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -765,9 +613,6 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					A50000000000000000000001 = {
-						CreatedOnToolsVersion = 16.0;
-					};
-					D50000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -786,7 +631,6 @@
 			projectRoot = "";
 			targets = (
 				A50000000000000000000001 /* MemWatch */,
-				D50000000000000000000001 /* MemWatchPrivilegedHelper */,
 			);
 		};
 /* End PBXProject section */
@@ -808,6 +652,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F10000000000000000000114 /* MoleCleanupService.swift in Sources */,
+				F10000000000000000000115 /* CleanupView.swift in Sources */,
+				F10000000000000000000116 /* WindowSidebar.swift in Sources */,
 				A10000000000000000000001 /* MemWatchApp.swift in Sources */,
 				A10000000000000000000002 /* MemorySnapshot.swift in Sources */,
 				A10000000000000000000003 /* MemoryCollector.swift in Sources */,
@@ -836,27 +683,6 @@
 				C10000000000000000000006 /* ThermalSourcePolicy.swift in Sources */,
 				C10000000000000000000007 /* ThermalAggregator.swift in Sources */,
 				C10000000000000000000009 /* ThermalCollector.swift in Sources */,
-				B10000000000000000000001 /* CleanupModels.swift in Sources */,
-				B10000000000000000000002 /* CleanupScanner.swift in Sources */,
-				B10000000000000000000003 /* CleanupRuleCatalog.swift in Sources */,
-				B10000000000000000000004 /* CleanupPathValidator.swift in Sources */,
-				B10000000000000000000005 /* CleanupSafetyEngine.swift in Sources */,
-				B10000000000000000000006 /* CleanupScanEngine.swift in Sources */,
-				B10000000000000000000007 /* CleanupFileSizer.swift in Sources */,
-				B10000000000000000000008 /* CleanupSecureRemoval.swift in Sources */,
-				B10000000000000000000009 /* DeveloperProjectDiscovery.swift in Sources */,
-				B10000000000000000000010 /* CargoMetadataResolver.swift in Sources */,
-				B10000000000000000000011 /* DeveloperBuildActivityGuard.swift in Sources */,
-				B10000000000000000000012 /* DeveloperBuildArtifactScanner.swift in Sources */,
-				D10000000000000000000001 /* HelperProtocol.swift in Sources */,
-				D10000000000000000000002 /* PrivilegedHelperService.swift in Sources */,
-				D10000000000000000000003 /* PrivilegedSystemScanner.swift in Sources */,
-				D10000000000000000000009 /* PrivilegedHelperInstallerScript.swift in Sources */,
-				E10000000000000000000001 /* CleanupDeletionEngine.swift in Sources */,
-				E10000000000000000000002 /* CleanupStores.swift in Sources */,
-				E10000000000000000000003 /* FullDiskAccessService.swift in Sources */,
-				E10000000000000000000004 /* CleanupCoordinator.swift in Sources */,
-				E10000000000000000000005 /* CleanupView.swift in Sources */,
 				F10000000000000000000001 /* Display/App/DisplayCoordinator+Connection.swift in Sources */,
 				F10000000000000000000002 /* Display/App/DisplayCoordinator.swift in Sources */,
 				F10000000000000000000003 /* Display/App/DisplayPreferencesMigration.swift in Sources */,
@@ -950,24 +776,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D60000000000000000000001 /* Helper Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D10000000000000000000004 /* HelperProtocol.swift in Helper Sources */,
-				D10000000000000000000008 /* CleanupSecureRemoval.swift in Helper Sources */,
-				D10000000000000000000005 /* HelperMain.swift in Helper Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		D90000000000000000000001 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D50000000000000000000001 /* MemWatchPrivilegedHelper */;
-			targetProxy = D80000000000000000000001 /* PBXContainerItemProxy */;
-		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -1035,38 +846,6 @@
 			};
 			name = Release;
 		};
-		DA0000000000000000000001 /* Helper Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				OTHER_CODE_SIGN_FLAGS = "--identifier MemWatchPrivilegedHelper";
-				PRODUCT_NAME = MemWatchPrivilegedHelper;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		DA0000000000000000000002 /* Helper Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				OTHER_CODE_SIGN_FLAGS = "--identifier MemWatchPrivilegedHelper";
-				PRODUCT_NAME = MemWatchPrivilegedHelper;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1084,15 +863,6 @@
 			buildConfigurations = (
 				AA0000000000000000000003 /* Debug */,
 				AA0000000000000000000004 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		DB00000000000000000000001 /* Build configuration list for PBXNativeTarget "MemWatchPrivilegedHelper" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA0000000000000000000001 /* Helper Debug */,
-				DA0000000000000000000002 /* Helper Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

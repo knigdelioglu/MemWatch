@@ -1,5 +1,9 @@
 # Phase 8 — Deep Storage & Cleanup
 
+> Retired (2026-09-27): this plan describes the former MemWatch-owned cleanup
+> engine. That engine and its privileged helper were removed in favor of the
+> external Mole CLI integration documented in the main README.
+
 Phase 8 is one complete private-use delivery. The implementation is split into internal development phases only; Phase 8 is not considered complete or releasable until every acceptance gate in this document is satisfied.
 
 ## Product posture
