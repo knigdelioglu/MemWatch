@@ -45,7 +45,7 @@ struct MenuBarView: View {
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: windowLayout ? nil : 390, height: windowLayout ? nil : 860)
+        .frame(width: windowLayout ? nil : 390)
         .frame(maxWidth: windowLayout ? .infinity : nil, maxHeight: windowLayout ? .infinity : nil)
         .animation(.easeInOut(duration: 0.16), value: route)
         .onAppear {

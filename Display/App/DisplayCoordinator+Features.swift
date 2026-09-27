@@ -680,4 +680,8 @@ extension DisplayCoordinator {
     var keepAwakeUntilText: String? {
         keepAwakeCoordinator.keepAwakeUntilText
     }
+
+    func refreshKeepAwakeLifecycleIfNeeded() {
+        keepAwakeCoordinator.refreshKeepAwakeLifecycleIfNeeded()
+    }
 }

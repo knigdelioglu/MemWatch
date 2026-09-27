@@ -206,7 +206,8 @@ extension DisplayCoordinator {
 
     func refreshInternalBrightness() {
         guard displayReadOperationsAllowed else { return }
-        currentInternalBrightness = brightnessCoordinator.internalDisplayController?.currentBrightness()
+        let controller = brightnessCoordinator.ensureInternalDisplayController()
+        currentInternalBrightness = controller?.currentBrightness()
     }
 
     func refreshDisplay() {

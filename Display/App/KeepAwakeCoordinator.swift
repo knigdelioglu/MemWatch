@@ -167,6 +167,7 @@ final class KeepAwakeCoordinator {
 
         var timeoutSeconds: TimeInterval = 0
         switch mode {
+        case "5": timeoutSeconds = 5 * 60
         case "15": timeoutSeconds = 15 * 60
         case "30": timeoutSeconds = 30 * 60
         case "60": timeoutSeconds = 60 * 60

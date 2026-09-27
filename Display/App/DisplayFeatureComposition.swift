@@ -8,7 +8,7 @@ final class DisplayBrightnessCoordinator {
     private(set) var reader: AmbientLightReader?
     let writer: M1DDCWriter
     let operationGate: DisplayPowerOperationGate
-    let internalDisplayController: InternalDisplayBrightnessController?
+    private(set) var internalDisplayController: InternalDisplayBrightnessController?
 
     init(
         reader: AmbientLightReader? = AmbientLightReader(),
@@ -24,6 +24,16 @@ final class DisplayBrightnessCoordinator {
             targetOperationGate: targetOperationGate
         )
         self.internalDisplayController = internalDisplayController
+    }
+
+    @discardableResult
+    func ensureInternalDisplayController() -> InternalDisplayBrightnessController? {
+        if let controller = internalDisplayController {
+            return controller
+        }
+        let created = InternalDisplayBrightnessController()
+        internalDisplayController = created
+        return created
     }
 
     func isDDCAvailable(refresh: Bool = false) async -> Bool {

@@ -262,14 +262,48 @@ private struct TrayPresentation: Equatable {
 }
 
 @MainActor
+final class PopoverCardExpansionState: ObservableObject {
+    @Published var isMemoryExpanded: Bool = false
+    @Published var isSystemExpanded: Bool = false
+    @Published var isStorageExpanded: Bool = false
+    @Published var isPowerExpanded: Bool = false
+
+    func collapseAll() {
+        isMemoryExpanded = false
+        isSystemExpanded = false
+        isStorageExpanded = false
+        isPowerExpanded = false
+    }
+}
+
+@MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
-    private static let panelSize = NSSize(width: 390, height: 860)
+    static let panelWidth: CGFloat = 390
+    static let minimumPanelHeight: CGFloat = 360
+    static let defaultInitialHeight: CGFloat = 580
     private static let mainWindowSize = NSSize(width: 1120, height: 760)
     private static let mainWindowMinimumSize = NSSize(width: 900, height: 680)
+
+    static func maximumPopoverHeight(
+        for screen: NSScreen?,
+        statusItemButton: NSStatusBarButton? = nil
+    ) -> CGFloat {
+        let targetScreen = screen ?? statusItemButton?.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let buttonMinY: CGFloat
+        if let buttonWindow = statusItemButton?.window {
+            buttonMinY = buttonWindow.frame.minY
+        } else {
+            buttonMinY = targetScreen?.visibleFrame.maxY ?? 800
+        }
+        let screenMinY = targetScreen?.visibleFrame.minY ?? 0
+        let availableBelow = buttonMinY - screenMinY - 20
+        return max(minimumPanelHeight, min(availableBelow, 760))
+    }
 
     private let monitor: MonitoringService
     private let cleanup: CleanupCoordinator
     private let display: DisplayCoordinator
+    private let cardExpansionState = PopoverCardExpansionState()
     private let mainWindowNavigation = MainWindowNavigation()
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
@@ -306,13 +340,64 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.animates = true
         popover.delegate = self
         installDashboardRootView()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowResignedKey(_:)),
+            name: NSWindow.didResignKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleWindowResignedKey(_ notification: Notification) {
+        if let window = notification.object as? NSWindow,
+           window == popover.contentViewController?.view.window {
+            cardExpansionState.collapseAll()
+        }
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        cardExpansionState.collapseAll()
+        installDashboardRootView()
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        cardExpansionState.collapseAll()
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        cardExpansionState.collapseAll()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        cardExpansionState.collapseAll()
+        installDashboardRootView()
+    }
+
+    private func updatePopoverHeight(to contentHeight: CGFloat) {
+        let maxHeight = Self.maximumPopoverHeight(
+            for: statusItem.button?.window?.screen,
+            statusItemButton: statusItem.button
+        )
+        let targetHeight = min(max(contentHeight, Self.minimumPanelHeight), maxHeight)
+        let targetSize = NSSize(width: Self.panelWidth, height: targetHeight)
+        if popover.contentSize != targetSize {
+            popover.contentSize = targetSize
+        }
     }
 
     private func installDashboardRootView() {
-        popover.contentSize = Self.panelSize
+        let maxHeight = Self.maximumPopoverHeight(
+            for: statusItem.button?.window?.screen,
+            statusItemButton: statusItem.button
+        )
+        let initialHeight = min(Self.defaultInitialHeight, maxHeight)
+        popover.contentSize = NSSize(width: Self.panelWidth, height: initialHeight)
         popover.contentViewController = NSHostingController(
             rootView: SmartMenuBarRootView(
                 monitor: monitor,
+                display: display,
+                expansionState: cardExpansionState,
                 openDisplays: { [weak self] in
                     self?.openDisplayWindow()
                 },
@@ -321,9 +406,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 },
                 openSettings: { [weak self] in
                     self?.openSettings()
+                },
+                onContentHeightChange: { [weak self] height in
+                    self?.updatePopoverHeight(to: height)
                 }
             )
-                .frame(width: Self.panelSize.width, height: Self.panelSize.height)
+            .frame(width: Self.panelWidth)
         )
     }
 
@@ -421,7 +509,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         if popover.isShown {
             closePopover()
         } else {
+            cardExpansionState.collapseAll()
             monitor.refresh(forceStorage: true, forceDiagnostics: true)
+            display.refreshRuntimeState()
+            display.refreshDisplayConnectionState()
+            installDashboardRootView()
             popover.show(
                 relativeTo: button.bounds,
                 of: button,
@@ -434,6 +526,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func closePopover() {
         if popover.isShown {
+            cardExpansionState.collapseAll()
             popover.performClose(nil)
         }
     }
@@ -544,7 +637,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showPopover() {
         guard let button = statusItem.button else { return }
         if popover.isShown { return }
+        cardExpansionState.collapseAll()
         monitor.refresh(forceStorage: true, forceDiagnostics: true)
+        display.refreshRuntimeState()
+        display.refreshDisplayConnectionState()
+        installDashboardRootView()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)
         popover.contentViewController?.view.window?.makeKey()
@@ -693,6 +790,7 @@ private struct MainWindowRootView: View {
         case .overview:
             SmartMenuBarRootView(
                 monitor: monitor,
+                display: display,
                 openDisplays: { navigation.selection = .displays },
                 openCleanup: { navigation.selection = .cleanup },
                 openSettings: { navigation.selection = .settings },
@@ -713,13 +811,54 @@ private struct MainWindowRootView: View {
     }
 }
 
+private struct PopoverContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 {
+            value = max(value, next)
+        }
+    }
+}
+
 private struct SmartMenuBarRootView: View {
     @ObservedObject var monitor: MonitoringService
+    @ObservedObject var display: DisplayCoordinator
+    @ObservedObject private var connectionController: DisplayConnectionController
+    @ObservedObject var expansionState: PopoverCardExpansionState
     let openDisplays: () -> Void
     let openCleanup: () -> Void
     let openSettings: () -> Void
+    var onContentHeightChange: ((CGFloat) -> Void)?
     var windowLayout = false
     @State private var showingTechnicalDetails = false
+
+    @State private var externalBrightnessDraft: Double = 0
+    @State private var isAdjustingExternalBrightness = false
+    @State private var internalBrightnessError: String?
+    @State private var externalBrightnessError: String?
+    @State private var keepAwakeError: String?
+
+    init(
+        monitor: MonitoringService,
+        display: DisplayCoordinator,
+        expansionState: PopoverCardExpansionState = PopoverCardExpansionState(),
+        openDisplays: @escaping () -> Void,
+        openCleanup: @escaping () -> Void,
+        openSettings: @escaping () -> Void,
+        onContentHeightChange: ((CGFloat) -> Void)? = nil,
+        windowLayout: Bool = false
+    ) {
+        self.monitor = monitor
+        self.display = display
+        self._connectionController = ObservedObject(wrappedValue: display.displayConnectionController)
+        self.expansionState = expansionState
+        self.openDisplays = openDisplays
+        self.openCleanup = openCleanup
+        self.openSettings = openSettings
+        self.onContentHeightChange = onContentHeightChange
+        self.windowLayout = windowLayout
+    }
 
     private var snapshot: MemorySnapshot { monitor.snapshot }
     private var intelligence: SwapIntelligenceResult { monitor.intelligence }
@@ -749,7 +888,7 @@ private struct SmartMenuBarRootView: View {
                     .transition(.opacity)
             }
         }
-        .frame(width: windowLayout ? nil : 390, height: windowLayout ? nil : 860)
+        .frame(width: windowLayout ? nil : 390)
         .frame(maxWidth: windowLayout ? .infinity : nil, maxHeight: windowLayout ? .infinity : nil)
         .animation(.easeInOut(duration: 0.16), value: showingTechnicalDetails)
     }
@@ -762,10 +901,42 @@ private struct SmartMenuBarRootView: View {
                 systemDashboardCard
                 storageDashboardCard
                 powerDashboardCard
+                displayDashboardCard
+                cleanupCard
                 smartAlertsCard
                 controlsRow
             }
             .padding(12)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: PopoverContentHeightPreferenceKey.self,
+                        value: geo.size.height
+                    )
+                }
+            )
+        }
+        .onPreferenceChange(PopoverContentHeightPreferenceKey.self) { height in
+            guard !windowLayout, height > 0 else { return }
+            onContentHeightChange?(height)
+        }
+        .onAppear {
+            expansionState.collapseAll()
+            externalBrightnessDraft = Double(display.monitorBrightnessControlValue)
+            display.refreshInternalBrightness()
+            display.refreshDisplayConnectionState()
+        }
+        .onDisappear {
+            expansionState.collapseAll()
+            if isAdjustingExternalBrightness {
+                display.endManualBrightnessInteraction()
+            }
+            display.cancelPendingManualBrightnessWrite()
+        }
+        .onChange(of: display.monitorBrightnessControlValue) { newValue in
+            if ExternalSliderInteractionPolicy.shouldSynchronizeFromBackend(isAdjusting: isAdjustingExternalBrightness) {
+                externalBrightnessDraft = Double(newValue)
+            }
         }
     }
 
@@ -799,32 +970,52 @@ private struct SmartMenuBarRootView: View {
 
     private var memoryFocusCard: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("Memory", systemImage: "memorychip")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("\(memoryBytes(snapshot.usedBytes)) of \(memoryBytes(snapshot.totalBytes))")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                Text("\(snapshot.usagePercent)%")
-                    .font(.caption.monospacedDigit().weight(.semibold))
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expansionState.isMemoryExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Memory", systemImage: "memorychip")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("\(memoryBytes(snapshot.usedBytes)) of \(memoryBytes(snapshot.totalBytes))")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                    Text("\(snapshot.usagePercent)%")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expansionState.isMemoryExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Memory card, \(expansionState.isMemoryExpanded ? "expanded" : "collapsed")")
+
+            if expansionState.isMemoryExpanded {
+                VStack(alignment: .leading, spacing: 7) {
+                    ProgressView(value: Double(snapshot.usagePercent) / 100)
+                        .tint(memoryStateColor)
+                        .controlSize(.small)
+                    HStack {
+                        Text("Memory Pressure · \(monitor.pressure.displayName)")
+                        Spacer()
+                        Text("Swap Used · \(memoryBytes(snapshot.swapUsedBytes))")
+                    }
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-            }
-            ProgressView(value: Double(snapshot.usagePercent) / 100)
-                .tint(memoryStateColor)
-                .controlSize(.small)
-            HStack {
-                Text("Memory Pressure · \(monitor.pressure.displayName)")
-                Spacer()
-                Text("Swap Used · \(memoryBytes(snapshot.swapUsedBytes))")
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            if monitor.systemHistory.count > 1 {
-                DashboardSparkline(
-                    values: monitor.systemHistory.map(\.memoryUsagePercent),
-                    tint: memoryStateColor
-                )
-                .accessibilityLabel("Recent memory usage trend")
+                    if monitor.systemHistory.count > 1 {
+                        DashboardSparkline(
+                            values: monitor.systemHistory.map(\.memoryUsagePercent),
+                            tint: memoryStateColor
+                        )
+                        .accessibilityLabel("Recent memory usage trend")
+                    }
+                }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(11)
@@ -833,71 +1024,94 @@ private struct SmartMenuBarRootView: View {
 
     private var systemDashboardCard: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("CPU & System", systemImage: "cpu")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(monitor.diagnostics.cpuUsagePercent.map { "\(Int($0.rounded()))%" } ?? "—")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-            }
-            HStack(spacing: 9) {
-                Text("Load")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                if let cpu = monitor.diagnostics.cpuUsagePercent {
-                    ProgressView(value: min(max(cpu / 100, 0), 1))
-                        .tint(.blue)
-                        .controlSize(.small)
-                } else {
-                    Text("Unavailable")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expansionState.isSystemExpanded.toggle()
                 }
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(cpuTemperatureText)
-                        .font(.caption2.monospacedDigit().weight(.medium))
-                    Text(monitor.diagnostics.thermalState.displayName)
-                        .font(.system(size: 9))
-                        .foregroundStyle(thermalColor)
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("GPU & System", systemImage: "cpu")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(monitor.diagnostics.cpuUsagePercent.map { "\(Int($0.rounded()))%" } ?? "—")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                    Text("· \(cpuTemperatureText)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expansionState.isSystemExpanded ? 90 : 0))
                 }
+                .contentShape(Rectangle())
             }
-            if monitor.systemHistory.count > 1 {
-                DashboardSparkline(
-                    values: monitor.systemHistory.map(\.cpuUsagePercent),
-                    tint: .blue
-                )
-                .accessibilityLabel("Recent CPU load trend")
-            }
-            HStack {
-                Text("Low Power Mode")
-                Spacer()
-                Text(monitor.diagnostics.lowPowerModeEnabled ? "On" : "Off")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            .font(.caption2)
-            Text("Top Memory Usage")
-                .font(.caption.weight(.semibold))
-            if monitor.diagnostics.topProcesses.isEmpty {
-                Text("No process snapshot available yet")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(monitor.diagnostics.topProcesses.prefix(5)) { process in
-                    HStack(spacing: 7) {
-                        Image(systemName: process.groupKind.symbolName)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 13)
-                        Text(process.name)
+            .buttonStyle(.plain)
+            .accessibilityLabel("GPU and System card, \(expansionState.isSystemExpanded ? "expanded" : "collapsed")")
+
+            if expansionState.isSystemExpanded {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 9) {
+                        Text("Load")
                             .font(.caption2)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(memoryBytes(process.memoryBytes))
-                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        if let cpu = monitor.diagnostics.cpuUsagePercent {
+                            ProgressView(value: min(max(cpu / 100, 0), 1))
+                                .tint(.blue)
+                                .controlSize(.small)
+                        } else {
+                            Text("Unavailable")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(cpuTemperatureText)
+                                .font(.caption2.monospacedDigit().weight(.medium))
+                            Text(monitor.diagnostics.thermalState.displayName)
+                                .font(.system(size: 9))
+                                .foregroundStyle(thermalColor)
+                        }
+                    }
+                    if monitor.systemHistory.count > 1 {
+                        DashboardSparkline(
+                            values: monitor.systemHistory.map(\.cpuUsagePercent),
+                            tint: .blue
+                        )
+                        .accessibilityLabel("Recent CPU load trend")
+                    }
+                    HStack {
+                        Text("Low Power Mode")
+                        Spacer()
+                        Text(monitor.diagnostics.lowPowerModeEnabled ? "On" : "Off")
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
+                    .font(.caption2)
+                    Text("Top Memory Usage")
+                        .font(.caption.weight(.semibold))
+                    if monitor.diagnostics.topProcesses.isEmpty {
+                        Text("No process snapshot available yet")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(monitor.diagnostics.topProcesses.prefix(5)) { process in
+                            HStack(spacing: 7) {
+                                Image(systemName: process.groupKind.symbolName)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 13)
+                                Text(process.name)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(memoryBytes(process.memoryBytes))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(11)
@@ -906,32 +1120,66 @@ private struct SmartMenuBarRootView: View {
 
     private var storageDashboardCard: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("Storage", systemImage: "internaldrive")
-                .font(.subheadline.weight(.semibold))
-            if monitor.storageVolumes.isEmpty {
-                Text("Storage information unavailable")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(dashboardStorageVolumes) { volume in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(volume.name).font(.caption)
-                                Text("\(fileBytes(volume.usedBytes)) used of \(fileBytes(volume.totalBytes))")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expansionState.isStorageExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Storage", systemImage: "internaldrive")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let primary = dashboardStorageVolumes.first {
+                        Text("\(fileBytes(primary.usedBytes)) of \(fileBytes(primary.totalBytes))")
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                        Text("\(primary.usagePercent)%")
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(storageHealthColor(primary.health))
+                    } else {
+                        Text("Unavailable")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expansionState.isStorageExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Storage card, \(expansionState.isStorageExpanded ? "expanded" : "collapsed")")
+
+            if expansionState.isStorageExpanded {
+                VStack(alignment: .leading, spacing: 7) {
+                    if monitor.storageVolumes.isEmpty {
+                        Text("Storage information unavailable")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(dashboardStorageVolumes) { volume in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(volume.name).font(.caption)
+                                        Text("\(fileBytes(volume.usedBytes)) used of \(fileBytes(volume.totalBytes))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text("\(volume.usagePercent)%")
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .foregroundStyle(storageHealthColor(volume.health))
+                                }
+                                ProgressView(value: min(max(Double(volume.usagePercent) / 100, 0), 1))
+                                    .tint(storageHealthColor(volume.health))
+                                    .controlSize(.small)
                             }
-                            Spacer()
-                            Text("\(volume.usagePercent)%")
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(storageHealthColor(volume.health))
                         }
-                        ProgressView(value: min(max(Double(volume.usagePercent) / 100, 0), 1))
-                            .tint(storageHealthColor(volume.health))
-                            .controlSize(.small)
                     }
                 }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(11)
@@ -940,31 +1188,391 @@ private struct SmartMenuBarRootView: View {
 
     private var powerDashboardCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 9) {
-                Image(systemName: powerSymbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(powerColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Power").font(.subheadline.weight(.semibold))
-                    Text(powerSummary).font(.caption2).foregroundStyle(.secondary)
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expansionState.isPowerExpanded.toggle()
                 }
-                Spacer()
-                if let watts = monitor.powerSnapshot.systemLoadWatts {
-                    Text(String(format: "%.1f W", watts))
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Power", systemImage: powerSymbol)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(powerColor)
+                    Spacer()
+                    Text(powerSummaryHeadline)
                         .font(.caption.monospacedDigit().weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expansionState.isPowerExpanded ? 90 : 0))
                 }
+                .contentShape(Rectangle())
             }
-            if monitor.powerHistory.compactMap(\.systemLoadWatts).count > 1 {
-                DashboardSparkline(
-                    values: monitor.powerHistory.compactMap(\.systemLoadWatts),
-                    tint: .green
-                )
-                .frame(height: 24)
-                .accessibilityLabel("Recent power usage trend")
+            .buttonStyle(.plain)
+            .accessibilityLabel("Power card, \(expansionState.isPowerExpanded ? "expanded" : "collapsed")")
+
+            if expansionState.isPowerExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 9) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(powerSummary).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let watts = monitor.powerSnapshot.systemLoadWatts {
+                            Text(String(format: "%.1f W", watts))
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                        }
+                    }
+                    if monitor.powerHistory.compactMap(\.systemLoadWatts).count > 1 {
+                        DashboardSparkline(
+                            values: monitor.powerHistory.compactMap(\.systemLoadWatts),
+                            tint: .green
+                        )
+                        .frame(height: 24)
+                        .accessibilityLabel("Recent power usage trend")
+                    }
+                }
+                .padding(.top, 2)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(11)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private var powerSummaryHeadline: String {
+        let power = monitor.powerSnapshot
+        if let percent = power.batteryPercentClamped {
+            return "\(percent)% · \(power.flow.displayName)"
+        }
+        if let watts = power.systemLoadWatts {
+            return "\(power.source.displayName) · \(String(format: "%.1f W", watts))"
+        }
+        return power.source.displayName
+    }
+
+    private var displayDashboardCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Label("Display & Sleep", systemImage: "sun.max.fill")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if display.isAwakeAssertionActive {
+                    Label("Awake", systemImage: "bolt.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.12), in: Capsule())
+                }
+            }
+
+            // Built-in Display Brightness
+            builtInDisplaySection
+
+            Divider()
+
+            // External Display Brightness & Connection
+            externalDisplaySection
+
+            Divider()
+
+            // Screen Sleep Timer (Keep Awake)
+            sleepTimerSection
+
+            if let error = internalBrightnessError ?? externalBrightnessError ?? keepAwakeError {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(11)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var builtInDisplaySection: some View {
+        if display.capabilities.internalBrightness.isAvailable,
+           let brightness = display.currentInternalBrightness {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Label("Yerleşik Ekran", systemImage: "laptopcomputer")
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text("\(brightness)%")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+                Slider(
+                    value: Binding(
+                        get: { Double(display.currentInternalBrightness ?? brightness) },
+                        set: { newValue in
+                            handleInternalBrightnessChange(newValue)
+                        }
+                    ),
+                    in: 0...100,
+                    step: 1
+                )
+                .accessibilityLabel("Yerleşik ekran parlaklığı")
+            }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "laptopcomputer")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Yerleşik Ekran")
+                        .font(.caption.weight(.medium))
+                    Text(display.capabilities.internalBrightness.reason ?? "Yerleşik ekran kullanılamıyor")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "minus.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var externalDisplaySection: some View {
+        let isConnected = display.currentDisplayInfo != nil && connectionController.snapshot.phase == .connected
+
+        if isConnected {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label(display.currentDisplayLabel, systemImage: "display")
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text(isAdjustingExternalBrightness
+                        ? "\(Int(externalBrightnessDraft.rounded()))%"
+                        : display.brightnessControlText)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { externalBrightnessDraft },
+                        set: { newValue in scheduleExternalBrightnessWrite(newValue) }
+                    ),
+                    in: 0...100,
+                    step: 1,
+                    onEditingChanged: handleExternalBrightnessEditingChanged
+                )
+                .accessibilityLabel("Harici ekran parlaklığı")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                    Text("Bağlı")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        display.toggleExternalDisplayConnection()
+                    } label: {
+                        Text("Bağlantıyı Kes")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!display.capabilities.softwareDisconnect.isAvailable || !connectionController.snapshot.canToggle)
+                }
+            }
+        } else if connectionController.snapshot.phase == .softwareDisconnected {
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.slash")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Harici Ekran")
+                        .font(.caption.weight(.medium))
+                    Text("MemWatch tarafından yazılımsal olarak ayrıldı")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    display.toggleExternalDisplayConnection()
+                } label: {
+                    Text("Yeniden Bağla")
+                        .font(.caption2)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        } else if connectionController.snapshot.phase == .disconnecting || connectionController.snapshot.phase == .reconnecting {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(connectionController.snapshot.message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "display.trianglebadge.exclamationmark")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Harici Ekran")
+                        .font(.caption.weight(.medium))
+                    Text(display.capabilities.externalDisplay.reason ?? "Bağlı harici ekran yok")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Label("Bağlı Değil", systemImage: "minus.circle")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var sleepTimerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Ekran Uyku Zamanlayıcısı", systemImage: "moon.zzz.fill")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text(display.keepAwakeSummaryText)
+                    .font(.caption2)
+                    .foregroundStyle(display.isAwakeAssertionActive ? .green : .secondary)
+            }
+
+            if let until = display.keepAwakeUntilText {
+                Text(until)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 5) {
+                durationButton(title: "Kapalı", mode: "off")
+                durationButton(title: "5 dk", mode: "5")
+                durationButton(title: "15 dk", mode: "15")
+                durationButton(title: "30 dk", mode: "30")
+                durationButton(title: "1 sa", mode: "60")
+                durationButton(title: "Süresiz", mode: "never")
+            }
+        }
+    }
+
+    private func durationButton(title: String, mode: String) -> some View {
+        let isSelected = activeKeepAwakeMode == mode
+        return Button {
+            selectKeepAwakeDuration(mode)
+        } label: {
+            Text(title)
+                .font(.system(size: 9, weight: isSelected ? .bold : .medium))
+                .frame(maxWidth: .infinity, minHeight: 25)
+                .multilineTextAlignment(.center)
+        }
+        .buttonStyle(.bordered)
+        .tint(isSelected ? Color.accentColor : Color.secondary)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityLabel("\(title) uyku seçeneği")
+    }
+
+    private var activeKeepAwakeMode: String {
+        guard display.keepAwakeState.featureEnabled else { return "off" }
+        let mode = display.keepAwakeState.temporaryOverrideActive
+            ? (display.keepAwakeState.temporaryIdleTimeoutMode ?? display.keepAwakeState.defaultIdleTimeoutMode)
+            : display.keepAwakeState.defaultIdleTimeoutMode
+        let customMins = display.keepAwakeState.temporaryOverrideActive
+            ? display.keepAwakeState.temporaryIdleTimeoutMinutes
+            : display.keepAwakeState.defaultIdleTimeoutMinutes
+        if mode == "custom" && customMins == 5 {
+            return "5"
+        }
+        return mode
+    }
+
+    private func selectKeepAwakeDuration(_ mode: String) {
+        keepAwakeError = nil
+        if mode == "off" {
+            display.setKeepAwakeFeatureEnabled(false)
+            display.refreshKeepAwakeLifecycleIfNeeded()
+            return
+        }
+
+        display.setKeepAwakeFeatureEnabled(true)
+        display.setKeepAwakeDefaultDurationMode(mode)
+        if mode == "5" {
+            display.startSessionWithCustomMinutes(5)
+        } else {
+            display.startSessionWithDurationMode(mode)
+        }
+        display.refreshKeepAwakeLifecycleIfNeeded()
+
+        if !display.isAwakeAssertionActive && display.keepAwakeState.onlyWhilePluggedIn && !isOnACPower {
+            keepAwakeError = "Fişe takılı değil (Güç bekleniyor)"
+        }
+    }
+
+    private var isOnACPower: Bool {
+        display.powerSourceController.currentState() == .ac
+    }
+
+    private func handleInternalBrightnessChange(_ newValue: Double) {
+        let intVal = Int(newValue.rounded())
+        if intVal != display.currentInternalBrightness {
+            let success = display.setInternalBrightness(intVal)
+            if !success {
+                internalBrightnessError = "Yerleşik parlaklık ayarlanamadı"
+            } else {
+                internalBrightnessError = nil
+            }
+        }
+    }
+
+    private func scheduleExternalBrightnessWrite(_ newValue: Double) {
+        externalBrightnessError = nil
+        let intValue = ExternalSliderInteractionPolicy.roundedValue(newValue)
+        let changed = ExternalSliderInteractionPolicy.shouldSchedule(
+            newValue: newValue,
+            previousDraft: externalBrightnessDraft
+        )
+        externalBrightnessDraft = newValue
+        guard changed else { return }
+
+        display.scheduleMonitorBrightnessWrite(intValue)
+    }
+
+    private func handleExternalBrightnessEditingChanged(_ isEditing: Bool) {
+        if isEditing {
+            display.beginManualBrightnessInteraction()
+        } else {
+            display.endManualBrightnessInteraction()
+        }
+        isAdjustingExternalBrightness = isEditing
+    }
+
+    private var cleanupCard: some View {
+        Button(action: openCleanup) {
+            HStack(spacing: 9) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.purple)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Cleanup & Storage").font(.subheadline.weight(.semibold))
+                    Text("Clean caches, logs, and build artifacts").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Cleanup & Storage")
     }
 
     private var smartAlertsCard: some View {
