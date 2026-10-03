@@ -330,7 +330,10 @@ final class MonitoringService: ObservableObject {
             lowPowerModeEnabled: collected.diagnostics.lowPowerModeEnabled,
             topProcesses: request.includeProcesses
                 ? collected.diagnostics.topProcesses
-                : diagnostics.topProcesses
+                : diagnostics.topProcesses,
+            compressedHolders: request.includeProcesses
+                ? collected.diagnostics.compressedHolders
+                : diagnostics.compressedHolders
         )
         diagnostics = diagnosticsSnapshot
         thermalSnapshot = collected.thermal

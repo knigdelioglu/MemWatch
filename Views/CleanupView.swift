@@ -2,6 +2,8 @@ import SwiftUI
 
 struct CleanupView: View {
     @ObservedObject var service: MoleCleanupService
+    @State private var pendingAction: MoleCleanupAction?
+    @State private var administratorPassword = ""
 
     var body: some View {
         ScrollView {
@@ -19,7 +21,7 @@ struct CleanupView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Button {
-                            service.runPreview()
+                            start(.preview)
                         } label: {
                             Label("Preview (dry run)", systemImage: "eye")
                                 .frame(maxWidth: .infinity)
@@ -29,7 +31,7 @@ struct CleanupView: View {
                         .accessibilityHint("Runs mo clean --dry-run; nothing is deleted")
 
                         Button {
-                            service.runCleanup()
+                            start(.clean)
                         } label: {
                             Label("Run Mole cleanup", systemImage: "sparkles")
                                 .frame(maxWidth: .infinity)
@@ -47,6 +49,19 @@ struct CleanupView: View {
                             .buttonStyle(.bordered)
                         }
                     }
+
+                    Toggle(isOn: $service.includeSystemCleanup) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Include system cleanup (administrator password)")
+                                .font(.callout)
+                            Text("MemWatch asks for your administrator password before Mole starts. It is passed to sudo once, never saved, and the sudo permission is revoked when Mole finishes.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(service.isRunning)
 
                     if let commandPath = service.commandPath {
                         Text("Using \(commandPath)")
@@ -96,6 +111,12 @@ struct CleanupView: View {
             .frame(maxWidth: 680, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(24)
+        }
+        .sheet(isPresented: Binding(
+            get: { pendingAction != nil },
+            set: { if !$0 { cancelPasswordPrompt() } }
+        )) {
+            passwordSheet
         }
         .onAppear {
             // Opening the page must never delete anything by itself; only
@@ -159,6 +180,77 @@ struct CleanupView: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private func start(_ action: MoleCleanupAction) {
+        if service.needsAdministratorPassword {
+            administratorPassword = ""
+            pendingAction = action
+        } else {
+            service.run(action)
+        }
+    }
+
+    private func confirmPassword() {
+        guard let action = pendingAction, !administratorPassword.isEmpty else { return }
+        let password = administratorPassword
+        administratorPassword = ""
+        pendingAction = nil
+        service.run(action, administratorPassword: password)
+    }
+
+    private func cancelPasswordPrompt() {
+        administratorPassword = ""
+        pendingAction = nil
+    }
+
+    private var passwordSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Yönetici izni gerekli", systemImage: "lock.shield")
+                .font(.headline)
+
+            Text(pendingAction == .preview
+                ? "Mole önizlemesinin sistem önbelleklerini de görebilmesi için Mac yönetici parolanı gir."
+                : "Mole'un sistem önbelleklerini de temizleyebilmesi için Mac yönetici parolanı gir.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SecureField("Parola", text: $administratorPassword)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(confirmPassword)
+
+            Text("Parola yalnızca bu çalıştırma için sudo'ya iletilir; diske veya ayarlara kaydedilmez.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button("Parolasız devam et") {
+                    let action = pendingAction
+                    cancelPasswordPrompt()
+                    if let action {
+                        service.run(action)
+                    }
+                }
+                .help("Yalnızca kullanıcı düzeyinde temizlik yapılır")
+
+                Spacer()
+
+                Button("İptal", role: .cancel) {
+                    cancelPasswordPrompt()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Devam") {
+                    confirmPassword()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(administratorPassword.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 
     private func statusRow(_ title: String, symbol: String, color: Color) -> some View {

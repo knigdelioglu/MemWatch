@@ -16,6 +16,8 @@ enum ProcessQuitServiceError: Error, Equatable, LocalizedError {
     case processOwnedByAnotherUser
     case applicationUnavailable
     case requestRejected
+    case quitTimedOut
+    case relaunchFailed
     case signalFailed(Int32)
 
     var errorDescription: String? {
@@ -34,6 +36,10 @@ enum ProcessQuitServiceError: Error, Equatable, LocalizedError {
             return "macOS no longer recognizes this application. Refresh and try again."
         case .requestRejected:
             return "macOS could not send the quit request."
+        case .quitTimedOut:
+            return "Uygulama kapanmadı. Açık bir kaydetme penceresi olabilir; onu tamamlayıp tekrar dene."
+        case .relaunchFailed:
+            return "Uygulama kapatıldı ama yeniden açılamadı. Dock veya Launchpad'den açabilirsin."
         case .signalFailed(let code):
             return "The quit request failed: \(String(cString: strerror(code)))."
         }
@@ -94,6 +100,144 @@ enum ProcessQuitService {
         case .standalone:
             try requestStandaloneQuit(for: process, identity: currentIdentity)
         }
+    }
+
+    /// macOS system helpers that are safe to terminate because the system
+    /// starts them again automatically when they are needed (the wallpaper
+    /// service relaunches its extensions and launchd keeps the agent alive).
+    /// Everything else under /System stays protected.
+    static let autoRelaunchingSystemProcesses: Set<String> = [
+        "wallpaperimageextension",
+        "wallpapervideoextension",
+        "wallpaperagent"
+    ]
+
+    static func isAutoRelaunchingSystemProcess(name: String, path: String?) -> Bool {
+        let candidates = [name, path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""]
+        return candidates.contains { autoRelaunchingSystemProcesses.contains($0.lowercased()) }
+    }
+
+    /// GUI applications with a bundle are quit and reopened; allow-listed
+    /// system helpers are terminated and macOS restarts them itself.
+    static func canRestart(_ process: ProcessMemorySnapshot) -> Bool {
+        guard unavailabilityMessage(for: process) == nil else { return false }
+        switch process.groupKind {
+        case .application:
+            return NSRunningApplication(processIdentifier: process.pid)?.bundleURL != nil
+        case .standalone:
+            return isAutoRelaunchingSystemProcess(name: process.name, path: process.executablePath)
+        }
+    }
+
+    /// Quits the application normally (it can still ask to save documents),
+    /// waits until macOS has fully released it and opens it again. Its
+    /// compressed and swapped memory is freed when the old process exits.
+    @MainActor
+    static func restartApplication(
+        _ process: ProcessMemorySnapshot,
+        timeout: TimeInterval = 20
+    ) async throws {
+        if process.groupKind == .standalone,
+           isAutoRelaunchingSystemProcess(name: process.name, path: process.executablePath) {
+            // macOS relaunches these helpers on demand; just stop the old
+            // instance so its compressed/swapped memory is released.
+            try requestQuit(for: process)
+            let deadline = Date().addingTimeInterval(10)
+            while isSameProcessRunning(process) {
+                guard Date() < deadline else {
+                    throw ProcessQuitServiceError.quitTimedOut
+                }
+                try await Task.sleep(nanoseconds: 200_000_000)
+            }
+            return
+        }
+
+        guard process.groupKind == .application,
+              let runningApplication = NSRunningApplication(processIdentifier: process.pid),
+              let bundleURL = runningApplication.bundleURL else {
+            throw ProcessQuitServiceError.applicationUnavailable
+        }
+        let bundleIdentifier = runningApplication.bundleIdentifier ?? process.bundleIdentifier
+        let oldPID = process.pid
+
+        try requestQuit(for: process)
+
+        // 1. Wait for the process itself to exit.
+        let deadline = Date().addingTimeInterval(timeout)
+        while isSameProcessRunning(process) {
+            guard Date() < deadline else {
+                throw ProcessQuitServiceError.quitTimedOut
+            }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+
+        // 2. Wait until LaunchServices no longer lists the old instance.
+        //    Opening the app while it is still registered as "terminating"
+        //    makes macOS return the dying instance instead of launching a new
+        //    one, which is why the app previously did not come back.
+        let launchServicesDeadline = Date().addingTimeInterval(5)
+        while Date() < launchServicesDeadline,
+              runningApplication.isTerminated == false
+                || isRegisteredInstanceAlive(bundleIdentifier: bundleIdentifier, pid: oldPID) {
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // 3. Relaunch in the foreground so the user can see it came back.
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.addsToRecentItems = false
+        do {
+            _ = try await NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration)
+        } catch {
+            // Fall through to verification and the `open` fallback below.
+        }
+
+        // 4. Verify a new instance exists; otherwise retry with /usr/bin/open.
+        if try await waitForNewInstance(bundleIdentifier: bundleIdentifier, oldPID: oldPID, seconds: 4) {
+            return
+        }
+        try launchWithOpenCommand(bundleURL: bundleURL)
+        if try await waitForNewInstance(bundleIdentifier: bundleIdentifier, oldPID: oldPID, seconds: 6) {
+            return
+        }
+        throw ProcessQuitServiceError.relaunchFailed
+    }
+
+    private static func isRegisteredInstanceAlive(bundleIdentifier: String?, pid: Int32) -> Bool {
+        guard let bundleIdentifier else { return false }
+        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .contains { $0.processIdentifier == pid && !$0.isTerminated }
+    }
+
+    @MainActor
+    private static func waitForNewInstance(
+        bundleIdentifier: String?,
+        oldPID: Int32,
+        seconds: TimeInterval
+    ) async throws -> Bool {
+        guard let bundleIdentifier else {
+            // Without a bundle identifier we cannot verify; assume success.
+            return true
+        }
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            let relaunched = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+                .contains { $0.processIdentifier != oldPID && !$0.isTerminated }
+            if relaunched { return true }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        } while Date() < deadline
+        return false
+    }
+
+    private static func launchWithOpenCommand(bundleURL: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = [bundleURL.path]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
     }
 
     static func isSameProcessRunning(_ process: ProcessMemorySnapshot) -> Bool {
@@ -195,6 +339,16 @@ enum ProcessQuitService {
             ? standardizedPath(path)
             : URL(fileURLWithPath: path).standardizedFileURL.path
         let pathLowercased = path.lowercased()
+
+        // Explicit, small allow-list of helpers macOS restarts by itself.
+        // Checked on the real executable name and location so a renamed copy
+        // elsewhere cannot borrow the exemption.
+        let executableName = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+        if autoRelaunchingSystemProcesses.contains(executableName),
+           pathLowercased.hasPrefix("/system/") {
+            return false
+        }
+
         let protectedRoots = [
             "/system/",
             "/bin/",

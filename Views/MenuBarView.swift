@@ -352,6 +352,10 @@ struct MenuBarView: View {
                     )
                 }
 
+                SwapReliefList(monitor: monitor, limit: 6)
+                    .padding(14)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Top Memory Users")
@@ -805,4 +809,265 @@ private struct MemoryDonutChart: View {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
     }
 
+}
+
+/// Owns restart work for swap holders. It lives for the whole app session,
+/// so a restart keeps running (and its result stays visible) even when the
+/// popover closes or its cards collapse while apps are being relaunched.
+@MainActor
+final class SwapReliefCoordinator: ObservableObject {
+    static let shared = SwapReliefCoordinator()
+
+    @Published private(set) var busyPIDs: Set<Int32> = []
+    @Published private(set) var rowMessages: [Int32: String] = [:]
+    @Published private(set) var statusMessage: String?
+    @Published private(set) var statusIsError = false
+    @Published private(set) var isRestartingAll = false
+
+    var isBusy: Bool { isRestartingAll || !busyPIDs.isEmpty }
+
+    func restart(_ process: ProcessMemorySnapshot, monitor: MonitoringService) {
+        guard !busyPIDs.contains(process.pid), !isRestartingAll else { return }
+        busyPIDs.insert(process.pid)
+        rowMessages[process.pid] = nil
+        statusMessage = "\(process.name) yeniden başlatılıyor…"
+        statusIsError = false
+
+        Task { @MainActor in
+            do {
+                try await ProcessQuitService.restartApplication(process)
+                statusMessage = "\(process.name) yeniden başlatıldı."
+                statusIsError = false
+            } catch {
+                rowMessages[process.pid] = error.localizedDescription
+                statusMessage = "\(process.name): \(error.localizedDescription)"
+                statusIsError = true
+            }
+            busyPIDs.remove(process.pid)
+            monitor.refresh(forceDiagnostics: true)
+        }
+    }
+
+    func restartAll(_ targets: [ProcessMemorySnapshot], monitor: MonitoringService) {
+        guard !targets.isEmpty, !isBusy else { return }
+        isRestartingAll = true
+        statusIsError = false
+
+        Task { @MainActor in
+            var failures: [String] = []
+            for (index, process) in targets.enumerated() {
+                statusMessage = "\(index + 1)/\(targets.count): \(process.name) yeniden başlatılıyor…"
+                busyPIDs.insert(process.pid)
+                do {
+                    try await ProcessQuitService.restartApplication(process)
+                } catch {
+                    rowMessages[process.pid] = error.localizedDescription
+                    failures.append("\(process.name) (\(error.localizedDescription))")
+                }
+                busyPIDs.remove(process.pid)
+            }
+
+            isRestartingAll = false
+            if failures.isEmpty {
+                statusMessage = "\(targets.count) uygulama yeniden başlatıldı."
+                statusIsError = false
+            } else {
+                statusMessage = "\(targets.count - failures.count)/\(targets.count) uygulama yeniden başlatıldı. Sorunlu: "
+                    + failures.joined(separator: "; ")
+                statusIsError = true
+            }
+            monitor.refresh(forceDiagnostics: true)
+        }
+    }
+
+    func quit(_ process: ProcessMemorySnapshot, monitor: MonitoringService) {
+        rowMessages[process.pid] = nil
+        do {
+            try ProcessQuitService.requestQuit(for: process)
+            statusMessage = "\(process.name) kapatıldı."
+            statusIsError = false
+        } catch {
+            rowMessages[process.pid] = error.localizedDescription
+            statusMessage = "\(process.name): \(error.localizedDescription)"
+            statusIsError = true
+        }
+        monitor.refresh(forceDiagnostics: true)
+    }
+}
+
+/// Lists the apps that hold the most compressed/swapped memory and lets the
+/// user restart (or quit) them. macOS offers no API to empty swap directly;
+/// the kernel frees an app's swapped pages only when the app touches them
+/// again or exits, so restarting the holder is the effective way to drain it.
+///
+/// Confirmation is inline on purpose: a dialog/alert would take key focus
+/// from the popover, which collapses the cards and removes this view before
+/// the user can answer.
+struct SwapReliefList: View {
+    @ObservedObject var monitor: MonitoringService
+    var limit = 4
+    var compact = false
+
+    @ObservedObject private var coordinator = SwapReliefCoordinator.shared
+    @State private var confirmingRestartAll = false
+
+    private var holders: [CompressedMemoryHolder] {
+        Array(monitor.diagnostics.compressedHolders.prefix(limit))
+    }
+
+    /// Every listed swap holder that MemWatch can quit and reopen.
+    private var restartableHolders: [CompressedMemoryHolder] {
+        monitor.diagnostics.compressedHolders.filter {
+            ProcessQuitService.canRestart($0.process)
+        }
+    }
+
+    var body: some View {
+        if monitor.snapshot.swapUsedBytes > 0 || coordinator.statusMessage != nil {
+            VStack(alignment: .leading, spacing: compact ? 5 : 8) {
+                HStack {
+                    Label("Swap'ı tutan uygulamalar", systemImage: "arrow.triangle.2.circlepath")
+                        .font(compact ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                    Spacer()
+                    Button {
+                        monitor.refresh(forceDiagnostics: true)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Listeyi yenile")
+                }
+
+                Text("macOS swap'ı doğrudan boşaltmaya izin vermez. Bir uygulamayı yeniden başlatmak, onun sıkıştırılmış ve swap'taki belleğini hemen serbest bırakır.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                restartAllControl
+
+                if let statusMessage = coordinator.statusMessage {
+                    Label(statusMessage, systemImage: coordinator.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(coordinator.statusIsError ? Color.orange : Color.green)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if holders.isEmpty {
+                    Text("Belirgin miktarda swap/sıkıştırılmış bellek tutan uygulama bulunamadı.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ForEach(holders) { holder in
+                        row(holder)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var restartAllControl: some View {
+        if coordinator.isRestartingAll {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Yeniden başlatılıyor…")
+                    .font(.caption2.weight(.semibold))
+            }
+        } else if restartableHolders.count > 1 {
+            if confirmingRestartAll {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Şunlar sırayla kapatılıp yeniden açılacak: "
+                        + restartableHolders.map(\.process.name).joined(separator: ", "))
+                        .font(.caption2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Button("Vazgeç") {
+                            confirmingRestartAll = false
+                        }
+                        .controlSize(.small)
+                        Button("Evet, tümünü yeniden başlat") {
+                            confirmingRestartAll = false
+                            coordinator.restartAll(restartableHolders.map(\.process), monitor: monitor)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(8)
+                .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Button {
+                    confirmingRestartAll = true
+                } label: {
+                    Label("Tümünü yeniden başlat (\(restartableHolders.count))", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption2.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
+                .disabled(coordinator.isBusy)
+            }
+        }
+    }
+
+    private func row(_ holder: CompressedMemoryHolder) -> some View {
+        let process = holder.process
+        let isBusy = coordinator.busyPIDs.contains(process.pid)
+        let canRestart = ProcessQuitService.canRestart(process)
+        let quitBlocked = ProcessQuitService.unavailabilityMessage(for: process)
+
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                Image(systemName: process.groupKind.symbolName)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 13)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(process.name)
+                        .font(.caption2.weight(.medium))
+                        .lineLimit(1)
+                    Text("\(bytes(holder.compressedBytes)) sıkıştırılmış/swap")
+                        .font(.system(size: 9).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if canRestart {
+                    Button("Yeniden başlat") {
+                        coordinator.restart(process, monitor: monitor)
+                    }
+                    .controlSize(.mini)
+                    .disabled(coordinator.isRestartingAll)
+                    .help("Uygulamayı kapatıp yeniden açar; kaydedilmemiş belgeler için uygulama sorabilir")
+                } else if quitBlocked == nil {
+                    Button("Kapat") {
+                        coordinator.quit(process, monitor: monitor)
+                    }
+                    .controlSize(.mini)
+                    .disabled(coordinator.isRestartingAll)
+                    .help("İşlemi sonlandırır")
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .help(quitBlocked ?? "")
+                }
+            }
+            if let message = coordinator.rowMessages[process.pid] {
+                Text(message)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .memory)
+    }
 }

@@ -4,6 +4,7 @@ import Foundation
 
 struct ProcessMemoryCollectionDiagnostics: Sendable {
     let aggregation: ProcessMemoryAggregation
+    var compressedHolders: [CompressedMemoryHolder] = []
     let inventory: [ProcessInventoryEntry]
     let unavailablePIDs: [Int32]
     let applicationRoots: [ProcessApplicationMetadata]
@@ -40,7 +41,8 @@ final class SystemDiagnosticsCollector {
             cpuUsagePercent: collectCPUUsagePercent(),
             thermalState: collectThermalState(),
             lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
-            topProcesses: processMemory?.aggregation.snapshots ?? []
+            topProcesses: processMemory?.aggregation.snapshots ?? [],
+            compressedHolders: processMemory?.compressedHolders ?? []
         )
 
         return SystemDiagnosticsCollection(
@@ -48,6 +50,69 @@ final class SystemDiagnosticsCollector {
             processMemory: processMemory,
             totalDuration: ProcessInfo.processInfo.systemUptime - startedAt
         )
+    }
+
+    /// Bytes of this process' memory that the kernel has compressed or
+    /// swapped out (`task_vm_info.compressed`, the value Activity Monitor
+    /// shows as "Compressed Memory"). Uses a task *name* port, which is
+    /// available for the user's own processes without special entitlements.
+    func compressedBytes(for pid: Int32) -> UInt64? {
+        guard pid > 0 else { return nil }
+
+        var nameTask: mach_port_name_t = 0
+        guard task_name_for_pid(mach_task_self_, pid, &nameTask) == KERN_SUCCESS else {
+            return nil
+        }
+        defer { mach_port_deallocate(mach_task_self_, nameTask) }
+
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result: kern_return_t = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                task_info(nameTask, task_flavor_t(TASK_VM_INFO), reboundPointer, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return info.compressed
+    }
+
+    /// Groups that hold at least this much compressed/swapped memory are
+    /// offered for restart.
+    static let compressedHolderThresholdBytes: UInt64 = 64 * 1_024 * 1_024
+    static let compressedHolderLimit = 6
+
+    private func collectCompressedHolders(
+        inventory: [ProcessInventoryEntry],
+        aggregation: ProcessMemoryAggregation
+    ) -> [CompressedMemoryHolder] {
+        let ownPID = getpid()
+        var compressedByOwner: [Int32: UInt64] = [:]
+
+        for entry in inventory where entry.pid != ownPID {
+            guard let owner = aggregation.ownershipByPID[entry.pid],
+                  let compressed = compressedBytes(for: entry.pid),
+                  compressed > 0 else { continue }
+
+            let ownerPID: Int32
+            switch owner {
+            case .application(let rootPID): ownerPID = rootPID
+            case .standalone(let pid): ownerPID = pid
+            }
+            let (sum, overflow) = compressedByOwner[ownerPID, default: 0].addingReportingOverflow(compressed)
+            compressedByOwner[ownerPID] = overflow ? UInt64.max : sum
+        }
+
+        return aggregation.snapshots
+            .compactMap { snapshot -> CompressedMemoryHolder? in
+                guard let compressed = compressedByOwner[snapshot.pid],
+                      compressed >= Self.compressedHolderThresholdBytes else { return nil }
+                return CompressedMemoryHolder(process: snapshot, compressedBytes: compressed)
+            }
+            .sorted { $0.compressedBytes > $1.compressedBytes }
+            .prefix(Self.compressedHolderLimit)
+            .map { $0 }
     }
 
     /// Primary process-memory metric. This is the metric closest to the
@@ -174,15 +239,27 @@ final class SystemDiagnosticsCollector {
         )
 
         let groupingStartedAt = ProcessInfo.processInfo.systemUptime
-        let aggregation = ProcessMemoryAggregator.aggregate(
+        // Aggregate every group once, then derive both rankings from it:
+        // largest footprint (topProcesses) and largest compressed/swapped
+        // memory (compressedHolders).
+        let fullAggregation = ProcessMemoryAggregator.aggregate(
             inventory: inventoryResult.entries,
             applications: applicationRoots,
-            limit: limit
+            limit: Int.max
+        )
+        let aggregation = ProcessMemoryAggregation(
+            snapshots: Array(fullAggregation.snapshots.prefix(max(limit, 0))),
+            ownershipByPID: fullAggregation.ownershipByPID
+        )
+        let compressedHolders = collectCompressedHolders(
+            inventory: inventoryResult.entries,
+            aggregation: fullAggregation
         )
         let groupingDuration = ProcessInfo.processInfo.systemUptime - groupingStartedAt
 
         return ProcessMemoryCollectionDiagnostics(
             aggregation: aggregation,
+            compressedHolders: compressedHolders,
             inventory: inventoryResult.entries,
             unavailablePIDs: inventoryResult.unavailablePIDs,
             applicationRoots: applicationRoots,

@@ -1,4 +1,5 @@
 import Combine
+import Darwin
 import Foundation
 
 enum MoleCleanupAction: Equatable, Sendable {
@@ -37,6 +38,19 @@ final class MoleCleanupService: ObservableObject {
     @Published private(set) var commandPath: String?
     @Published private(set) var output = ""
     @Published private(set) var lastRunAt: Date?
+    /// When enabled, MemWatch asks for the administrator password in its own
+    /// window before starting Mole, so Mole can also clean system-level
+    /// caches. The password is handed to `sudo` once through a private pipe
+    /// and is never written to disk or kept after the run.
+    @Published var includeSystemCleanup: Bool {
+        didSet {
+            guard persistsPreferences else { return }
+            UserDefaults.standard.set(includeSystemCleanup, forKey: Self.systemCleanupKey)
+        }
+    }
+
+    private static let systemCleanupKey = "MemWatch.moleIncludeSystemCleanup"
+    private let persistsPreferences: Bool
 
     /// When true the executable is looked up again whenever it is missing,
     /// so installing Mole while MemWatch is running works without relaunch.
@@ -57,6 +71,11 @@ final class MoleCleanupService: ObservableObject {
 
     init(executablePath: String?, autoResolvesExecutable: Bool = false) {
         self.autoResolvesExecutable = autoResolvesExecutable
+        // Only the production instance reads/writes user preferences, so
+        // tests never trigger a password dialog.
+        persistsPreferences = autoResolvesExecutable
+        includeSystemCleanup = autoResolvesExecutable
+            && UserDefaults.standard.bool(forKey: Self.systemCleanupKey)
         commandPath = executablePath
         phase = executablePath == nil ? .unavailable : .ready
     }
@@ -103,19 +122,24 @@ final class MoleCleanupService: ObservableObject {
         }
     }
 
-    func runCleanup() {
-        run(.clean)
+    func runCleanup(administratorPassword: String? = nil) {
+        run(.clean, administratorPassword: administratorPassword)
     }
 
-    func runPreview() {
-        run(.preview)
+    func runPreview(administratorPassword: String? = nil) {
+        run(.preview, administratorPassword: administratorPassword)
+    }
+
+    /// True when the UI must ask for the administrator password first.
+    var needsAdministratorPassword: Bool {
+        includeSystemCleanup
     }
 
     func cancel() {
         activeHandle?.terminate()
     }
 
-    func run(_ action: MoleCleanupAction) {
+    func run(_ action: MoleCleanupAction, administratorPassword: String? = nil) {
         guard !isRunning else { return }
 
         output = ""
@@ -146,8 +170,15 @@ final class MoleCleanupService: ObservableObject {
             }
         }
 
+        let password = administratorPassword.flatMap { $0.isEmpty ? nil : $0 }
         Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Self.runMole(at: resolvedPath, action: action, handle: handle, capture: capture)
+            let result = Self.runMole(
+                at: resolvedPath,
+                action: action,
+                administratorPassword: password,
+                handle: handle,
+                capture: capture
+            )
             await self?.finish(result, action: action, handle: handle)
         }
     }
@@ -166,6 +197,8 @@ final class MoleCleanupService: ObservableObject {
             phase = .finished(action, exitStatus: status)
         case .cancelled:
             phase = .cancelled(action)
+        case .authenticationFailed:
+            phase = .failed(action, message: "Yönetici parolası doğrulanamadı. Parolayı kontrol edip tekrar dene.")
         case .launchFailure(let message):
             phase = .failed(action, message: message)
         }
@@ -251,12 +284,35 @@ final class MoleCleanupService: ObservableObject {
     private nonisolated static func runMole(
         at executablePath: String,
         action: MoleCleanupAction,
+        administratorPassword: String?,
         handle: MoleProcessHandle,
         capture: MoleOutputCapture
     ) -> MoleCleanupResult {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = action.arguments
+        let elevated = administratorPassword != nil
+        var passwordChannel: MolePasswordChannel?
+        defer { passwordChannel?.close() }
+        if let administratorPassword {
+            do {
+                passwordChannel = try MolePasswordChannel(password: administratorPassword)
+            } catch {
+                return MoleCleanupResult(
+                    output: "",
+                    outcome: .launchFailure("Could not prepare administrator access: \(error.localizedDescription)")
+                )
+            }
+            // `script` gives Mole a private pseudo-terminal. sudo stores its
+            // ticket per terminal, so the ticket obtained by `sudo -S -v`
+            // below is visible to Mole's own `sudo -n -v` check and to its
+            // keep-alive, and to nothing else on the system. Mole's stdin is
+            // still /dev/null, so it stays in non-interactive mode.
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+            process.arguments = ["-q", "/dev/null", "/bin/bash", "-c", elevatedWrapperScript, executablePath]
+                + action.arguments
+        } else {
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = action.arguments
+        }
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         process.standardInput = FileHandle.nullDevice
 
@@ -294,6 +350,10 @@ final class MoleCleanupService: ObservableObject {
         }
         environment["HOME"] = environment["HOME"] ?? home.path
         environment["LANG"] = environment["LANG"] ?? "en_US.UTF-8"
+        environment.removeValue(forKey: "SUDO_ASKPASS")
+        if let passwordChannel {
+            environment["MEMWATCH_PW_FIFO"] = passwordChannel.path
+        }
         process.environment = environment
 
         do {
@@ -332,10 +392,67 @@ final class MoleCleanupService: ObservableObject {
             text = "Earlier Mole output was omitted.\n\n" + text
         }
 
+        var exitStatus = process.terminationStatus
+        if elevated {
+            if text.contains(authFailedMarker) {
+                return MoleCleanupResult(
+                    output: text.replacingOccurrences(of: authFailedMarker, with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                    outcome: handle.wasCancelled ? .cancelled : .authenticationFailed
+                )
+            }
+            let parsed = extractWrapperExitStatus(from: text)
+            text = parsed.output
+            if let status = parsed.status {
+                exitStatus = status
+            }
+        }
+
         if handle.wasCancelled {
             return MoleCleanupResult(output: text, outcome: .cancelled)
         }
-        return MoleCleanupResult(output: text, outcome: .exit(process.terminationStatus))
+        return MoleCleanupResult(output: text, outcome: .exit(exitStatus))
+    }
+
+    // MARK: - Administrator access
+
+    private nonisolated static let exitMarker = "MEMWATCH_EXIT="
+
+    private nonisolated static let authFailedMarker = "MEMWATCH_AUTH_FAILED"
+
+    /// Runs inside the pseudo-terminal created by `script`.
+    /// $0 is Mole's executable, "$@" its arguments. The password is read
+    /// exactly once from the private FIFO and piped into `sudo -S`; it never
+    /// appears on a command line, in the environment or in the terminal.
+    private nonisolated static let elevatedWrapperScript = """
+    sudo -k
+    if /usr/bin/head -n 1 "$MEMWATCH_PW_FIFO" | sudo -S -p '' -v 2>/dev/null; then
+      echo "MemWatch: administrator access granted, system-level cleanup enabled."
+    else
+      sudo -k
+      printf '\\n\(MoleCleanupService.authFailedMarker)\\n'
+      exit 77
+    fi
+    unset MEMWATCH_PW_FIFO
+    "$0" "$@" < /dev/null
+    rc=$?
+    sudo -k
+    printf '\\n\(MoleCleanupService.exitMarker)%s\\n' "$rc"
+    exit "$rc"
+    """
+
+    private nonisolated static func extractWrapperExitStatus(from output: String) -> (output: String, status: Int32?) {
+        var status: Int32?
+        let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
+        let kept = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix(exitMarker) {
+                status = Int32(trimmed.dropFirst(exitMarker.count))
+                return false
+            }
+            return true
+        }
+        return (kept.joined(separator: "\n"), status)
     }
 
     nonisolated static func cleanTerminalOutput(_ output: String) -> String {
@@ -360,6 +477,7 @@ private struct MoleCleanupResult: Sendable {
     enum Outcome: Sendable {
         case exit(Int32)
         case cancelled
+        case authenticationFailed
         case launchFailure(String)
     }
 
@@ -421,5 +539,80 @@ private final class MoleOutputCapture: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return (data, omittedEarlierOutput)
+    }
+}
+
+/// One-shot private channel for the administrator password.
+///
+/// A named pipe is created inside a fresh 0700 directory. MemWatch opens it
+/// read/write (which never blocks), writes the password plus a newline into
+/// the kernel pipe buffer and keeps its descriptor open until the run ends.
+/// The wrapper reads one line with `head -n 1`. The password never touches
+/// disk; closing the channel discards any unread bytes and removes the
+/// directory.
+private final class MolePasswordChannel {
+    let path: String
+    private let directory: URL
+    private var descriptor: Int32 = -1
+
+    init(password: String) throws {
+        let fileManager = FileManager.default
+        let base = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("MemWatch", isDirectory: true)
+        try fileManager.createDirectory(
+            at: base,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+
+        directory = base.appendingPathComponent("auth-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        path = directory.appendingPathComponent("pw").path
+
+        guard mkfifo(path, 0o600) == 0 else {
+            let code = errno
+            try? fileManager.removeItem(at: directory)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+
+        descriptor = open(path, O_RDWR)
+        guard descriptor >= 0 else {
+            let code = errno
+            try? fileManager.removeItem(at: directory)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+
+        var bytes = Array(password.utf8)
+        bytes.append(0x0A)
+        let written = bytes.withUnsafeBytes { buffer in
+            write(descriptor, buffer.baseAddress, buffer.count)
+        }
+        // Best effort: wipe our copy of the bytes.
+        for index in bytes.indices { bytes[index] = 0 }
+
+        guard written == bytes.count else {
+            close()
+            throw POSIXError(.EIO)
+        }
+    }
+
+    func close() {
+        if descriptor >= 0 {
+            Darwin.close(descriptor)
+            descriptor = -1
+        }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    deinit {
+        close()
     }
 }

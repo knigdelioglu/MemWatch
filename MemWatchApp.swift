@@ -1058,6 +1058,10 @@ private struct SmartMenuBarRootView: View {
                         )
                         .accessibilityLabel("Recent memory usage trend")
                     }
+                    if snapshot.swapUsedBytes > 0 {
+                        Divider()
+                        SwapReliefList(monitor: monitor, limit: 3, compact: true)
+                    }
                 }
                 .padding(.top, 2)
                 .transition(.opacity.combined(with: .move(edge: .top)))

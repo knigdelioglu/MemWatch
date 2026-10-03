@@ -418,12 +418,24 @@ enum ProcessMemoryAggregator {
     }
 }
 
+/// An app (or standalone process) together with how much of its memory the
+/// kernel has compressed or moved to swap (`task_vm_info.compressed`).
+/// Quitting or restarting the owner is the only way to release that swap.
+struct CompressedMemoryHolder: Identifiable, Equatable, Sendable {
+    let process: ProcessMemorySnapshot
+    let compressedBytes: UInt64
+
+    var id: Int32 { process.pid }
+}
+
 struct SystemDiagnosticsSnapshot: Equatable, Sendable {
     let timestamp: Date
     let cpuUsagePercent: Double?
     let thermalState: ThermalHealthState
     let lowPowerModeEnabled: Bool
     let topProcesses: [ProcessMemorySnapshot]
+    /// Processes holding the most compressed/swapped memory, largest first.
+    var compressedHolders: [CompressedMemoryHolder] = []
 
     static let empty = SystemDiagnosticsSnapshot(
         timestamp: .distantPast,
