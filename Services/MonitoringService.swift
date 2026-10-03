@@ -18,6 +18,10 @@ final class MonitoringService: ObservableObject {
     @Published private(set) var swapInDeltaBytes: UInt64 = 0
     @Published private(set) var swapOutDeltaBytes: UInt64 = 0
     @Published private(set) var isActivelySwapping = false
+    /// Last time swap was actually moving (swap-in / swap-out traffic or a
+    /// growing swap file). Used to tell "swap in use" from "old data parked
+    /// in the swap file".
+    @Published private(set) var lastSwapActivityAt: Date?
     @Published private(set) var systemPressure: MemoryPressure?
     @Published private(set) var notificationsEnabled = true
     @Published private(set) var notificationAuthorization: NotificationAuthorizationState = .unknown
@@ -30,8 +34,30 @@ final class MonitoringService: ObservableObject {
         sampleCount: 0
     )
 
+    /// Live pressure level. The collector polls the kernel's current level
+    /// on every sample, so this never stays stuck on an old Warning event.
     var pressure: MemoryPressure {
-        systemPressure ?? snapshot.pressure
+        snapshot.pressure
+    }
+
+    /// How long swap must be quiet before it is treated as idle.
+    static let swapActivityWindow: TimeInterval = 10 * 60
+    private static let swapActivityThresholdBytes: UInt64 = 1 * 1_024 * 1_024
+
+    /// True while swap is really being used: there is data in swap AND it
+    /// moved recently, or memory pressure is elevated. Old pages that macOS
+    /// simply has not read back yet do not count.
+    var isSwapInUse: Bool {
+        guard snapshot.swapUsedBytes > 0 else { return false }
+        if pressure != .normal { return true }
+        switch intelligence.state {
+        case .activeSwap, .readback, .critical:
+            return true
+        case .stable, .idleSwap, .pressure:
+            break
+        }
+        guard let lastSwapActivityAt else { return false }
+        return Date().timeIntervalSince(lastSwapActivityAt) < Self.swapActivityWindow
     }
 
     var memoryPressureEstimate: MemoryPressureEstimate {
@@ -124,7 +150,12 @@ final class MonitoringService: ObservableObject {
 
         pressureMonitor.onChange = { [weak self] pressure in
             Task { @MainActor [weak self] in
-                self?.systemPressure = pressure
+                guard let self else { return }
+                // The dispatch source only reports transitions and can miss
+                // the return to Normal. Use it as a trigger for an immediate
+                // poll instead of caching its value.
+                self.systemPressure = pressure
+                self.refresh()
             }
         }
         pressureMonitor.start()
@@ -350,6 +381,18 @@ final class MonitoringService: ObservableObject {
         }
 
         isActivelySwapping = swapInDeltaBytes > 0 || swapOutDeltaBytes > 0 || swapDeltaBytes > 0
+
+        // Swap counts as "in use" when macOS is writing to it (swap-out
+        // traffic or a growing swap file). Read-back is handled live by the
+        // intelligence state and does not extend the window, because reading
+        // pages back is exactly how old swap drains.
+        let swapGrew = swapDeltaBytes > Int64(Self.swapActivityThresholdBytes)
+        let swapWrites = swapOutDeltaBytes >= Self.swapActivityThresholdBytes
+        if nextSnapshot.swapUsedBytes == 0 {
+            lastSwapActivityAt = nil
+        } else if swapGrew || swapWrites {
+            lastSwapActivityAt = nextSnapshot.timestamp
+        }
 
         previousSwapUsedBytes = nextSnapshot.swapUsedBytes
         previousSwapInBytes = nextSnapshot.swapInBytes

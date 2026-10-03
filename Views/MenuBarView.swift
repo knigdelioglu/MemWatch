@@ -249,7 +249,7 @@ struct MenuBarView: View {
     private var activeAlertSummaries: [String] {
         var alerts: [String] = []
         if monitor.pressure != .normal { alerts.append("Memory pressure is \(monitor.pressure.displayName.lowercased())") }
-        if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
+        if monitor.isSwapInUse {
             alerts.append("Active swap usage (\(shortBytes(snapshot.swapUsedBytes)))")
         }
         if let volume = monitor.storageVolumes.first(where: { $0.health == .warning || $0.health == .critical }) {

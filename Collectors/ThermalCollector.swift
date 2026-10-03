@@ -58,6 +58,11 @@ final class ThermalCollector {
     private var rediscoveryAttemptsInEpoch = 0
     private let maximumRediscoveryAttemptsPerEpoch = 1
     private var cachedHIDUnavailableStatus: TemperatureBackendStatus?
+    private var cachedHIDUnavailableAt: Date?
+    /// A cached discovery failure is retried after this delay instead of
+    /// staying "unavailable" until the next sleep/wake (e.g. when the app is
+    /// launched at login before the HID event system is ready).
+    private let unavailableRetryInterval: TimeInterval = 60
 
     init(
         hidSource: (any HIDTemperatureSampling)? = nil,
@@ -176,6 +181,7 @@ final class ThermalCollector {
         previousHIDRuntimeHealth = .empty
         rediscoveryAttemptsInEpoch = 0
         cachedHIDUnavailableStatus = nil
+        cachedHIDUnavailableAt = nil
 
         // Keep the generation monotonic; clearing the actual selections makes
         // the next canonical choice receive a new generation from policy.
@@ -217,11 +223,20 @@ final class ThermalCollector {
 
     private func collectHID(at timestamp: Date) -> HIDCollectionResult {
         if let cachedHIDUnavailableStatus {
-            return HIDCollectionResult(
-                epoch: hardwareEpoch,
-                readings: [],
-                status: cachedHIDUnavailableStatus
-            )
+            let cachedAt = cachedHIDUnavailableAt ?? timestamp
+            if cachedHIDUnavailableAt == nil {
+                cachedHIDUnavailableAt = timestamp
+            }
+            if timestamp.timeIntervalSince(cachedAt) < unavailableRetryInterval {
+                return HIDCollectionResult(
+                    epoch: hardwareEpoch,
+                    readings: [],
+                    status: cachedHIDUnavailableStatus
+                )
+            }
+            // Retry window elapsed: start a fresh hardware epoch and attempt
+            // discovery again.
+            invalidateHardware(reason: .backendRecovery)
         }
 
         let collectionEpoch = hardwareEpoch

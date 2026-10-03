@@ -438,16 +438,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         guard let button = statusItem.button else { return }
 
         let presentation = trayPresentation
-        let image = NSImage(named: "TrayIcon") ?? NSImage(
+        let baseImage = NSImage(named: "TrayIcon") ?? NSImage(
             systemSymbolName: "memorychip",
             accessibilityDescription: "MemWatch"
         )
-        image?.isTemplate = true
 
-        button.image = image
+        // Default glyph is white like the system's own menu bar items; alert
+        // states paint the same glyph orange/red. The image is pre-tinted
+        // (non-template) so macOS never renders it black.
+        let tint = presentation.tintRole.color ?? .white
+        button.image = baseImage.map { Self.tintedTrayImage(from: $0, tint: tint) }
         button.imagePosition = .imageOnly
         button.title = ""
-        button.contentTintColor = presentation.tintRole.color
+        button.contentTintColor = nil
         button.toolTip = presentation.toolTip
         button.setAccessibilityLabel(presentation.accessibilityDescription)
 
@@ -462,6 +465,21 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         } else if !presentation.pulseOnEntry {
             stopStatusButtonAnimation(button)
         }
+    }
+
+    private static func tintedTrayImage(from base: NSImage, tint: NSColor) -> NSImage {
+        let size = base.size.width > 0 && base.size.height > 0
+            ? base.size
+            : NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            base.draw(in: rect)
+            tint.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = "MemWatch"
+        return image
     }
 
     private func pulseStatusButton(_ button: NSStatusBarButton) {
@@ -668,6 +686,20 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             )
         }
 
+        if monitor.isSwapInUse {
+            let swapText = ByteCountFormatter.string(
+                fromByteCount: Int64(clamping: monitor.snapshot.swapUsedBytes),
+                countStyle: .memory
+            )
+            return TrayPresentation(
+                symbolName: "arrow.left.arrow.right.circle.fill",
+                tintRole: .red,
+                accessibilityDescription: "MemWatch alert, macOS is using swap (\(swapText))",
+                toolTip: "MemWatch — Swap in use: \(swapText)",
+                pulseOnEntry: true
+            )
+        }
+
         switch monitor.intelligence.state {
         case .stable:
             if let displayPresentation = displayTrayPresentation {
@@ -833,6 +865,7 @@ private struct SmartMenuBarRootView: View {
     @State private var internalBrightnessError: String?
     @State private var externalBrightnessError: String?
     @State private var keepAwakeError: String?
+    @State private var isTogglingHiDPI = false
 
     init(
         monitor: MonitoringService,
@@ -989,6 +1022,23 @@ private struct SmartMenuBarRootView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Memory card, \(expansionState.isMemoryExpanded ? "expanded" : "collapsed")")
 
+            if snapshot.swapUsedBytes > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: monitor.isSwapInUse ? "arrow.left.arrow.right.circle.fill" : "pause.circle")
+                        .font(.caption2)
+                    Text("Swap · \(memoryBytes(snapshot.swapUsedBytes))")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                    Text(monitor.isSwapInUse ? "· kullanımda" : "· boşta (eski veri)")
+                        .font(.caption2)
+                    Spacer()
+                }
+                .foregroundStyle(monitor.isSwapInUse ? Color.red : Color.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "Swap \(memoryBytes(snapshot.swapUsedBytes)), \(monitor.isSwapInUse ? "in use" : "idle")"
+                )
+            }
+
             if expansionState.isMemoryExpanded {
                 VStack(alignment: .leading, spacing: 7) {
                     ProgressView(value: Double(snapshot.usagePercent) / 100)
@@ -1033,6 +1083,8 @@ private struct SmartMenuBarRootView: View {
                     Text("· \(cpuTemperatureText)")
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -1145,6 +1197,17 @@ private struct SmartMenuBarRootView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Storage card, \(expansionState.isStorageExpanded ? "expanded" : "collapsed")")
 
+            if let primary = dashboardStorageVolumes.first {
+                HStack(spacing: 5) {
+                    Image(systemName: "externaldrive.badge.checkmark")
+                        .font(.caption2)
+                    Text("Boş alan: \(fileBytes(primary.availableBytes))")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                    Spacer()
+                }
+                .foregroundStyle(storageHealthColor(primary.health))
+            }
+
             if expansionState.isStorageExpanded {
                 VStack(alignment: .leading, spacing: 7) {
                     if monitor.storageVolumes.isEmpty {
@@ -1157,7 +1220,7 @@ private struct SmartMenuBarRootView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(volume.name).font(.caption)
-                                        Text("\(fileBytes(volume.usedBytes)) used of \(fileBytes(volume.totalBytes))")
+                                        Text("\(fileBytes(volume.usedBytes)) used of \(fileBytes(volume.totalBytes)) · \(fileBytes(volume.availableBytes)) boş")
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
@@ -1369,14 +1432,17 @@ private struct SmartMenuBarRootView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
+                    hiDPIToggleButton
                     Button {
                         display.toggleExternalDisplayConnection()
                     } label: {
-                        Text("Bağlantıyı Kes")
-                            .font(.caption2)
+                        Label("Eject", systemImage: "eject.fill")
+                            .font(.caption2.weight(.semibold))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("Harici ekranı yazılımsal olarak çıkar (bağlantıyı kes)")
+                    .accessibilityLabel("Harici ekranı çıkar")
                     .disabled(!display.capabilities.softwareDisconnect.isAvailable || !connectionController.snapshot.canToggle)
                 }
             }
@@ -1425,6 +1491,48 @@ private struct SmartMenuBarRootView: View {
                 Label("Bağlı Değil", systemImage: "minus.circle")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var hiDPIToggleButton: some View {
+        let isActive = display.isHiDPIActive
+        return Button {
+            toggleHiDPI()
+        } label: {
+            HStack(spacing: 4) {
+                if isTogglingHiDPI {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: isActive ? "checkmark.circle.fill" : "xmark.circle.fill")
+                }
+                Text("HiDPI")
+            }
+            .font(.caption2.weight(.semibold))
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(isActive ? Color.green : Color.red)
+        .controlSize(.small)
+        .help(isActive ? "HiDPI açık — kapatmak için tıkla" : "HiDPI kapalı — açmak için tıkla")
+        .accessibilityLabel("HiDPI")
+        .accessibilityValue(isActive ? "Açık" : "Kapalı")
+        .disabled(isTogglingHiDPI || !display.capabilities.hiDPI.isAvailable)
+    }
+
+    private func toggleHiDPI() {
+        guard !isTogglingHiDPI else { return }
+        let target = !display.isHiDPIActive
+        isTogglingHiDPI = true
+        externalBrightnessError = nil
+        Task { @MainActor in
+            let success = await display.setHiDPIEnabled(target)
+            isTogglingHiDPI = false
+            if !success {
+                let detail = display.hiDPIActivationStatusText
+                externalBrightnessError = detail.isEmpty
+                    ? (target ? "HiDPI açılamadı" : "HiDPI kapatılamadı")
+                    : detail
             }
         }
     }
@@ -1624,7 +1732,7 @@ private struct SmartMenuBarRootView: View {
     private var activeSystemAlerts: [String] {
         var alerts: [String] = []
         if monitor.pressure != .normal { alerts.append("Memory pressure is \(monitor.pressure.displayName.lowercased())") }
-        if intelligence.state == .activeSwap || intelligence.state == .pressure || intelligence.state == .critical {
+        if monitor.isSwapInUse {
             alerts.append("Active swap usage (\(memoryBytes(snapshot.swapUsedBytes)))")
         }
         if let volume = monitor.storageVolumes.first(where: { $0.health == .warning || $0.health == .critical }) {
@@ -1784,8 +1892,11 @@ private struct SmartMenuBarRootView: View {
     }
 
     private var cpuTemperatureText: String {
-        guard let temperature = monitor.thermalSnapshot.aggregates[.cpu]?.currentCelsius else {
+        guard let temperature = monitor.thermalSnapshot.cpuTemperatureCelsius else {
             return "Temperature unavailable"
+        }
+        if let gpu = monitor.thermalSnapshot.gpuTemperatureCelsius {
+            return String(format: "CPU %.0f°C · GPU %.0f°C", temperature, gpu)
         }
         return String(format: "%.0f°C", temperature)
     }

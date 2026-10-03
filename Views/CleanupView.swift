@@ -17,19 +17,43 @@ struct CleanupView: View {
                 status
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Button(action: service.runCleanup) {
-                        if service.isRunning {
-                            ProgressView()
-                                .controlSize(.small)
+                    HStack(spacing: 10) {
+                        Button {
+                            service.runPreview()
+                        } label: {
+                            Label("Preview (dry run)", systemImage: "eye")
                                 .frame(maxWidth: .infinity)
-                        } else {
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(service.isRunning || service.commandPath == nil)
+                        .accessibilityHint("Runs mo clean --dry-run; nothing is deleted")
+
+                        Button {
+                            service.runCleanup()
+                        } label: {
                             Label("Run Mole cleanup", systemImage: "sparkles")
                                 .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(service.isRunning || service.commandPath == nil)
+                        .accessibilityHint("Runs the installed Mole CLI's mo clean command without opening Terminal")
+
+                        if service.isRunning {
+                            Button(role: .cancel) {
+                                service.cancel()
+                            } label: {
+                                Label("Stop", systemImage: "stop.fill")
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(service.isRunning || service.commandPath == nil)
-                    .accessibilityHint("Runs the installed Mole CLI's mo clean command without opening Terminal")
+
+                    if let commandPath = service.commandPath {
+                        Text("Using \(commandPath)")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .textSelection(.enabled)
+                    }
 
                     Text("Mole manages the cleanup rules. Without an active administrator session, it skips system caches and continues with user-level cleanup.")
                         .font(.caption)
@@ -73,7 +97,11 @@ struct CleanupView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(24)
         }
-        .onAppear(perform: service.runCleanup)
+        .onAppear {
+            // Opening the page must never delete anything by itself; only
+            // re-check whether Mole is installed.
+            service.refreshAvailability()
+        }
     }
 
     @ViewBuilder
@@ -87,21 +115,32 @@ struct CleanupView: View {
                 Text("Install Mole with Homebrew by running: brew install mole")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Button("Check again") {
+                    service.refreshAvailability()
+                }
+                .font(.caption)
                 Link("Open Mole's installation instructions", destination: URL(string: "https://github.com/tw93/Mole#quick-start")!)
                     .font(.caption)
             }
-        case .running:
+        case .running(let action):
             HStack(spacing: 9) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Mole cleanup is running in the background…")
+                Text(action == .preview
+                    ? "Mole preview is running (nothing will be deleted)…"
+                    : "Mole cleanup is running in the background…")
                     .font(.subheadline.weight(.medium))
             }
             .accessibilityElement(children: .combine)
-        case .finished(_, let exitStatus):
+        case .cancelled(let action):
+            statusRow("Mole \(action.displayName.lowercased()) was stopped", symbol: "stop.circle.fill", color: .orange)
+        case .finished(let action, let exitStatus):
             VStack(alignment: .leading, spacing: 4) {
                 statusRow(
-                    exitStatus == 0 ? "Mole finished (exit status 0)" : "Mole exited with status \(exitStatus)",
+                    exitStatus == 0
+                        ? "Mole \(action.displayName.lowercased()) finished"
+                        : "Mole exited with status \(exitStatus)",
                     symbol: exitStatus == 0 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                     color: exitStatus == 0 ? .green : .orange
                 )
