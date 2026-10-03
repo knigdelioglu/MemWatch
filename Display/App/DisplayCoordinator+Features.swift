@@ -60,6 +60,16 @@ extension DisplayCoordinator {
     func updateBrightnessState(_ mutate: (inout BrightnessState) -> Void) {
         var next = brightnessState
         mutate(&next)
+        if next.suppressionReason != brightnessState.suppressionReason
+            || next.readbackReliability != brightnessState.readbackReliability {
+            traceRuntime(
+                "brightnessState suppression=\(next.suppressionReason ?? "nil") " +
+                    "reliability=\(next.readbackReliability.rawValue) " +
+                    "target=\(next.autoTargetBrightnessPercent.map(String.init) ?? "nil") " +
+                    "actual=\(next.authoritativeBrightnessForAutomaticControl.map(String.init) ?? "nil") " +
+                    "lux=\(next.ambientSensorRawValue.map { String(format: "%.1f", $0) } ?? "nil")"
+            )
+        }
         brightnessState = next
     }
 

@@ -275,6 +275,9 @@ final class DisplayCoordinator: NSObject, ObservableObject, DisplayFeatureContro
 
 
     func updateStatus(_ title: String) {
+        if statusText != title {
+            traceRuntime("status=\(title)")
+        }
         statusText = title
     }
 
