@@ -7,16 +7,22 @@ extension DisplayCoordinator {
         // must still be able to publish the disconnected UI after the target
         // gate invalidates, while DDC/HiDPI operations remain target-gated.
         guard displayReadOperationsAllowed else { return false }
-        invalidateManualBrightnessWrites()
-        invalidateManualVolumeWrites()
-        cancelPendingManualBrightnessWrite()
-        cancelPendingManualVolumeWrite()
         let connection = displayConnectionController.reconcileDesiredState()
         traceRuntime(
             "applySoftwareDisconnected result phase=\(connection.phase.rawValue) displayID=\(connection.displayID.map(String.init) ?? "nil") " +
                 "online=\(connection.isOnline) active=\(connection.isActive)"
         )
         guard connection.phase == .softwareDisconnected else { return false }
+        // Invalidate in-flight manual/auto write generations only when the
+        // display is actually software-disconnected. Doing this on every
+        // tick for a connected display bumps the write generation that
+        // tick() captured at its start, so the automatic brightness pass
+        // always failed its acceptsManualBrightnessWrite() guard and
+        // returned silently before writing.
+        invalidateManualBrightnessWrites()
+        invalidateManualVolumeWrites()
+        cancelPendingManualBrightnessWrite()
+        cancelPendingManualVolumeWrite()
         if currentDisplayInfo != nil {
             beginBrightnessControlEpoch(reason: "software display disconnect")
         }

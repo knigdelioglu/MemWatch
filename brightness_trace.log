@@ -1,0 +1,240 @@
+===  3 Eki 2026 Cmt +03 22:04:16 ===
+ProductName:		macOS
+ProductVersion:		27.0.1
+BuildVersion:		26A434
+
+m1ddc: /opt/homebrew/bin/m1ddc
+[1] (null) (37D8832A-2D66-02CA-B9F7-8F30A301B230)
+ - Product name:  (null)
+ - Manufacturer:  00-10-fa
+ - AN Serial:     (null)
+ - Vendor:        1552 (0x0610)
+ - Model:         41059 (0xa063)
+ - Serial:        4251086178 (0xfd626d62)
+ - Display ID:    1
+ - System UUID:   37D8832A-2D66-02CA-B9F7-8F30A301B230
+ - EDID UUID:     (null)
+ - IO Location:   IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/disp0@8000000/IOMobileFramebufferShim
+ - Adapter:       15619
+[2] LS32D60xU (DAFD7C4E-5BC3-45B2-B601-42A2372D5261)
+ - Product name:  LS32D60xU
+ - Manufacturer:  SAM
+ - AN Serial:     HK7X700177
+ - Vendor:        19501 (0x4c2d)
+ - Model:         30379 (0x76ab)
+ - Serial:        809579314 (0x30413332)
+ - Display ID:    3
+ - System UUID:   DAFD7C4E-5BC3-45B2-B601-42A2372D5261
+ - EDID UUID:     4C2DAB76-0000-0000-1F22-0104B5462878
+ - IO Location:   IOService:/AppleARMPE/arm-io@10F00000/AppleH16GFamilyIO/dispext0@84000000/IOMobileFramebufferShim
+ - Adapter:       15363
+
+--- display 1 get luminance:
+4
+--- display 1 max luminance:
+50
+--- display 2 get luminance:
+4
+--- display 2 max luminance:
+50
+
+=== system_profiler (displays) ===
+Graphics/Displays:
+
+    Apple M4:
+
+      Chipset Model: Apple M4
+      Type: GPU
+      Bus: Built-In
+      Total Number of Cores: 8
+      Vendor: Apple (0x106b)
+      Metal Support: Metal 4
+      Displays:
+        Color LCD:
+          Display Type: Built-in Liquid Retina Display
+          Resolution: 2560 x 1664 Retina
+          Main Display: Yes
+          Mirror: Off
+          Online: Yes
+          Automatically Adjust Brightness: Yes
+          Connection Type: Internal
+        LS32D60xU:
+          Resolution: 2560 x 1440 (QHD/WQHD - Wide Quad High Definition)
+          UI Looks like: 2560 x 1440 @ 100.00Hz
+          Mirror: Off
+          Online: Yes
+          Rotation: Supported
+          Automatically Adjust Brightness: No
+
+
+=== MemWatch runtime trace (75 sn) ===
+[MemWatch DisplayRuntime] start entered isRunning=false startupTask=false
+[MemWatch DisplayRuntime] start prepared generation=1 migrationTask=false cleanupVersion=1
+[MemWatch DisplayRuntime] startup task entered generation=1
+[MemWatch DisplayRuntime] startup migration complete; activating runtime generation=1
+[MemWatch DisplayRuntime] activateRuntime entered isRunning=false
+[MemWatch DisplayRuntime] activateRuntime registered display-feature scheduler
+[MemWatch DisplayRuntime] activateRuntime complete ddcAvailable=true
+[MemWatch DisplayRuntime] capability update external=unavailable ddc=degraded softwareDisconnect=degraded currentDisplay=nil
+[MemWatch DisplayRuntime] status=Ekran açık tutuluyor: Uyanık · Süresiz
+[MemWatch DisplayRuntime] tick entered currentDisplay=nil
+[MemWatch DisplayRuntime] reloadDisplayInfo begin reloadModes=false preferredKey=LS32D60xU|809579314 (0x30413332) currentDisplay=nil
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] writer.refreshDisplay result=LS32D60xU|809579314 (0x30413332) previousDisplay=nil
+[MemWatch DisplayRuntime] currentDisplayInfo assigned previous=nil next=LS32D60xU|809579314 (0x30413332) reason=writer.refreshDisplay non-nil
+[MemWatch DisplayRuntime] brightnessState suppression=nil reliability=transitionUnverified target=nil actual=nil lux=nil
+[MemWatch DisplayRuntime] brightness epoch reset reason=display identity changed displayKey=LS32D60xU|809579314 (0x30413332) presentationFallback=nil ddcCacheReset=true readbackReliability=transitionUnverified autoReapply=false
+[MemWatch DisplayRuntime] ALS rebind reason=display identity changed success=true clientGeneration=2 rebindCount=1
+[MemWatch DisplayRuntime] display identity transition samePhysical=false previousFingerprint=nil nextFingerprint=serial:809579314 (0x30413332)
+[MemWatch DisplayRuntime] capability update external=available ddc=available softwareDisconnect=available currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] capability update external=available ddc=available softwareDisconnect=available currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true
+[MemWatch DisplayRuntime] tick entered currentDisplay=LS32D60xU|809579314 (0x30413332)
+[MemWatch DisplayRuntime] applySoftwareDisconnected result phase=connected displayID=3 online=true active=true

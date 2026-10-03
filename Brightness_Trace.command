@@ -1,6 +1,6 @@
 #!/bin/bash
 # MemWatch otomatik parlaklık teşhis kaydı (HDR KAPALIYKEN çalıştırın)
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$ROOT_DIR/brightness_trace.log"
 M1DDC="$(command -v m1ddc || ls /opt/homebrew/bin/m1ddc /usr/local/bin/m1ddc 2>/dev/null | head -1)"
 APP="${MEMWATCH_APP:-/Applications/MemWatch.app}"
